@@ -1,10 +1,10 @@
 #!/bin/bash
-# menu.sh V1.2.1 for Clearswift SEG >= 4.8
+# menu.sh V1.2.2 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
 #
-# Authors: 
+# Authors:
 # Uwe Sommer (u.sommer@netcon-consulting.com)
 # Dr. Marc Dierksen (m.dierksen@netcon-consulting.com)
 ###################################################################################################
@@ -13,7 +13,7 @@
 # everything is in this single dialog file, which should be run as root!
 #
 # Features (26):
-# 
+#
 # Clearswift (13)
 # - Letsencrypt certificates via ACME installation and integration to SEG
 # - install latest vmware Tools from vmware Repo
@@ -55,9 +55,14 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - fixed some bugs
-#   
+# - fixed bugs with recipient restrictions
+# - disabled persistent cache for recipient verification
+# - implemented rspamd learnspam/learnham email aliases
+# - removed header-rewrite since it also mangles incoming mail headers
+# - moved Postfix restrictions to Postfix config menu
+#
 ###################################################################################################
+VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
 DIALOG="dialog"
 TXT_EDITOR="vim"
 PF_CUSTOMISE="/opt/cs-gateway/scripts/deployment/postfix_customise"
@@ -67,13 +72,13 @@ CONFIG_INTERN="/var/named/intern.db"
 CONFIG_BIND="/etc/named.conf"
 CONFIG_AUTO_UPDATE="/etc/yum/yum-cron.conf"
 CONFIG_LDAP="/var/cs-gateway/ldap/schedule.properties"
+MAP_ALIASES="/etc/aliases"
 CUSTOM_DIR="/opt/cs-gateway/custom"
 DIR_CERT="/var/lib/acme/live/$(hostname)"
 DIR_COMMANDS="/opt/cs-gateway/scripts"
 DIR_MAPS="/etc/postfix/maps"
 DIR_ADDRESS_LISTS="/home/cs-admin/address-lists"
 ESMTP_ACCESS="$DIR_MAPS/esmtp_access"
-HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
 HELO_ACCESS="$DIR_MAPS/check_helo_access"
 RECIPIENT_ACCESS="$DIR_MAPS/check_recipient_access"
 SENDER_ACCESS="$DIR_MAPS/check_sender_access"
@@ -99,7 +104,7 @@ CRON_ANOMALY="/etc/cron.d/anomaly_detect.sh"
 SCRIPT_ANOMALY="/root/check_anomaly.sh"
 APPLY_NEEDED=0
 ###################################################################################################
-TITLE_MAIN="Clearswift Configuration"
+TITLE_MAIN="NetCon Clearswift Configuration"
 ###################################################################################################
 # get install confirmation for specified feature
 # parameters:
@@ -162,11 +167,11 @@ install_seg() {
     rpm --import http://repo.clearswift.net/it-pub.key
     rpm -ivh cs-email-repo-conf-3.6.3-1.x86_64.rpm
     rm -rf /etc/yum.repos.d/cs-gw-rhel.repo /etc/yum.repos.d/cs-media.repo
-    wget https://www.redhat.com/security/fd431d51.txt -O /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release 
+    wget https://www.redhat.com/security/fd431d51.txt -O /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
     yum remove -y postfix rsyslog
     yum install -y cs-email --enablerepo=cs-*
     sed -i '/\/media\/os/d' /etc/fstab
-    rm -rf /etc/yum.repos.d/rhel-media.repo 
+    rm -rf /etc/yum.repos.d/rhel-media.repo
     su cs-admin
     init_cs
     get_keypress
@@ -186,6 +191,7 @@ install_rspamd() {
     rspamadm configwizard
     chkconfig rspamd on
     chkconfig redis on
+    service redis start
     /etc/init.d/rspamd start
     get_keypress
 }
@@ -411,6 +417,13 @@ enable_rspamd() {
     # Clearswift integration as milter
     echo '# Rspamd' >> $PF_IN
     echo 'smtpd_milters=inet:127.0.0.1:11332, inet:127.0.0.1:19127' >> $PF_IN
+    if ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
+        grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || echo 'learnspam: "| rspamc learn_spam"' >> $MAP_ALIASES
+        grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES || echo 'learnham: "| rspamc learn_ham"' >> $MAP_ALIASES
+        newaliases
+    fi
+    MY_HOSTNAME="$(hostname)"
+    postmulti -i postfix-inbound -x postconf mydestination | grep -q $MY_HOSTNAME || postmulti -i postfix-inbound -x postconf -e mydestination=$MY_HOSTNAME
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -581,7 +594,8 @@ enable_postscreen_deep() {
 # return values:
 # Rspamd status
 check_enabled_rspamd() {
-    if [ ! -f $PF_IN ] || ! grep -q '# Rspamd' $PF_IN; then
+    if [ ! -f $PF_IN ] || ! grep -q '# Rspamd' $PF_IN || ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES ||
+        ! postmulti -i postfix-inbound -x postconf mydestination | grep -q $(hostname); then
         echo off
     else
         echo on
@@ -677,7 +691,7 @@ check_enabled_bounce_out() {
 # return values:
 # Postscreen status
 check_enabled_postscreen() {
-    if [ ! -f $CONFIG_PF ] || ! grep -q '# Postscreen' $CONFIG_PF; then                                                               
+    if [ ! -f $CONFIG_PF ] || ! grep -q '# Postscreen' $CONFIG_PF; then
         echo off
     else
         echo on
@@ -689,7 +703,7 @@ check_enabled_postscreen() {
 # return values:
 # Postscreen Deep inspection status
 check_enabled_postscreen_deep() {
-    if [ ! -f $CONFIG_PF ] || ! grep -q '# Deep Postscreen' $CONFIG_PF; then                                                               
+    if [ ! -f $CONFIG_PF ] || ! grep -q '# Deep Postscreen' $CONFIG_PF; then
         echo off
     else
         echo on
@@ -812,6 +826,15 @@ dialog_enable() {
                     LIST_ENABLED="$LIST_ENABLED"$'\n'"Postscreen Deep";;
             esac
         done
+        if ! [[ $DIALOG_RET = *\"$DIALOG_RSPAMD\"* ]]; then
+            if grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
+                sed -i '/^learnspam: "| rspamc learn_spam"$/d' $MAP_ALIASES
+                sed -i '/^learnham: "| rspamc learn_ham"$/d' $MAP_ALIASES
+                newaliases
+            fi
+            MY_HOSTNAME="$(hostname)"
+            postmulti -i postfix-inbound -x postconf mydestination | grep -q $MY_HOSTNAME && postmulti -i postfix-inbound -x postconf -e mydestination=
+        fi
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED="$LIST_ENABLED"$'\n'"None"
         echo "$SETTINGS_END" >> $PF_IN
         [ -z "$SETTINGS_IN" ] || echo "$SETTINGS_IN" >> $PF_IN
@@ -931,8 +954,8 @@ add_key() {
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-        if ! grep -qF "^PubkeyAuthentication yes" /etc/ssh/sshd_config                    || 
-            ! grep -qF "^AuthorizedKeysFile .ssh/authorized_keys" /etc/ssh/sshd_config ]  || 
+        if ! grep -qF "^PubkeyAuthentication yes" /etc/ssh/sshd_config                    ||
+            ! grep -qF "^AuthorizedKeysFile .ssh/authorized_keys" /etc/ssh/sshd_config ]  ||
             ! [ -d /home/cs-admin/.ssh ]; then
             echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
             echo "AuthorizedKeysFile .ssh/authorized_keys" >> /etc/ssh/sshd_config
@@ -983,7 +1006,7 @@ key_auth() {
         fi
     done
 }
-# import PKCS12 keystore to CS Tomcat 
+# import PKCS12 keystore to CS Tomcat
 # parameters:
 # none
 # return values:
@@ -1011,7 +1034,7 @@ import_keystore() {
 # return values:
 # none
 get_addr_table() {
-    [ -f "$LAST_CONFIG" ] && cat "$LAST_CONFIG" | grep -o -P '(?<=\<AddressListTable\>).*(?=\<\/AddressListTable\>)' 
+    [ -f "$LAST_CONFIG" ] && cat "$LAST_CONFIG" | grep -o -P '(?<=\<AddressListTable\>).*(?=\<\/AddressListTable\>)'
 }
 # get address lists from address table
 # parameters:
@@ -1092,10 +1115,10 @@ add_mail() {
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-        if [ ! -f $CONFIG_BIND ]                            || 
-            ! grep -q 'zone "intern" {' $CONFIG_BIND        || 
-            ! grep -q '    type master;' $CONFIG_BIND       || 
-            ! grep -q '    file "intern.db";' $CONFIG_BIND  || 
+        if [ ! -f $CONFIG_BIND ]                            ||
+            ! grep -q 'zone "intern" {' $CONFIG_BIND        ||
+            ! grep -q '    type master;' $CONFIG_BIND       ||
+            ! grep -q '    file "intern.db";' $CONFIG_BIND  ||
             ! grep -q '};' $CONFIG_BIND; then
             echo 'zone "intern" {' >> $CONFIG_BIND
         	echo '    type master;' >> $CONFIG_BIND
@@ -1318,56 +1341,61 @@ recipient_validation() {
         "$DIALOG_UNKNOWN_RECIPIENT_DOMAIN" ""         $(echo $VALIDATION_ENABLED | awk '{print $10}')  \
         "$DIALOG_NON_FQDN_RECIPIENT" ""               $(echo $VALIDATION_ENABLED | awk '{print $11}')  \
         "$DIALOG_UNAUTH_PIPELINING" ""                $(echo $VALIDATION_ENABLED | awk '{print $12}')  \
-        "$DIALOG_UNVERIFIED_RECIPIENT" ""             $(echo $VALIDATION_ENABLED | awk '{print $12}')  \
+        "$DIALOG_UNVERIFIED_RECIPIENT" ""             $(echo $VALIDATION_ENABLED | awk '{print $13}')  \
         2>&1 1>&3)
     RET_CODE=$?
     exec 3>&-
-    if [ $RET_CODE = 0 ] && ! [ -z "$DIALOG_RET" ]; then
+    if [ $RET_CODE = 0 ]; then
         sed -i '/# Recipient validation/d' $PF_IN
         sed -i '/smtpd_recipient_restrictions=/d' $PF_IN
         sed -i '/smtpd_delay_reject=yes/d' $PF_IN
         sed -i '/smtpd_helo_required=yes/d' $PF_IN
         sed -i '/address_verify_transport_maps=/d' $PF_IN
-        LIST_ENABLED='# Recipient validation' >> $PF_IN
-        LIST_ENABLED='smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access'
-        for FEATURE in $DIALOG_RET; do
-            case "$FEATURE" in
-                \"$DIALOG_UNKNOWN_CLIENT\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_CLIENT";;
-                \"$DIALOG_INVALID_HOSTNAME\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_INVALID_HOSTNAME";;
-                \"$DIALOG_NON_FQDN_HOSTNAME\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_HOSTNAME";;
-                \"$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME";;
-                \"$DIALOG_NON_FQDN_HELO_HOSTNAME\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_HELO_HOSTNAME";;
-                \"$DIALOG_INVALID_HELO_HOSTNAME\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_INVALID_HELO_HOSTNAME";;
-                \"$DIALOG_UNKNOWN_HELO_HOSTNAME\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_HELO_HOSTNAME";;
-                \"$DIALOG_NON_FQDN_SENDER\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_SENDER";;
-                \"$DIALOG_UNKNOWN_SENDER_DOMAIN\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_SENDER_DOMAIN";;
-                \"$DIALOG_UNKNOWN_RECIPIENT_DOMAIN\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_RECIPIENT_DOMAIN";;
-                \"$DIALOG_NON_FQDN_RECIPIENT\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_RECIPIENT";;
-                \"$DIALOG_UNAUTH_PIPELINING\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNAUTH_PIPELINING";;
-                \"$DIALOG_UNVERIFIED_RECIPIENT\")
-                    LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNVERIFIED_RECIPIENT";;
-            esac
-        done
-        echo "$LIST_ENABLED" >> $PF_IN
-        if [[ $DIALOG_RET = *\"$DIALOG_UNVERIFIED_RECIPIENT\"* ]]; then
-            echo 'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map' >> $PF_IN
-        fi
-        echo 'smtpd_delay_reject=yes' >> $PF_IN
-        echo 'smtpd_helo_required=yes' >> $PF_IN
+        sed -i '/address_verify_map=/d' $PF_IN
+        sed -i '/address_verify_map=/d' $PF_OUT
+        if ! [ -z "$DIALOG_RET" ]; then
+            LIST_ENABLED='smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access'
+            for FEATURE in $DIALOG_RET; do
+                case "$FEATURE" in
+                    \"$DIALOG_UNKNOWN_CLIENT\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_CLIENT";;
+                    \"$DIALOG_INVALID_HOSTNAME\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_INVALID_HOSTNAME";;
+                    \"$DIALOG_NON_FQDN_HOSTNAME\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_HOSTNAME";;
+                    \"$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME";;
+                    \"$DIALOG_NON_FQDN_HELO_HOSTNAME\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_HELO_HOSTNAME";;
+                    \"$DIALOG_INVALID_HELO_HOSTNAME\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_INVALID_HELO_HOSTNAME";;
+                    \"$DIALOG_UNKNOWN_HELO_HOSTNAME\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_HELO_HOSTNAME";;
+                    \"$DIALOG_NON_FQDN_SENDER\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_SENDER";;
+                    \"$DIALOG_UNKNOWN_SENDER_DOMAIN\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_SENDER_DOMAIN";;
+                    \"$DIALOG_UNKNOWN_RECIPIENT_DOMAIN\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_RECIPIENT_DOMAIN";;
+                    \"$DIALOG_NON_FQDN_RECIPIENT\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_RECIPIENT";;
+                    \"$DIALOG_UNAUTH_PIPELINING\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNAUTH_PIPELINING";;
+                    \"$DIALOG_UNVERIFIED_RECIPIENT\")
+                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNVERIFIED_RECIPIENT";;
+                esac
+            done
+            echo "$LIST_ENABLED" >> $PF_IN
+            if [[ $DIALOG_RET = *\"$DIALOG_UNVERIFIED_RECIPIENT\"* ]]; then
+                echo 'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map' >> $PF_IN
+                echo 'address_verify_map=' >> $PF_IN
+                echo 'address_verify_map=' >> $PF_OUT
+            fi
+            echo 'smtpd_delay_reject=yes' >> $PF_IN
+            echo 'smtpd_helo_required=yes' >> $PF_IN
+        fi    
         VALIDATION_ENABLED_NEW="$(check_validation_enabled)"
-        for COUNTER in $(seq 1 14); do
+        for COUNTER in $(seq 1 13); do
             if ! [ "$(echo $VALIDATION_ENABLED | awk "{print $"$COUNTER"}")" = "$(echo $VALIDATION_ENABLED_NEW | awk "{print $"$COUNTER"}")" ]; then
                 activate_config
                 break
@@ -1376,7 +1404,7 @@ recipient_validation() {
     fi
 }
 ###################################################################################################
-# write some example config files 
+# write some example config files
 ###################################################################################################
 # write example configuration files
 # parameters:
@@ -1451,7 +1479,7 @@ write_examples() {
         echo '# fix broken sender address #' >> $FILE_CONFIG
         echo '#############################' >> $FILE_CONFIG
         echo '#/^<.*>(.*)@(.*)>/   ${1}@${2}' >> $FILE_CONFIG
-    fi    
+    fi
 }
 ###################################################################################################
 # select Postfix configuration to edit in dialog menu
@@ -1462,24 +1490,24 @@ write_examples() {
 dialog_postfix() {
     DIALOG_WHITELIST_PF="Postfix whitelist"
     DIALOG_WHITELIST_POSTSCREEN="Postscreen whitelist"
-    DIALOG_HEADER_REWRITE="Header rewrite rules"
     DIALOG_ESMTP_ACCESS="ESMTP access"
     DIALOG_SENDER_ACCESS="Sender access"
     DIALOG_RECIPIENT_ACCESS="Recipient access"
     DIALOG_HELO_ACCESS="HELO access"
     DIALOG_SENDER_REWRITE="Sender rewrite"
+    DIALOG_RESTRICTIONS="Postfix restrictions"
     while [ 1 ]; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix configuration" 0 0 0 \
             "$DIALOG_WHITELIST_PF" ""                                                           \
             "$DIALOG_WHITELIST_POSTSCREEN" ""                                                   \
-            "$DIALOG_HEADER_REWRITE" ""                                                         \
             "$DIALOG_ESMTP_ACCESS" ""                                                           \
             "$DIALOG_SENDER_ACCESS" ""                                                          \
             "$DIALOG_RECIPIENT_ACCESS" ""                                                       \
             "$DIALOG_HELO_ACCESS" ""                                                            \
             "$DIALOG_SENDER_REWRITE" ""                                                         \
+            "$DIALOG_RESTRICTIONS" ""                                                           \
             2>&1 1>&3)
         RET_CODE=$?
         exec 3>&-
@@ -1489,8 +1517,6 @@ dialog_postfix() {
                     $TXT_EDITOR $WHITELIST_PF;;
                 "$DIALOG_WHITELIST_POSTSCREEN")
                     $TXT_EDITOR $WHITELIST_POSTSCREEN;;
-                "$DIALOG_HEADER_REWRITE")
-                    $TXT_EDITOR $HEADER_REWRITE;;
                 "$DIALOG_ESMTP_ACCESS")
                     $TXT_EDITOR $ESMTP_ACCESS;;
                 "$DIALOG_SENDER_ACCESS")
@@ -1501,6 +1527,8 @@ dialog_postfix() {
                     $TXT_EDITOR $HELO_ACCESS;;
                 "$DIALOG_SENDER_REWRITE")
                     $TXT_EDITOR $SENDER_REWRITE;;
+                "$DIALOG_RESTRICTIONS")
+                    dialog_restrictions;;
             esac
         else
             break
@@ -1718,15 +1746,15 @@ dialog_other() {
     DIALOG_ANOMALY="Sender anomaly detection"
     while [ 1 ]; do
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
-            --cancel-label "Back" --ok-label "Edit" --menu "Other configurations" 0 40 0        \
-            "$DIALOG_WHITELIST_RSPAMD" ""                                                       \
-            "$DIALOG_AUTO_UPDATE" ""                                                            \
-            "$DIALOG_MAIL_INTERN" ""                                                            \
-            "$DIALOG_CONFIG_FW" ""                                                              \
-            "$DIALOG_RECENT_UPDATES" ""                                                         \
-            "$DIALOG_REPORT" ""                                                                 \
-            "$DIALOG_ANOMALY" ""                                                                \
+        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                   \
+            --cancel-label "Back" --ok-label "Edit" --menu "Manage other configuration" 0 40 0   \
+            "$DIALOG_WHITELIST_RSPAMD" ""                                                        \
+            "$DIALOG_AUTO_UPDATE" ""                                                             \
+            "$DIALOG_MAIL_INTERN" ""                                                             \
+            "$DIALOG_CONFIG_FW" ""                                                               \
+            "$DIALOG_RECENT_UPDATES" ""                                                          \
+            "$DIALOG_REPORT" ""                                                                  \
+            "$DIALOG_ANOMALY" ""                                                                 \
             2>&1 1>&3)
         RET_CODE=$?
         exec 3>&-
@@ -1788,7 +1816,7 @@ show_tls_out() {
     IP_PATTERN='\[10\.'             #  10.0.0.0/8
     IP_PATTERN+='|\[192\.168\.'     # 192.168.0.0/16
     for i in $(seq 16 31); do       # 172.16.0.0/12
-        IP_PATTERN+="|\[172\.$i\." 
+        IP_PATTERN+="|\[172\.$i\."
     done
     STATS_INFO="non-TLS: $(grep postfix-outbound "$LOG_TODAY" | grep tls_used=0 | egrep -v $IP_PATTERN | wc -l)"
     STATS_INFO="$STATS_INFO"$'\n\n'"Top 10:"$'\n'
@@ -1805,7 +1833,7 @@ show_general() {
     IP_PATTERN='\[10\.'             #  10.0.0.0/8
     IP_PATTERN+='|\[192\.168\.'     # 192.168.0.0/16
     for i in $(seq 16 31); do       # 172.16.0.0/12
-        IP_PATTERN+="|\[172\.$i\." 
+        IP_PATTERN+="|\[172\.$i\."
     done
     STATS_INFO="Total inbound:  $(grep 'relay\=' "$LOG_TODAY" | egrep "$IP_PATTERN" | wc -l)"
     STATS_INFO="$STATS_INFO"$'\n\n'"Total outbound: $(grep 'relay\=' "$LOG_TODAY" | grep -v "127.0.0.1" | egrep -v "$IP_PATTERN\|smtp-watch" | wc -l)"
@@ -1828,7 +1856,7 @@ search_log() {
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-        $DIALOG --backtitle "$TITLE_MAIN" --title "Postfix daily mail log" --clear --msgbox "$(grep "$DIALOG_RET" "$LOG_FILES$(date +"%Y-%m-%d").log" | tail -30)" 0 0
+        $DIALOG --backtitle "Postfix infos & stats" --title "Postfix daily mail log" --clear --msgbox "$(grep "$DIALOG_RET" "$LOG_FILES$(date +"%Y-%m-%d").log" | tail -30)" 0 0
     fi
 }
 # select configuration to show in dialog menu
@@ -2026,7 +2054,6 @@ DIALOG_SEG="Install Clearswift SEG"
 DIALOG_INSTALL="Install features"
 DIALOG_ENABLE="Enable features"
 DIALOG_POSTFIX="Postfix configs"
-DIALOG_RESTRICTIONS="Postfix restrictions"
 DIALOG_CLEARSWIFT="Clearswift configs"
 DIALOG_OTHER="Other configs"
 DIALOG_SHOW="Postfix infos & stats"
@@ -2037,7 +2064,6 @@ while [ 1 ]; do
         ARRAY+=("$DIALOG_INSTALL" "")
         ARRAY+=("$DIALOG_ENABLE" "")
         ARRAY+=("$DIALOG_POSTFIX" "")
-        ARRAY+=("$DIALOG_RESTRICTIONS" "")
         ARRAY+=("$DIALOG_CLEARSWIFT" "")
         ARRAY+=("$DIALOG_OTHER" "")
         ARRAY+=("$DIALOG_SHOW" "")
@@ -2046,8 +2072,8 @@ while [ 1 ]; do
         ARRAY+=("$DIALOG_SEG" "")
     fi
     exec 3>&1
-    DIALOG_RET=$($DIALOG --clear --title "$TITLE_MAIN"                         \
-        --cancel-label "Exit" --menu "Advanced Clearswift configuration" 0 0 0 \
+    DIALOG_RET=$($DIALOG --clear --title "$TITLE_MAIN $VERSION_MENU"           \
+        --cancel-label "Exit" --menu "" 0 0 0 \
         "${ARRAY[@]}" 2>&1 1>&3)
     RET_CODE=$?
     exec 3>&-
@@ -2061,8 +2087,6 @@ while [ 1 ]; do
                 dialog_enable;;
             "$DIALOG_POSTFIX")
                 dialog_postfix;;
-            "$DIALOG_RESTRICTIONS")
-                dialog_restrictions;;
             "$DIALOG_CLEARSWIFT")
                 dialog_clearswift;;
             "$DIALOG_OTHER")
