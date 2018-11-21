@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.2.2 for Clearswift SEG >= 4.8
+# menu.sh V1.5.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,11 +55,11 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - fixed bugs with recipient restrictions
-# - disabled persistent cache for recipient verification
-# - implemented rspamd learnspam/learnham email aliases
-# - removed header-rewrite since it also mangles incoming mail headers
-# - moved Postfix restrictions to Postfix config menu
+# - added internal DNS forwarding
+# - improved accuracy of Postfix stats
+# - added multi-recipient check for anomaly detection
+# - added Cron job for mqueue cleanup
+# - bug fixes
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -71,8 +71,10 @@ CONFIG_FW="/opt/cs-gateway/custom/custom.rules"
 CONFIG_INTERN="/var/named/intern.db"
 CONFIG_BIND="/etc/named.conf"
 CONFIG_AUTO_UPDATE="/etc/yum/yum-cron.conf"
+CONFIG_AUTO_UPDATE_ALT="/etc/sysconfig/yum-cron"
 CONFIG_LDAP="/var/cs-gateway/ldap/schedule.properties"
 MAP_ALIASES="/etc/aliases"
+MAP_TRANSPORT="/etc/postfix-outbound/transport.map"
 CUSTOM_DIR="/opt/cs-gateway/custom"
 DIR_CERT="/var/lib/acme/live/$(hostname)"
 DIR_COMMANDS="/opt/cs-gateway/scripts"
@@ -83,9 +85,10 @@ HELO_ACCESS="$DIR_MAPS/check_helo_access"
 RECIPIENT_ACCESS="$DIR_MAPS/check_recipient_access"
 SENDER_ACCESS="$DIR_MAPS/check_sender_access"
 SENDER_REWRITE="$DIR_MAPS/sender_canonical_maps"
-WHITELIST_PF="$DIR_MAPS/check_client_access_ips"
+WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
+WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
+HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
 WHITELIST_RSPAMD="/etc/rspamd/rspamd.conf.local"
-WHITELIST_POSTSCREEN="$DIR_MAPS/check_client_access_ips"
 LOG_FILES="/var/log/cs-gateway/mail."
 LAST_CONFIG="/var/cs-gateway/deployments/lastAppliedConfiguration.xml"
 PASSWORD_KEYSTORE="changeit"
@@ -102,6 +105,7 @@ CRON_STATS="/etc/cron.monthly/stats_report.sh"
 SCRIPT_STATS="/root/send_report.sh"
 CRON_ANOMALY="/etc/cron.d/anomaly_detect.sh"
 SCRIPT_ANOMALY="/root/check_anomaly.sh"
+CRON_CLEANUP="/etc/cron.daily/cleanup_mqueue.sh"
 APPLY_NEEDED=0
 ###################################################################################################
 TITLE_MAIN="NetCon Clearswift Configuration"
@@ -191,8 +195,8 @@ install_rspamd() {
     rspamadm configwizard
     chkconfig rspamd on
     chkconfig redis on
-    service redis start
-    /etc/init.d/rspamd start
+    [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
+    [ -f /etc/init.d/rspamd ] && /etc/init.d/rspamd start || service rspamd start
     get_keypress
 }
 # install ACME Tool
@@ -417,13 +421,12 @@ enable_rspamd() {
     # Clearswift integration as milter
     echo '# Rspamd' >> $PF_IN
     echo 'smtpd_milters=inet:127.0.0.1:11332, inet:127.0.0.1:19127' >> $PF_IN
+    echo "mydestination=$(hostname)" >> $PF_IN
     if ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
         grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || echo 'learnspam: "| rspamc learn_spam"' >> $MAP_ALIASES
         grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES || echo 'learnham: "| rspamc learn_ham"' >> $MAP_ALIASES
         newaliases
     fi
-    MY_HOSTNAME="$(hostname)"
-    postmulti -i postfix-inbound -x postconf mydestination | grep -q $MY_HOSTNAME || postmulti -i postfix-inbound -x postconf -e mydestination=$MY_HOSTNAME
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -594,8 +597,7 @@ enable_postscreen_deep() {
 # return values:
 # Rspamd status
 check_enabled_rspamd() {
-    if [ ! -f $PF_IN ] || ! grep -q '# Rspamd' $PF_IN || ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES ||
-        ! postmulti -i postfix-inbound -x postconf mydestination | grep -q $(hostname); then
+    if [ ! -f $PF_IN ] || ! grep -q '# Rspamd' $PF_IN || ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
         echo off
     else
         echo on
@@ -832,8 +834,7 @@ dialog_enable() {
                 sed -i '/^learnham: "| rspamc learn_ham"$/d' $MAP_ALIASES
                 newaliases
             fi
-            MY_HOSTNAME="$(hostname)"
-            postmulti -i postfix-inbound -x postconf mydestination | grep -q $MY_HOSTNAME && postmulti -i postfix-inbound -x postconf -e mydestination=
+            postmulti -i postfix-inbound -x postconf mydestination | grep -q "$(hostname)" && postmulti -i postfix-inbound -x postconf -e mydestination=
         fi
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED="$LIST_ENABLED"$'\n'"None"
         echo "$SETTINGS_END" >> $PF_IN
@@ -933,7 +934,7 @@ ssh_access() {
             else
                 if [ $RET_CODE = 3 ]; then
                     sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 22 -s $(echo "$DIALOG_RET" | sed 's/\//\\\//g') -j ACCEPT/d" $CONFIG_FW
-                    iptables -D INPUT 4 -i eth0 -p tcp --dport 22 -s $DIALOG_RET
+                    iptables -D INPUT -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT
                 else
                     break
                 fi
@@ -1102,6 +1103,42 @@ toggle_password() {
         fi
     fi
 }
+# toggle mqueue cleanup
+# parameters:
+# none
+# return values:
+# none
+toggle_cleanup() {
+    PACKED_SCRIPT="
+    H4sIAL8b3FsAA22PS0vDQBSF9/MrrkkXLZpM2pUoBUMbasEICnElhMn0JhnM3KnzUIP43w0+cOPi                                                                                                     
+    wIHD98GJT3ijiDfC9YzFIAcUttbPAQOmroeHZZqlGYunaWOOo1Vd72EuF7DKludwi35jCCryaAl7                                                                                                     
+    jeQatMIH6mCnm+szIPTSUDLFhcEr6lJp9JcuD7439gJKYSVsFdonhwRznR5++tW/7IKx7f6+Lu+q                                                                                                     
+    oirWEX8RlkuXdMLjqxi5Fmrg7mjMwL9P1CZ4HrEy39/U+a5YrxhrFR0gmv1pIkj8eERoIdFeaYTT                                                                                                     
+    aPYLTBu+oQSrIWnh/QMeL9knhMlH1DQBAAA=
+    "
+
+    if [ -f "$CRON_CLEANUP" ]; then
+        STATUS_CURRENT="enabled"
+        STATUS_TOGGLE="Disable"
+    else
+        STATUS_CURRENT="disabled"
+        STATUS_TOGGLE="Enable"
+    fi
+    exec 3>&1
+    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle CS mqueue cleanup"         \
+        --yesno "CS mqueue cleanup is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60        \
+        2>&1 1>&3
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ]; then
+        if [ $STATUS_CURRENT = "disabled" ]; then
+            printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_CLEANUP
+            chmod 700 $CRON_CLEANUP
+        else
+            rm -f $CRON_CLEANUP
+        fi
+    fi
+}
 # add IP address for mail.intern zone in dialog inputbox
 # parameters:
 # none
@@ -1109,17 +1146,13 @@ toggle_password() {
 # error code - 0 for added, 1 for cancel
 add_mail() {
     exec 3>&1
-    DIALOG_RET=$(dialog --clear --backtitle "Manage SSH access"             \
+    DIALOG_RET=$(dialog --clear --backtitle "Manage mail.intern access"     \
         --title "Add mail server IP to mail.intern"                         \
         --inputbox "Enter mail server IP for mail.intern" 0 50 2>&1 1>&3)
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-        if [ ! -f $CONFIG_BIND ]                            ||
-            ! grep -q 'zone "intern" {' $CONFIG_BIND        ||
-            ! grep -q '    type master;' $CONFIG_BIND       ||
-            ! grep -q '    file "intern.db";' $CONFIG_BIND  ||
-            ! grep -q '};' $CONFIG_BIND; then
+        if [ ! -f $CONFIG_BIND ] || ! grep -q '^zone "intern" {' $CONFIG_BIND; then
             echo 'zone "intern" {' >> $CONFIG_BIND
         	echo '    type master;' >> $CONFIG_BIND
 	        echo '    file "intern.db";' >> $CONFIG_BIND
@@ -1170,6 +1203,88 @@ mail_intern() {
             else
                 if [ $RET_CODE = 3 ]; then
                     sed -i "/^mail.*$DIALOG_RET/d" $CONFIG_INTERN
+                else
+                    break
+                fi
+            fi
+        fi
+    done
+    rndc reload
+}
+# add zone name and IP in dialog inputbox
+# parameters:
+# none
+# return values:
+# error code - 0 for added, 1 for cancel
+add_forward() {
+    exec 3>&1
+    DIALOG_RET=$(dialog --clear --backtitle "Internal DNS forwarding"       \
+        --title "Add zone for internal DNS forwarding"                      \
+        --inputbox "Enter zone name" 0 50 2>&1 1>&3)
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        ZONE_NAME="$DIALOG_RET"
+        exec 3>&1
+        DIALOG_RET=$(dialog --clear --backtitle "Internal DNS forwarding"       \
+            --title "Add zone for internal DNS forwarding"                      \
+            --inputbox "Enter IP" 0 50 2>&1 1>&3)
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+            echo "zone \"$ZONE_NAME\" {" >> $CONFIG_BIND
+            echo '    type forward;' >> $CONFIG_BIND
+    	    echo "    forwarders { $DIALOG_RET; };" >> $CONFIG_BIND
+            echo '    forward only;' >> $CONFIG_BIND
+            echo '};' >> $CONFIG_BIND
+            return 0
+        else
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+# add/remove zones for internal DNS forwarding in dialog menu
+# parameters:
+# none
+# return values:
+# none
+internal_forwarding() {
+    while [ 1 ]; do
+        LIST_FORWARD=""
+        if [ -f $CONFIG_BIND ]; then
+            ZONE_NAME=""
+            while read LINE; do
+                if echo "$LINE" | grep -q '^zone ".*" {$'; then
+                    ZONE_NAME="$(echo $LINE | awk 'match($0, /^zone "(.*)" {$/, a) {print a[1]}')"
+                    ZONE_IP=""
+                fi
+                if ! [ -z "$ZONE_NAME" ] && echo "$LINE" | grep -q '^\s*forwarders { \S*; };$'; then
+                    LIST_FORWARD+=" $ZONE_NAME($(echo $LINE | awk 'match($0, /forwarders { (.*); };$/, a) {print a[1]}'))"
+                    ZONE_NAME=""
+                fi
+            done < <(sed -n '/^zone ".*" {$/,/^}$/p' $CONFIG_BIND)
+        fi
+        if [ -z "$LIST_FORWARD" ]; then
+            add_forward || break
+        else
+            ARRAY=()
+            for ZONE_FORWARD in $LIST_FORWARD; do
+                ARRAY+=($ZONE_FORWARD "")
+            done
+            exec 3>&1
+            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Manage configuration"                  \
+                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
+                    --menu "Add/remove zones for internal DNS forwarding" 0 0 0                         \
+                    "${ARRAY[@]}" 2>&1 1>&3)
+            RET_CODE=$?
+            exec 3>&-
+            if [ $RET_CODE = 0 ]; then
+                add_forward
+            else
+                if [ $RET_CODE = 3 ]; then
+                    sed -i "/zone \"$(echo $DIALOG_RET | awk -F\( '{print $1}')\" {/,/^}/d" $CONFIG_BIND
                 else
                     break
                 fi
@@ -1346,13 +1461,15 @@ recipient_validation() {
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
-        sed -i '/# Recipient validation/d' $PF_IN
-        sed -i '/smtpd_recipient_restrictions=/d' $PF_IN
-        sed -i '/smtpd_delay_reject=yes/d' $PF_IN
-        sed -i '/smtpd_helo_required=yes/d' $PF_IN
-        sed -i '/address_verify_transport_maps=/d' $PF_IN
-        sed -i '/address_verify_map=/d' $PF_IN
-        sed -i '/address_verify_map=/d' $PF_OUT
+        if [ -f $PF_IN ]; then
+            sed -i '/# Recipient validation/d' $PF_IN
+            sed -i '/smtpd_recipient_restrictions=/d' $PF_IN
+            sed -i '/smtpd_delay_reject=yes/d' $PF_IN
+            sed -i '/smtpd_helo_required=yes/d' $PF_IN
+            sed -i '/address_verify_transport_maps=/d' $PF_IN
+            sed -i '/address_verify_map=/d' $PF_IN
+            sed -i '/address_verify_map=/d' $PF_OUT
+        fi
         if ! [ -z "$DIALOG_RET" ]; then
             LIST_ENABLED='smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access'
             for FEATURE in $DIALOG_RET; do
@@ -1413,24 +1530,21 @@ recipient_validation() {
 # none
 write_examples() {
     [ -d $DIR_MAPS ] || mkdir -p $DIR_MAPS
-    FILE_CONFIG="$DIR_MAPS/check_postscreen_access_ips"
-    if [ ! -f $FILE_CONFIG ]; then
-        echo '######################################################################' >> $FILE_CONFIG
-        echo '# IPs vom postscreen ausschliessen, Whitelisten (Monitoring Systeme) #' >> $FILE_CONFIG
-        echo '######################################################################' >> $FILE_CONFIG
-        echo '#NetCon (CIDR)' >> $FILE_CONFIG
-        echo '#88.198.215.226 permit' >> $FILE_CONFIG
-        echo '#85.10.249.206  permit' >> $FILE_CONFIG
+    if [ ! -f $WHITELIST_POSTSCREEN ]; then
+        echo '######################################################################' >> $WHITELIST_POSTSCREEN
+        echo '# IPs vom postscreen ausschliessen, Whitelisten (Monitoring Systeme) #' >> $WHITELIST_POSTSCREEN
+        echo '######################################################################' >> $WHITELIST_POSTSCREEN
+        echo '#NetCon (CIDR)' >> $WHITELIST_POSTSCREEN
+        echo '#88.198.215.226 permit' >> $WHITELIST_POSTSCREEN
+        echo '#85.10.249.206  permit' >> $WHITELIST_POSTSCREEN
     fi
-    FILE_CONFIG="$DIR_MAPS/check_client_access_ips"
-    if [ ! -f $FILE_CONFIG ]; then
-        echo '############################################################' >> $FILE_CONFIG
-        echo '# IP-Adressen erlauben, die ein seltsames Verhalten zeigen #' >> $FILE_CONFIG
-        echo '############################################################' >> $FILE_CONFIG
-
-        echo '# Postfix IP Whitelist (CIDR)' >> $FILE_CONFIG
-        echo '#1.2.3.4  REJECT unwanted newsletters!' >> $FILE_CONFIG
-        echo '#1.2.3.0/24  OK' >> $FILE_CONFIG
+    if [ ! -f $WHITELIST_POSTFIX ]; then
+        echo '############################################################' >> $WHITELIST_POSTFIX
+        echo '# IP-Adressen erlauben, die ein seltsames Verhalten zeigen #' >> $WHITELIST_POSTFIX
+        echo '############################################################' >> $WHITELIST_POSTFIX
+        echo '# Postfix IP Whitelist (CIDR)' >> $WHITELIST_POSTFIX
+        echo '#1.2.3.4  REJECT unwanted newsletters!' >> $WHITELIST_POSTFIX
+        echo '#1.2.3.0/24  OK' >> $WHITELIST_POSTFIX
     fi
     if [ ! -f $SENDER_ACCESS ]; then
         echo '##########################################' >> $SENDER_ACCESS
@@ -1452,33 +1566,30 @@ write_examples() {
         echo '# HELO String des Mailservers pruefen #' >> $HELO_ACCESS
         echo '#######################################' >> $HELO_ACCESS
     fi
-    FILE_CONFIG="$DIR_MAPS/esmtp_access"
-    if [ ! -f $FILE_CONFIG ]; then
-        echo '##################################' >> $FILE_CONFIG
-        echo '# Postfix ESMTP Verbs            #' >> $FILE_CONFIG
-        echo '# remove unnecessary ESMTP Verbs #' >> $FILE_CONFIG
-        echo '##################################' >> $FILE_CONFIG
-        echo '#130.180.71.126/32      silent-discard, auth' >> $FILE_CONFIG
-        echo '#212.202.158.254/32     silent-discard, auth' >> $FILE_CONFIG
-        echo '#0.0.0.0/0              silent-discard, etrn, enhancedstatuscodes, dsn, pipelining, auth' >> $FILE_CONFIG
+    if [ ! -f $ESMTP_ACCESS ]; then
+        echo '##################################' >> $ESMTP_ACCESS
+        echo '# Postfix ESMTP Verbs            #' >> $ESMTP_ACCESS
+        echo '# remove unnecessary ESMTP Verbs #' >> $ESMTP_ACCESS
+        echo '##################################' >> $ESMTP_ACCESS
+        echo '#130.180.71.126/32      silent-discard, auth' >> $ESMTP_ACCESS
+        echo '#212.202.158.254/32     silent-discard, auth' >> $ESMTP_ACCESS
+        echo '#0.0.0.0/0              silent-discard, etrn, enhancedstatuscodes, dsn, pipelining, auth' >> $ESMTP_ACCESS
     fi
-    FILE_CONFIG="$DIR_MAPS/smtp_header_checks"
-    if [ ! -f $FILE_CONFIG ]; then
-        echo '#####################################' >> $FILE_CONFIG
-        echo '# Postfix Outbound Header Rewriting #' >> $FILE_CONFIG
-        echo '#####################################' >> $FILE_CONFIG
-        echo '#/^\s*Received: from \S+ \(\S+ \[\S+\]\)(.*)/ REPLACE Received: from [127.0.0.1] (localhost [127.0.0.1])$1' >> $FILE_CONFIG
-        echo '#/^\s*User-Agent/        IGNORE' >> $FILE_CONFIG
-        echo '#/^\s*X-Enigmail/        IGNORE' >> $FILE_CONFIG
-        echo '#/^\s*X-Mailer/          IGNORE' >> $FILE_CONFIG
-        echo '#/^\s*X-Originating-IP/  IGNORE' >> $FILE_CONFIG
+    if [ ! -f $HEADER_REWRITE ]; then
+        echo '#####################################' >> $HEADER_REWRITE
+        echo '# Postfix Outbound Header Rewriting #' >> $HEADER_REWRITE
+        echo '#####################################' >> $HEADER_REWRITE
+        echo '#/^\s*Received: from \S+ \(\S+ \[\S+\]\)(.*)/ REPLACE Received: from [127.0.0.1] (localhost [127.0.0.1])$1' >> $HEADER_REWRITE
+        echo '#/^\s*User-Agent/        IGNORE' >> $HEADER_REWRITE
+        echo '#/^\s*X-Enigmail/        IGNORE' >> $HEADER_REWRITE
+        echo '#/^\s*X-Mailer/          IGNORE' >> $HEADER_REWRITE
+        echo '#/^\s*X-Originating-IP/  IGNORE' >> $HEADER_REWRITE
     fi
-    FILE_CONFIG="$DIR_MAPS/sender_canonical_maps"
-    if [ ! -f $FILE_CONFIG ]; then
-        echo '#############################' >> $FILE_CONFIG
-        echo '# fix broken sender address #' >> $FILE_CONFIG
-        echo '#############################' >> $FILE_CONFIG
-        echo '#/^<.*>(.*)@(.*)>/   ${1}@${2}' >> $FILE_CONFIG
+    if [ ! -f $SENDER_REWRITE ]; then
+        echo '#############################' >> $SENDER_REWRITE
+        echo '# fix broken sender address #' >> $SENDER_REWRITE
+        echo '#############################' >> $SENDER_REWRITE
+        echo '#/^<.*>(.*)@(.*)>/   ${1}@${2}' >> $SENDER_REWRITE
     fi
 }
 ###################################################################################################
@@ -1488,33 +1599,35 @@ write_examples() {
 # return values:
 # none
 dialog_postfix() {
-    DIALOG_WHITELIST_PF="Postfix whitelist"
+    DIALOG_WHITELIST_POSTFIX="Postfix whitelist"
     DIALOG_WHITELIST_POSTSCREEN="Postscreen whitelist"
     DIALOG_ESMTP_ACCESS="ESMTP access"
     DIALOG_SENDER_ACCESS="Sender access"
     DIALOG_RECIPIENT_ACCESS="Recipient access"
     DIALOG_HELO_ACCESS="HELO access"
     DIALOG_SENDER_REWRITE="Sender rewrite"
+    DIALOG_HEADER_REWRITE="Header rewrite"
     DIALOG_RESTRICTIONS="Postfix restrictions"
     while [ 1 ]; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix configuration" 0 0 0 \
-            "$DIALOG_WHITELIST_PF" ""                                                           \
+            "$DIALOG_WHITELIST_POSTFIX" ""                                                      \
             "$DIALOG_WHITELIST_POSTSCREEN" ""                                                   \
             "$DIALOG_ESMTP_ACCESS" ""                                                           \
             "$DIALOG_SENDER_ACCESS" ""                                                          \
             "$DIALOG_RECIPIENT_ACCESS" ""                                                       \
             "$DIALOG_HELO_ACCESS" ""                                                            \
             "$DIALOG_SENDER_REWRITE" ""                                                         \
+            "$DIALOG_HEADER_REWRITE" ""                                                         \
             "$DIALOG_RESTRICTIONS" ""                                                           \
             2>&1 1>&3)
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
-                "$DIALOG_WHITELIST_PF")
-                    $TXT_EDITOR $WHITELIST_PF;;
+                "$DIALOG_WHITELIST_POSTFIX")
+                    $TXT_EDITOR $WHITELIST_POSTFIX;;
                 "$DIALOG_WHITELIST_POSTSCREEN")
                     $TXT_EDITOR $WHITELIST_POSTSCREEN;;
                 "$DIALOG_ESMTP_ACCESS")
@@ -1527,6 +1640,8 @@ dialog_postfix() {
                     $TXT_EDITOR $HELO_ACCESS;;
                 "$DIALOG_SENDER_REWRITE")
                     $TXT_EDITOR $SENDER_REWRITE;;
+                "$DIALOG_HEADER_REWRITE")
+                    $TXT_EDITOR $HEADER_REWRITE;;
                 "$DIALOG_RESTRICTIONS")
                     dialog_restrictions;;
             esac
@@ -1573,6 +1688,7 @@ dialog_clearswift() {
     DIALOG_IMPORT_KEYSTORE="Import PKCS12 for Tomcat"
     DIALOG_EXPORT_ADDRESS="Export address lists"
     DIALOG_TOGGLE_PASSWORD="Toggle CS admin password check"
+    DIALOG_TOGGLE_CLEANUP="Toggle mqueue cleanup"
     while [ 1 ]; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                     \
@@ -1584,6 +1700,7 @@ dialog_clearswift() {
             "$DIALOG_IMPORT_KEYSTORE" ""                                                           \
             "$DIALOG_EXPORT_ADDRESS" ""                                                            \
             "$DIALOG_TOGGLE_PASSWORD" ""                                                           \
+            "$DIALOG_TOGGLE_CLEANUP" ""                                                            \
             2>&1 1>&3)
         RET_CODE=$?
         exec 3>&-
@@ -1605,6 +1722,8 @@ dialog_clearswift() {
                     export_address_list;;
                 "$DIALOG_TOGGLE_PASSWORD")
                     toggle_password;;
+                "$DIALOG_TOGGLE_CLEANUP")
+                    toggle_cleanup;;
             esac
         else
             break
@@ -1641,24 +1760,31 @@ dialog_report() {
                         rm -f $SCRIPT_STATS $CRON_STATS
                     else
                         PACKED_SCRIPT="
-                        H4sICPTZtVsAA3N0YXRzMi5zaAC9Vm1vIjcQ/r6/YuogAaXLskR5uUv2lLTiqpOaawS5qlK4RmbX
-                        gFuvzdkGwgX62zveXWAhKKemUhchvDPj8fPMi4ej74IBl8GAmrF3BD8JRrWZ86GFXudnEGoEVFKx
-                        +Mo0aj/NGfRUmjINNZP9XklmYyV9/JqpsFyOmrFK62gbtoJ2Kzz3jnCNboZcMANDpUFQY+G4BQld
-                        GK/QRCSYUR3gWxAbf0Qtm9NFkFIumt83UUrQya3mM1TAh1voUjlixru9vrvrdD9G1f592Oo3q7D3
-                        OBDN7BOcr40bUXWJ5m/a/WZ4el7ahMZv2k6W2YennsPKgUuo1Az7AuEpHId1uIBEbTacuQ25fdtz
-                        ss0hxB1yhodUeL9JvERJ5v143evU6vDk5bs/yIGaygSoMdMUYzPZ8kuY4DOmF7gwGFNquZLZLhaP
-                        FZBi51tENtJsAlXNBF30oypUinjCkmUaUikQEVjOY/BFnRSnXwtR9m7AjqkFqhlIZZF1ji2dYq4G
-                        DNTUZoISiF8L0YsoMoU/AxK2z7JMhGQNzUnX6PpLk9qJP6c2Hj9DOmKIC9Fq9ieLLUtAcInJ3yLp
-                        FootEjg5aUEZx9rjysMoS/tgLLVmk4vcDS5usOCg53Q7VUpKVtFLz9YwW7iEwzJWYppK8O2uMncn
-                        sXfufumtA76hQBJusKckEoOhVinZDypBCtpaYaLWXsRes5/O/4LqUxYbqJytqrA0SltYTiX/An5c
-                        vPpSw3LMaPISE7VfFxNl7JA/+mvFPhLE8DA1LIlapdJYV8YBav/R3z7VTOC/x8ySrbztQrBW3JcU
-                        IW6Afx2bOzXBqwgrOOYTziSW1zrfJV6H+geet3GOHwo8p5AlC7uiagKrossgGKHAavATIP13P5BX
-                        pLKAuwnwFve38L6u3/8/SobJhOkdGsS1R3T5rEGelVkBE8dCjUfhBb+MPr6/4I1G/YkPoVbh8DcE
-                        ua8AL5aCDF+tSmwK9QE+Th/8UQmSb7beysPj7sH/iuHE6H6+wJublafDJ0NHDLuvBcwNUH+TveJ2
-                        euQWQm/IS35qwmzpt98FCZsFciqw7Q74lyr7W5APdDrDI+hAsJLztnN+8/tDr9P9rdONKrWEj6Bh
-                        xo5HQ6pEGsNiSB/xgsg9Io8l5N1Grna7sA5Fu2UBAOsuaD+E3HzHsERnc/Yh+DGVbsINuRtvzp1h
-                        GmdtCf+xw1+aE3haZugbvAsqtTEWhqQpq3+GGyXtWCzyQENujLWDeAn4PXBFHpXgvG2foFxDycfV
-                        do3lUM9i4f0DkYwlVJMJAAA=
+                        H4sIAFgu9VsAA71Xe3PiNhD/n0+xVTwHHDXG3Fxyl5xvQnOkk5mEpEA67UCaUbAAtUbmLEGSC/Sz
+                        dyU/sAlzz5k6D6zVand/+9Ky95Nzx4VzR+W0tAcnAaORvOdjBb32rxCEE6CCBo+fWIS71/cMeuFs
+                        xiKoSPN5LJgahcLGP7kIFBeT+iicVZHXbTjNhvumtIfvKGbMAyZhHEYQUKngVQN8+ihLyY5HnCWN
+                        HFw5I2lPqGL39NGZUR7UX9aRSkoXravbfrfV6V1ddvvIjmqdeSjVmD/Y4ULdhQvhOyqiQs7DSNVn
+                        dE5Q8YQp4EKxCDGAFgcRC+gj7sxpRGcMd+QhrkQoGH5ETC0iAUsaLJih7zqLMm9TeqUKTyXAp9Xt
+                        tv70KlWzOD/r9W+77XOkEKsyidgcynKm5ofDQf3l8KYMVgENrIDe/wPlp3mEcsFqrssJyT6F8mA4
+                        xN8bPJVnqBKjSfuz07pox9rQXLA2yo/ADw2Xfk4urzv9dtdrZJRTpHzwCMkIWtjJ5fl5+6Tf/qBl
+                        EevJ4Boc36xJQZp++BgGyLJRT8DDdYWNpiFYG0Fb6FxtPNwcgZoyURCY+XFgJdbeeHn5gLIf5hF8
+                        UYX2D9TArZJn8mPQboE+5oVl6imSqksIWxJ9nTLpYgD2J8RupCM4ePEiRlLzKgUELokzJDt8cYnR
+                        Ou22f7tud/ppML4hECYIRndBkrZhtTLx+RpnEbAnasNbELWbf1f8trBsVOZSjBfhG33PbH+eMaU1
+                        FuNVxJfYGeDsCrpUTJgsXbX6GJiOVx4O3MawXt6Otu5CdfPjvEmZa155hexvm8O6u/8mdwiZ3zY1
+                        zfC7+yUdBm5qqiLZR3D34ZVbBe3+7MCBPhDzNw2gTAnRSg5QicWHdVIyiM90GnVa57nekOslmFtJ
+                        KIt8SSxzktM4FfnQbZL52GmcYd0ZDvHfRLeJX1q9dtam9uBMmFYJVMrFDDvyfONUnwV8yaJHfJHY
+                        yaniochFKTl5CGlLM+1w6GE7S7o4rJjZIVZiLIbyfgR2kJTNHrSCIC9dYhJRBTRi2IF1p45tmy3w
+                        hrhjkPb1nBGXCemzVkDSchVVC+lJJhQ2VEOzl0Dc5oHJCZek9mpqavJKN2r7nqrR9Jn1+jahgb4H
+                        /mYjhb4OuMAs3FjXTTY21sHr1w3I25ZKXJdMdt9qI2UWn1iMriV93/T0XuG+JDku73PPhtG86CSA
+                        1SgMFjMBtipuxuLwCrT75700CBkE4nOJt7tAYDCOwhnJgYkZEEKkVCC9xpbHvud8ofIP9E0o8T6H
+                        1ULwj2CPkqUtIlhNGfU/hyTczpXteWHbErThdoE15DVymZEmxg5oPyhvG+oqufKJR7aGgXRjQApd
+                        EQv+W33TD+fYE7NKi9iIzzkWiDzM4frqmoLn9R6DgsTIfTARjNuSCr13DjYlWKkIbB/I8P3P5Dvi
+                        m2DIvP6DIL6rMfx/MNFKX0+peWjbiVd+VlO60rx3maF4lVW45x7xd17n9IjXatUnnBwqFod/wYl5
+                        HexBCRy+XufwJNs7EOl95y/L8b9YpevSZlBxi9NDDPZa0gnThYrfQ5jAyRysRhWYHrvtLL5JU3vg
+                        CtwSjhIbmZVAblzQfO/4bOmIRRBUd+kSofleE38joUtUQe8ClhPe1MIv/rjttbu/4yBoVXw+gZqc
+                        akw1EfpCSjaC2UM6iWpM6cBOjsnWIJpUqXEGKN3XbXfXUJWDk+neZf6ICn1Zjrm+KbU4ySK8tnP2
+                        v9L2564X1GYYbYktxKpMMXu0i6s3cBEKNQ0eY0dDzIz5g/biSNgDnfJezpzD5muk6wk8k3G8ecfU
+                        qBpflP4DGPryLFQOAAA=
                         "
                         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_STATS
                         chmod +x $SCRIPT_STATS
@@ -1704,18 +1830,27 @@ dialog_anomaly() {
                         rm -f $SCRIPT_ANOMALY $CRON_ANOMALY
                     else
                         PACKED_SCRIPT="
-                        H4sICKwerlsAA3N0YXRzMy5zaABtU2tP2zAU/Z5fcTFBTdS5bjohTUAQaINp0somOiYmxpBJ3NRa
-                        YhfbtDza/fbdPGjTjShR/Lj33HOPj7e32K1U7JbbibcN73PBjZ3LsYPRyUfIdQZc8fzxSRjcvZgL
-                        GOmiEAYCW/2PlHCJVhQ/e587qbJeoosQY6M+G/Sjd942jhFmLHMBY23A6ZQ/es1KTNiMG4Yzllia
-                        cSfm/JEVXOY9P0hxCl2y84PuFHQnJWEP4wjCFfwByhgLPM/1XKQwRUZWqBR/5bCsMDy+vBkef/o8
-                        inf7fU+O4QroExA/InC9D24ilAf4iGSigVxYnok98PsgSmBqRCKnUihH6qAH6SDyxrKFE2B5/6Wx
-                        wSFLxYyp+zwPX8NXupKyiuUzrMBvc9HCHpTY3758vRmdnH04OY8RPjNiCmRsdBEfkHWlBZ//hs4z
-                        KhnIONqXB/HZ6b7sdsNnpBb4Ev4Aq5NYCM9TI5UDXy6Xyw4sLCrVsS/bLMMlZ4CmQH4eviHNPvvl
-                        s7QM1sbB4l7JO6BJM6XKwGIieAo0CkktxlYtx5r8Zv9nF8PmGPyg0qIVCQuou2loRstOWCVVwP4q
-                        FWiGu6sD3cAvn+ElAp5/R93QNDKDrp2UbLtKp8pakUDxAE318vzrqvSUHJF17QHWRj7rNsHhMWGf
-                        /5IcvJBcEa36X3Eg/9Fb2yDhSmmHNlBpZWD0rJkJQzZDS0O8XS2hMTZBRrXPO6uO2tK/QrYDE27L
-                        2+Haktb3p7qMvTKtokMtkCs/mGjrFC9EeA3HShd4/SEVTiROakWAjsAWbhq3et4b7OK6gVbq0XqM
-                        Dgsr4b2mH3z/AlABhm52BAAA
+                        H4sIACma8lsAA61WbVPiSBD+nl/RjrGSiCHA1lbdqVCyHl5xJWoBXq0FSA1kgLlLJlwyiK5wv/16
+                        kkiCsPrlUlrMS3dP9/P0dM/hgTPiwhnRaKYdwqXHaBgt+URCp/E7eMEUqKDeyw8W4u79kkEn8H0W
+                        ghnFvxeCyXEgbPyPFp7kYlocB76FsuWSUymVf9EOcYxmJtxjMAlCkIFLX7R0pUqcJxo6OHPGkT2l
+                        ki3pi+NT7hV108UpFMjRg33k20cusYooR9CcT59ByURAPS9YMhfm6FHEhIs/aqhOaNW/D1v15nWn
+                        +rVUimftxmXzrtm46eKS1m3dDes3t6369QM6If25gytUBD4GSzQ+gR7YP4DoZQKDM5AzJjTAj41n
+                        AZD7iE7ZKegmosYE9RnoJQuY8skO2ZjPOROSJArPXEJZm/CcTRM9198wqdQclz05YuF51r6zRBCz
+                        EMvSJzyBjjyWs11Rtg9BL4MNm7PVQgUXfBYpVzWFzZB6LJSmBa+xcuv7sNNo/9loVxFpPoVCNAtC
+                        CQURuCKK2Bj8Zwww8QFRWAFd/g32FbkgYLzOQy4kHrE2LFhBpBRtEeJQooNglyER3xKMT81A2Jy/
+                        HXQW+JgKEUgMXLgx20hw+MRCkomp8L/EU4QgU9QrBM+PVewISE83Z0EkFU3WAOoJxeAyycaSB4KA
+                        3YHIl/NqzqfTyldcDyGnepGNwXatGBRtrXVv71Dn5jfEEYmdhmwOxhzlJvzZDhZyFCyEa2Rsr2IJ
+                        MgkDv3qObiYo4b0webV8xs+rN1dnvFCwXhEoU+fwLziJrIO8pWDy9XptwCrCvDeit21niksyRNeA
+                        9GsnJN13HnXHVcKKotVC8H/AHqfTmLEZoy4SZqU5f5CQk0W1zc7NfSu9VGlq5CTfc17e4lzfqII9
+                        xd3N9dxhP4fo54dsEivWbLYaw0633rpTXCTl4+jKyjImyb6JCjC7/rv5pz6Fns2BIICZWXCIcaDo
+                        zKlvaWFxaT8MvzWubtuNTT6Qx17J/tUe9AtbkZAtMzkv1adkhvXrRrtbJds72Q3KH7Y/iNydyAWR
+                        dyKjhUCt9vPA3vlU3tpkXsR2pJXhDIiEx7zH75n8gkySHStxtEr/eR5u5VAySUxh3fwkp/YxGyG1
+                        eYeczzFyyMcIfYiS+tI6tWe6g+H/w9teb3LHpqmUiWEiwWoFWcNIeiDpJN3VyDlhwIxGSlLmmUka
+                        c9zli+StOOPfdbPTHbbur7tNldHLmaqGoSo+8Vpq8gzcINbp3H/7o3HZ3aQO1uacGIG3dgRGj5CB
+                        sV0QkmOzqvyJBWxo+/QzhwtV3egLI4EJwe/jKPGvj6G4gWBwDufvij8Xce13xviiEot58XhJQ4Hv
+                        o1NQJVe9Vxajv7AFnea7Q3IlfCrHM1MvnYDzMyUwi8cWqNoPzglQC3I6kLQEs/cIg2OrpgRGm+5B
+                        0GXaKw/U78kIB6qVJB18BZv+kG/pyiXSx/dFLblh2TPqzWZfL62JpaW5lOH2cS5FsORyBn4QMrys
+                        VOxY37xmolOSEpCzrf0H/3XBVbkKAAA=
                         "
                         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_ANOMALY
                         chmod +x $SCRIPT_ANOMALY
@@ -1742,6 +1877,7 @@ dialog_other() {
     DIALOG_MAIL_INTERN="Mail.intern RoundRobin"
     DIALOG_CONFIG_FW="Firewall settings"
     DIALOG_RECENT_UPDATES="Recently updated packages"
+    DIALOG_FORWARDING="Internal DNS forwarding"
     DIALOG_REPORT="Monthly email stats reports"
     DIALOG_ANOMALY="Sender anomaly detection"
     while [ 1 ]; do
@@ -1753,6 +1889,7 @@ dialog_other() {
             "$DIALOG_MAIL_INTERN" ""                                                             \
             "$DIALOG_CONFIG_FW" ""                                                               \
             "$DIALOG_RECENT_UPDATES" ""                                                          \
+            "$DIALOG_FORWARDING" ""                                                              \
             "$DIALOG_REPORT" ""                                                                  \
             "$DIALOG_ANOMALY" ""                                                                 \
             2>&1 1>&3)
@@ -1763,13 +1900,16 @@ dialog_other() {
                 "$DIALOG_WHITELIST_RSPAMD")
                     $TXT_EDITOR $WHITELIST_RSPAMD;;
                 "$DIALOG_AUTO_UPDATE")
-                    $TXT_EDITOR $CONFIG_AUTO_UPDATE;;
+                    [ -f $CONFIG_AUTO_UPDATE ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE
+                    [ -f $CONFIG_AUTO_UPDATE_ALT ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE_ALT;;
                 "$DIALOG_MAIL_INTERN")
                     mail_intern;;
                 "$DIALOG_CONFIG_FW")
                     $TXT_EDITOR $CONFIG_FW;;
                 "$DIALOG_RECENT_UPDATES")
                     $DIALOG --backtitle "Other configurations" --title "Recently updated packages" --clear --msgbox "$(tail -20 /var/log/yum.log)" 0 0;;
+                "$DIALOG_FORWARDING")
+                    internal_forwarding;;
                 "$DIALOG_REPORT")
                     dialog_report;;
                 "$DIALOG_ANOMALY")
@@ -1806,6 +1946,49 @@ show_tls_in() {
     STATS_INFO="$STATS_INFO$(grep "disconnect from" $LOG_TODAY | grep "starttls=0" | awk '{print $7}' | sort | uniq -c | sort -nr | head)"
     $DIALOG --backtitle "$TITLE_MAIN" --title "TLS inbound statistics" --clear --msgbox "$STATS_INFO" 0 0
 }
+# get internal mail relay
+# parameters:
+# none
+# return values:
+# internal mail relay
+get_internal() {
+    ARRAY=()
+    LIST_RELAY="$(grep 'smtp:\[.*\]' $MAP_TRANSPORT | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
+    for NAME_RELAY in $LIST_RELAY; do
+        COUNTER=0
+        FOUND=""
+        for COLLECTED in "${ARRAY[@]}"; do
+            if [ "$NAME_RELAY" = "$(echo $COLLECTED | awk '{print $1}')" ]; then
+                ARRAY[$COUNTER]="$NAME_RELAY $(expr $(echo $COLLECTED | awk '{print $2}') + 1)"
+                FOUND=1
+            fi
+            COUNTER="$(expr $COUNTER + 1)"
+        done
+        [ -z "$FOUND" ] && ARRAY+=("$NAME_RELAY 1")
+    done
+    MOST_FREQUENT=""
+    for COLLECTED in "${ARRAY[@]}"; do
+        if [ -z "$MOST_FREQUENT" ] || [ "$(echo $COLLECTED | awk '{print $2}')" -gt "$(echo $MOST_FREQUENT | awk '{print $2}')" ]; then
+            MOST_FREQUENT="$COLLECTED"
+        fi
+    done
+    echo "$MOST_FREQUENT" | awk '{print $1}'
+}
+# get search pattern for internal IP addresses
+# parameters:
+# none
+# return values:
+# search pattern for internal IP addresses
+internal_pattern() {
+    IP_PATTERN='\[10\.'             #  10.0.0.0/8
+    IP_PATTERN+='|\[192\.168\.'     # 192.168.0.0/16
+    for i in $(seq 16 31); do       # 172.16.0.0/12
+        IP_PATTERN+="|\[172\.$i\."
+    done
+    INTERNAL_RELAY="$(get_internal)"
+    [ -z "$INTERNAL_RELAY" ] || IP_PATTERN+="|$(echo $INTERNAL_RELAY | sed 's/\./\\\./g')"
+    echo "$IP_PATTERN"
+}
 # show outbound TLS stats in dialog msgbox
 # parameters:
 # none
@@ -1813,11 +1996,7 @@ show_tls_in() {
 # none
 show_tls_out() {
     LOG_TODAY="$LOG_FILES$(date +"%Y-%m-%d").log"
-    IP_PATTERN='\[10\.'             #  10.0.0.0/8
-    IP_PATTERN+='|\[192\.168\.'     # 192.168.0.0/16
-    for i in $(seq 16 31); do       # 172.16.0.0/12
-        IP_PATTERN+="|\[172\.$i\."
-    done
+    IP_PATTERN="$(internal_pattern)"
     STATS_INFO="non-TLS: $(grep postfix-outbound "$LOG_TODAY" | grep tls_used=0 | egrep -v $IP_PATTERN | wc -l)"
     STATS_INFO="$STATS_INFO"$'\n\n'"Top 10:"$'\n'
     STATS_INFO="$STATS_INFO$(grep postfix-outbound "$LOG_TODAY" | grep tls_used=0 | egrep -v $IP_PATTERN | awk '{print $7}'| awk -F "=" '{print $2}' | awk -F "[" '{print $1}'| sort | uniq -c | sort -nr | head)"
@@ -1830,17 +2009,13 @@ show_tls_out() {
 # none
 show_general() {
     LOG_TODAY="$LOG_FILES$(date +"%Y-%m-%d").log"
-    IP_PATTERN='\[10\.'             #  10.0.0.0/8
-    IP_PATTERN+='|\[192\.168\.'     # 192.168.0.0/16
-    for i in $(seq 16 31); do       # 172.16.0.0/12
-        IP_PATTERN+="|\[172\.$i\."
-    done
+    IP_PATTERN="$(internal_pattern)"
     STATS_INFO="Total inbound:  $(grep 'relay\=' "$LOG_TODAY" | egrep "$IP_PATTERN" | wc -l)"
-    STATS_INFO="$STATS_INFO"$'\n\n'"Total outbound: $(grep 'relay\=' "$LOG_TODAY" | grep -v "127.0.0.1" | egrep -v "$IP_PATTERN\|smtp-watch" | wc -l)"
+    STATS_INFO="$STATS_INFO"$'\n\n'"Total outbound: $(grep 'relay\=' "$LOG_TODAY" | grep 'status=sent' | grep -v "127.0.0.1" | egrep -v "$IP_PATTERN|smtp-watch" | wc -l)"
     STATS_INFO="$STATS_INFO"$'\n\n'"Total rejected: $(grep ' 550 ' "$LOG_TODAY" | wc -l)"
-    STATS_INFO="$STATS_INFO"$'\n\n'"Top 10 recipients inbound:"$'\n'"$(grep 'relay\=' "$LOG_TODAY" | egrep "$IP_PATTERN" | awk '{print $6}' | sed 's/to=<//g' | tr -d "\>," | sort | uniq -c | sort -nr | head)"
-    STATS_INFO="$STATS_INFO"$'\n\n'"Top 10 outbound recipients:"$'\n'"$(grep 'relay\=' "$LOG_TODAY" | grep -v "127.0.0.1" | egrep -v "$IP_PATTERN\|smtp-watch" | awk '{print $6}' | sed 's/to=<//g' | tr -d "\>," | sort | uniq -c | sort -nr | head)"
-    STATS_INFO="$STATS_INFO"$'\n\n'"Top 10 senders:"$'\n'"$(grep "from=<" "$LOG_TODAY" | grep postfix-outbound | awk '{for(i=1;i<=NF;i++){if ($i ~ /from=</) {print $i}}}' | sed 's/from=<//g' | tr -d "\>," | sed '/^$/d' | sort | uniq -c | sort -nr | head)"
+    STATS_INFO="$STATS_INFO"$'\n\n'"Top 10 inbound recipients:"$'\n'"$(grep 'relay\=' "$LOG_TODAY" | grep 'status=sent' | egrep "$IP_PATTERN" | awk '{print $6}' | sed 's/to=<//g' | tr -d "\>," | sort | uniq -c | sort -nr | head)"
+    STATS_INFO="$STATS_INFO"$'\n\n'"Top 10 outbound recipients:"$'\n'"$(grep 'relay\=' "$LOG_TODAY" | grep 'status=sent' | grep -v "127.0.0.1" | egrep -v "$IP_PATTERN|smtp-watch" | awk '{print $6}' | sed 's/to=<//g' | tr -d "\>," | sort | uniq -c | sort -nr | head)"
+    STATS_INFO="$STATS_INFO"$'\n\n'"Top 10 senders:"$'\n'"$(grep 'postfix-outbound' "$LOG_TODAY" | grep "from=<" | awk '{for(i=1;i<=NF;i++){if ($i ~ /from=</) {print $i}}}' | sed 's/from=<//g' | tr -d "\>," | sed '/^$/d' | sort | uniq -c | sort -nr | head)"
     $DIALOG --backtitle "$TITLE_MAIN" --title "General statistics" --clear --msgbox "$STATS_INFO" 0 0
 }
 # ask user for search term, search Postfix mail logs for it and show results in editor
@@ -2020,8 +2195,8 @@ check_update() {
     MINOR_CURRENT="$(echo $VERSION | awk -F. '{print $2}')"
     BUILD_CURRENT="$(echo $VERSION | awk -F. '{print $3}')"
     if [ "$MAJOR_DL" -gt "$MAJOR_CURRENT" ] ||
-       [ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" -gt "$MINOR_CURRENT" ] ||
-       [ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" = "$MINOR_CURRENT" ] && [ "$BUILD_DL" -gt "$BUILD_CURRENT" ]; then
+       ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" -gt "$MINOR_CURRENT" ]) ||
+       ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" = "$MINOR_CURRENT" ] && [ "$BUILD_DL" -gt "$BUILD_CURRENT" ]); then
         exec 3>&1
         $DIALOG --clear --backtitle "$TITLE_MAIN" --yesno "New update available. Install?" 0 40 2>&1 1>&3
         RET_CODE=$?
