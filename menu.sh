@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.5.0 for Clearswift SEG >= 4.8
+# menu.sh V1.6.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,11 +55,7 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - added internal DNS forwarding
-# - improved accuracy of Postfix stats
-# - added multi-recipient check for anomaly detection
-# - added Cron job for mqueue cleanup
-# - bug fixes
+# for the check_anomaly.sh script, added a whitelist and only send one alert per day (and per multiple of max mail limit)
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1830,27 +1826,29 @@ dialog_anomaly() {
                         rm -f $SCRIPT_ANOMALY $CRON_ANOMALY
                     else
                         PACKED_SCRIPT="
-                        H4sIACma8lsAA61WbVPiSBD+nl/RjrGSiCHA1lbdqVCyHl5xJWoBXq0FSA1kgLlLJlwyiK5wv/16
-                        kkiCsPrlUlrMS3dP9/P0dM/hgTPiwhnRaKYdwqXHaBgt+URCp/E7eMEUqKDeyw8W4u79kkEn8H0W
-                        ghnFvxeCyXEgbPyPFp7kYlocB76FsuWSUymVf9EOcYxmJtxjMAlCkIFLX7R0pUqcJxo6OHPGkT2l
-                        ki3pi+NT7hV108UpFMjRg33k20cusYooR9CcT59ByURAPS9YMhfm6FHEhIs/aqhOaNW/D1v15nWn
-                        +rVUimftxmXzrtm46eKS1m3dDes3t6369QM6If25gytUBD4GSzQ+gR7YP4DoZQKDM5AzJjTAj41n
-                        AZD7iE7ZKegmosYE9RnoJQuY8skO2ZjPOROSJArPXEJZm/CcTRM9198wqdQclz05YuF51r6zRBCz
-                        EMvSJzyBjjyWs11Rtg9BL4MNm7PVQgUXfBYpVzWFzZB6LJSmBa+xcuv7sNNo/9loVxFpPoVCNAtC
-                        CQURuCKK2Bj8Zwww8QFRWAFd/g32FbkgYLzOQy4kHrE2LFhBpBRtEeJQooNglyER3xKMT81A2Jy/
-                        HXQW+JgKEUgMXLgx20hw+MRCkomp8L/EU4QgU9QrBM+PVewISE83Z0EkFU3WAOoJxeAyycaSB4KA
-                        3YHIl/NqzqfTyldcDyGnepGNwXatGBRtrXVv71Dn5jfEEYmdhmwOxhzlJvzZDhZyFCyEa2Rsr2IJ
-                        MgkDv3qObiYo4b0webV8xs+rN1dnvFCwXhEoU+fwLziJrIO8pWDy9XptwCrCvDeit21niksyRNeA
-                        9GsnJN13HnXHVcKKotVC8H/AHqfTmLEZoy4SZqU5f5CQk0W1zc7NfSu9VGlq5CTfc17e4lzfqII9
-                        xd3N9dxhP4fo54dsEivWbLYaw0633rpTXCTl4+jKyjImyb6JCjC7/rv5pz6Fns2BIICZWXCIcaDo
-                        zKlvaWFxaT8MvzWubtuNTT6Qx17J/tUe9AtbkZAtMzkv1adkhvXrRrtbJds72Q3KH7Y/iNydyAWR
-                        dyKjhUCt9vPA3vlU3tpkXsR2pJXhDIiEx7zH75n8gkySHStxtEr/eR5u5VAySUxh3fwkp/YxGyG1
-                        eYeczzFyyMcIfYiS+tI6tWe6g+H/w9teb3LHpqmUiWEiwWoFWcNIeiDpJN3VyDlhwIxGSlLmmUka
-                        c9zli+StOOPfdbPTHbbur7tNldHLmaqGoSo+8Vpq8gzcINbp3H/7o3HZ3aQO1uacGIG3dgRGj5CB
-                        sV0QkmOzqvyJBWxo+/QzhwtV3egLI4EJwe/jKPGvj6G4gWBwDufvij8Xce13xviiEot58XhJQ4Hv
-                        o1NQJVe9Vxajv7AFnea7Q3IlfCrHM1MvnYDzMyUwi8cWqNoPzglQC3I6kLQEs/cIg2OrpgRGm+5B
-                        0GXaKw/U78kIB6qVJB18BZv+kG/pyiXSx/dFLblh2TPqzWZfL62JpaW5lOH2cS5FsORyBn4QMrys
-                        VOxY37xmolOSEpCzrf0H/3XBVbkKAAA=
+                        H4sIACFjBlwAA7VXbW/aSBD+7l8x3TgFlxhDqkp3JERNU2g5BVIF0msVErTYC94rXlN7Kck13G+/
+                        WWPjhZC011MsIdbeeX1m9hl755kz5MIZ0tg3dsD1mftlQEUY0MltOfbhY7VcLVeMHdw7Cae3ER/7
+                        EoquBfuV6m/QYfIkFHAhJIsE8wMm4iGLqJyJMbwLhu9Ry5dyGtccZz6flwWTbihs/MWzieRiXHbD
+                        ILF9PJN+GMU1XF7MGXTDIGARFGflOFm93qppofTbqAxtGrnwlrPoS8wEFIOyl64fUjNOz94Nmq3T
+                        Rp0432jkTMKx48b2mEo2p7dOQPmkbBY9vIUS2f1s7wb2rkesMsoRo338adA+bp12668qFdiBgN6A
+                        0oiBTibhnHkwxdDRu4d/aunR20TpvHHS+tBqdHqomepFzOVTzoRcV1bmjF77Q+qHODKYOnifuCHJ
+                        jmZstZ1bI8bJWafZejf4832r1zhtdXsohVg4aWUHc59LNuGxREDEiBh8BJdg/w3ErBK4OgDpM2EA
+                        Xsz1QyAXMR2zGphFbBMmaMDArFjAVDz2yitZKtxwCVVjxJXNZ8rqCK1mgG8zLkJAYGHEJwzoNzRJ
+                        hxOmGdtXxnbArIKdA6Ye7OODgMUqNkPhPaATFsmiBd8T5fanQbdx/rFxXsda8jGUYmwxCSUReiKO
+                        mQvBDWa0jAHTvgM6/wJ2k7wmUPg+jbiQ6GJRsOAOYqVoiwiXEgMEuwpL8TXBxGuO5Mr/etJ54i4V
+                        IpSYuPCSkmPTRN9YRHIxlf7L5BYhyBXNfYL+ExU7BnJpFv0wlqou1hUcL0sMHpPMlTwUBOwuxIGc
+                        1rWYavuv8HkEmurrfA22ZyWgGAuj12o3Bt3ecfsD6qeHYrdpESMt7apPMU14/hyT8MDmQJxrM1cF
+                        hxSeeQXIpXX1vJl/2kauYqj2xqw6b7HShBjY2thIEaMetDrNs3TnALwwQTAVTAtvaiKPlXTVyJvn
+                        SgV8d4f744hNwf4K5NpcmjMJ3JPeaIPORTs94j8RTjULJ8ticHzaOO+plLOny97bLMqGU3Uhbuef
+                        B28azbPzhqpqEjy5vqzYv9tX/RKkKQDRCmaRNRN5n+vGtrvTOlcrZ+bEXMFA4OhIb5FNG1rW1bVN
+                        NonZPWllNk9xia8e6ybALxFgcs9KkqfSv5lGWqhIPWbuwMKzNEYTq9nwIAzqyro7xvbWA3IeR8ch
+                        j2HzKD7qShlky+099P5vrbbGoTlMGycXS0+RdpJLdbPQFwWyxXHGh14oGBzC4bJ7C1PkrhG/scOZ
+                        HIYzoYgimzpY6WWHj6IwqB+SVeVHYVTk9eoBP6x3mge8VLK+Y72LJod/wFkKOzhO0gbhi8WioKYB
+                        1q8QZ/vOWD2TEXImkP7RHskksLqOV8imxx3MBP8Ktrs+TlQcpI+z7UjvntRj36wsiGWkcGnopHjl
+                        Q285uEk3eeuIYc6lD0EYMWxCKnTLyStEjaTg6iZ/jUfJaoJqQhnAdhMKOEzXKZU8Lad2L9780Tjp
+                        /TiwS0Kutoa20cEP8uva1PofJGumIZtkc7Q9HeWmLvNDrM3TTTMPssovUsjP+n4CFumTzHuf/IhH
+                        uEhoxHEnjIrZtPxiTiOBnxA18PFMqFf82fAvfMOqrRNNQiwBla5fNCt74DykBcXyCwsUh4CzB9QC
+                        TQeW1FK8vIarF9aREhiuaIhg6PSyeqX+94a4WPxXjsnxfhKi0cznXyTbKedfSR4qtn0OAAA=
                         "
                         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_ANOMALY
                         chmod +x $SCRIPT_ANOMALY
@@ -2114,7 +2112,7 @@ apply_config() {
         fi
     fi
     if [ ! -z "$SESSION_ID" ]; then
-        curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='command line applied bei NetCon GUI'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
+        curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='applied by NetCon CS Config'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
         	--header "Cookie: $SESSION_ID" -X POST ${DOM}/Appliance/Deployer/StartDeployment.jsp
         APPLY_NEEDED=0
     fi
