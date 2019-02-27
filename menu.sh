@@ -559,7 +559,7 @@ enable_postscreen() {
     echo "postconf -c $PF_INBOUND -Me 'dnsblog/unix=dnsblog    unix  -       -       n       -       0       dnsblog'" >> $CONFIG_PF
     echo "postconf -c $PF_INBOUND -Me 'tlsproxy/unix=tlsproxy   unix  -       -       n       -       0       tlsproxy'" >> $CONFIG_PF
     # Postscreen main.cf settings
-    echo "postconf -c $PF_INBOUND -e 'postscreen_access_list=permit_mynetworks cidr:/etc/postfix/maps/check_postscreen_access_ips'" >> $CONFIG_PF
+    echo "postconf -c $PF_INBOUND -e 'postscreen_access_list=permit_mynetworks cidr:$WHITELIST_POSTSCREEN'" >> $CONFIG_PF
     echo "postconf -c $PF_INBOUND -e 'postscreen_blacklist_action=enforce'" >> $CONFIG_PF
     echo "postconf -c $PF_INBOUND -e 'postscreen_command_time_limit=\${stress?10}\${stress:300}s'" >> $CONFIG_PF
     echo "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_action=enforce'" >> $CONFIG_PF
@@ -1826,29 +1826,30 @@ dialog_anomaly() {
                         rm -f $SCRIPT_ANOMALY $CRON_ANOMALY
                     else
                         PACKED_SCRIPT="
-                        H4sIACFjBlwAA7VXbW/aSBD+7l8x3TgFlxhDqkp3JERNU2g5BVIF0msVErTYC94rXlN7Kck13G+/
-                        WWPjhZC011MsIdbeeX1m9hl755kz5MIZ0tg3dsD1mftlQEUY0MltOfbhY7VcLVeMHdw7Cae3ER/7
-                        EoquBfuV6m/QYfIkFHAhJIsE8wMm4iGLqJyJMbwLhu9Ry5dyGtccZz6flwWTbihs/MWzieRiXHbD
-                        ILF9PJN+GMU1XF7MGXTDIGARFGflOFm93qppofTbqAxtGrnwlrPoS8wEFIOyl64fUjNOz94Nmq3T
-                        Rp0432jkTMKx48b2mEo2p7dOQPmkbBY9vIUS2f1s7wb2rkesMsoRo338adA+bp12668qFdiBgN6A
-                        0oiBTibhnHkwxdDRu4d/aunR20TpvHHS+tBqdHqomepFzOVTzoRcV1bmjF77Q+qHODKYOnifuCHJ
-                        jmZstZ1bI8bJWafZejf4832r1zhtdXsohVg4aWUHc59LNuGxREDEiBh8BJdg/w3ErBK4OgDpM2EA
-                        Xsz1QyAXMR2zGphFbBMmaMDArFjAVDz2yitZKtxwCVVjxJXNZ8rqCK1mgG8zLkJAYGHEJwzoNzRJ
-                        hxOmGdtXxnbArIKdA6Ye7OODgMUqNkPhPaATFsmiBd8T5fanQbdx/rFxXsda8jGUYmwxCSUReiKO
-                        mQvBDWa0jAHTvgM6/wJ2k7wmUPg+jbiQ6GJRsOAOYqVoiwiXEgMEuwpL8TXBxGuO5Mr/etJ54i4V
-                        IpSYuPCSkmPTRN9YRHIxlf7L5BYhyBXNfYL+ExU7BnJpFv0wlqou1hUcL0sMHpPMlTwUBOwuxIGc
-                        1rWYavuv8HkEmurrfA22ZyWgGAuj12o3Bt3ecfsD6qeHYrdpESMt7apPMU14/hyT8MDmQJxrM1cF
-                        hxSeeQXIpXX1vJl/2kauYqj2xqw6b7HShBjY2thIEaMetDrNs3TnALwwQTAVTAtvaiKPlXTVyJvn
-                        SgV8d4f744hNwf4K5NpcmjMJ3JPeaIPORTs94j8RTjULJ8ticHzaOO+plLOny97bLMqGU3Uhbuef
-                        B28azbPzhqpqEjy5vqzYv9tX/RKkKQDRCmaRNRN5n+vGtrvTOlcrZ+bEXMFA4OhIb5FNG1rW1bVN
-                        NonZPWllNk9xia8e6ybALxFgcs9KkqfSv5lGWqhIPWbuwMKzNEYTq9nwIAzqyro7xvbWA3IeR8ch
-                        j2HzKD7qShlky+099P5vrbbGoTlMGycXS0+RdpJLdbPQFwWyxXHGh14oGBzC4bJ7C1PkrhG/scOZ
-                        HIYzoYgimzpY6WWHj6IwqB+SVeVHYVTk9eoBP6x3mge8VLK+Y72LJod/wFkKOzhO0gbhi8WioKYB
-                        1q8QZ/vOWD2TEXImkP7RHskksLqOV8imxx3MBP8Ktrs+TlQcpI+z7UjvntRj36wsiGWkcGnopHjl
-                        Q285uEk3eeuIYc6lD0EYMWxCKnTLyStEjaTg6iZ/jUfJaoJqQhnAdhMKOEzXKZU8Lad2L9780Tjp
-                        /TiwS0Kutoa20cEP8uva1PofJGumIZtkc7Q9HeWmLvNDrM3TTTMPssovUsjP+n4CFumTzHuf/IhH
-                        uEhoxHEnjIrZtPxiTiOBnxA18PFMqFf82fAvfMOqrRNNQiwBla5fNCt74DykBcXyCwsUh4CzB9QC
-                        TQeW1FK8vIarF9aREhiuaIhg6PSyeqX+94a4WPxXjsnxfhKi0cznXyTbKedfSR4qtn0OAAA=
+                        H4sIAIplbVwAA7VX/3OaSBT/nb/idUOK1ACaTmfuTMzUJtp6E00nml47MXEQVqGFxcJak2u8v/3e
+                        AspqTNprJ8w4Luz7+nnvfRZ2nlkjn1kjO/GUHXA86nwZ2iwK7eDWTDz4UDWrZkXZwb3jaHob+xOP
+                        Q8nRYb9S/QO6lB9HDC4YpzGjXkhZMqKxzWdsAm/D0TvU8jifJjXLms/nJqPciZiBv2QWcJ9NTCcK
+                        U9uNGfeiOKnh8mJOoReFIY2hNDOTdPV6q6aO0iexCR07duDEp/GXhDIohaabrx9SU07P3g5b7dNm
+                        nVjf7NgKoonlJMbE5nRu31qh7QemWnLxFspk95OxGxq7LtFNlCNKp/Fx2Gm0T3v1V5UK7EBo34DQ
+                        SMAOgmhOXZhi6OjdxT+xdO3bVOm8edx+3252+6iZ68XU8ac+ZXxdWZhT+p33uR/N4uHUwvvUjZbu
+                        SMZW24U1TTk+67bab4d/v2v3m6ftXh+lEAsrr+xw7vmcBn7CERA21pRuo9Mcnpyhv+7wpNlqXJyi
+                        hp+4URCYLtUUfwyXYPwDRK0SuDoA7lGmAF7U8SIgF4k9oTVQS9hGlNkhBbWiAxXxGquoSKZw43Oo
+                        KmNf2HwmrI7R6rIg24yzCBB4GPsBBfsbmrRHAZWM7QtjO6BWwSgAFQ/28UFIExGbIuoxtAMa85IO
+                        31Plzsdhr3n+oXlex1r7Eygn2IIcyixyWZJQB8IbzCiLAdO+A3v+BYwWeU1A+z6NfcbRxULT4Q4S
+                        oWiwGJccAwSjCpn4mmDqtUBy5X896SJxx2Ys4pg4c9OWwKaKv9GYFGIi/ZfpLUIg/qQ61ola8qKE
+                        p+UwXD1Ty31Lcugdnj/f0NzSD0QqibpPMME0JiMBcll40q+gkfUYuJRTh/sRI2D0IAn5tC4lXdt/
+                        hc9jkKLUX6/HJVBXFkq/jc96/UbnvUgpm8rdFuaT985qUPJMEpwiwwdiXauFKlhEe+ZqUEjL6sU0
+                        /bSNQkUR84VZdU+wlQhRcLawU2Nqu9Duts7ynQNwoxTBXDDvLFUSeaxnVpOyOdgi4Ls73J/EdArG
+                        VyDXamZOJXBPeqPPuhednGN+IpzqMpxlFsPGafO8L1JePs2ae7MoG07Fhbidfxq+abbOzpuiqmnw
+                        5PqyYvxpXA3KkKcARCqYTtZMFIMkG9vuTupcqZxLJ+oKBgJHR3KLbNqQsq6ubdIgofekhdkixQxf
+                        OdZNgF8iwOSelTRPoX8zjaVQkdvUwoGOszRBE6vD6UEYxLXs7gTbWw7IehwdizyGzaP4iCunqC23
+                        99D73VptjUNymDdOIZZPkTTJ5bqqDZhGtjheEq4bMQqHcJh1rzZFGhv7N0Y046NoxgRRLI81rHTW
+                        4eM4CuuHZFX5cRSX/Hr1wD+sd1sHfrmsf8d6l1Qf/gUrE7bwvMobxF8sFpo4brB+WrLctybiGY+R
+                        5IEMjvbIUgKra7na8ni6gxnzv4LhrJ9XIg4ywMPzSO6e3ONArSyIruRwSejkeBWnavZmQHrpa08C
+                        c597EEYxxSa0mWw5fYepkRxc2eSv8ShZHdGS0BJgowUantbrlEqellN7F2/+ah73fxzYJSFXW0Pb
+                        6OAH+XXt1PoNklXzkFWyebQ9HeXmLoshls7TTTMPssovUsjP+n4CFhmQpfcB+RGP+CylEcsJqM1m
+                        U/PF3I4ZfsPUwMOZEN8Ys9FnfMOqrRNNSiyhzR2vpFb2wHpIC0rmCx0Eh4C1B7YOkg5k1FK6vIar
+                        F/qREBitaIhg6PZl9Ur8741wsfi/HFPg/SREI5kvPom2U85/TH9ebf4OAAA=
                         "
                         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_ANOMALY
                         chmod +x $SCRIPT_ANOMALY

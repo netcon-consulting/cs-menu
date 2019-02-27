@@ -11,9 +11,10 @@
 LOG_FILE="/var/log/cs-gateway/mail.$(date +"%Y-%m-%d").log"
 MAX_MAILS=500 # max mails allowed per sender per day
 MAX_RECIPIENTS=5 # max recipients allowed per mail
-TMP_MAILS="/tmp/TMPmails"
-TMP_RECIPIENTS="/tmp/TMPrecipients"
-CONFIG_WHITELIST="/etc/anomaly_whitelist.conf"
+TMP_MAILS='/tmp/TMPmails'
+TMP_RECIPIENTS='/tmp/TMPrecipients'
+CONFIG_WHITELIST='/etc/anomaly_whitelist.conf'
+NAME_DOMAIN_DEFAULT='isdoll.de'
 if [ -z "$1" ]; then
     echo "Usage: $(basename $0) email-recipient"
     exit 1
@@ -30,7 +31,9 @@ send_alert() {
         echo "cannot find mail server"
         exit 3
     fi
-    echo "$2" | mail -s "[$(hostname)] Anomaly detection" -S smtp="$MX_SERVER:25" -r $(hostname)@$(hostname -d) "$1"
+    NAME_DOMAIN="$(hostname -d)"
+    [ -z "$NAME_DOMAIN" ] && NAME_DOMAIN="$NAME_DOMAIN_DEFAULT"
+    echo "$2" | mail -s "[$(hostname)] Anomaly detection" -S smtp="$MX_SERVER:25" -r "$(hostname)@$NAME_DOMAIN" "$1"
 }
 TIME_STAMP="$(date +%F)"
 [ -f "$TMP_MAILS" ] && sed -i "/^$TIME_STAMP /"'!d' $TMP_MAILS
