@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.6.0 for Clearswift SEG >= 4.8
+# menu.sh V1.8.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,7 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# for the check_anomaly.sh script, added a whitelist and only send one alert per day (and per multiple of max mail limit)
+# for rspamd, added IP whitelist for internal relays
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -84,7 +84,8 @@ SENDER_REWRITE="$DIR_MAPS/sender_canonical_maps"
 WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
-WHITELIST_RSPAMD="/etc/rspamd/rspamd.conf.local"
+WHITELIST_RSPAMD="/var/lib/rspamd/ip_whitelist"
+CLIENT_MAP="/etc/postfix-inbound/client.map"
 LOG_FILES="/var/log/cs-gateway/mail."
 LAST_CONFIG="/var/cs-gateway/deployments/lastAppliedConfiguration.xml"
 PASSWORD_KEYSTORE="changeit"
@@ -96,7 +97,7 @@ SSH_KEYS="/home/cs-admin/.ssh/authorized_keys"
 BLACKLISTS="zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4"
 TMP_PASSWORD="/tmp/TMPpassword"
 EMAIL_DEFAULT="uwe@usommer.de"
-LINK_UPDATE="https://www.netcon-consulting.com/menu.sh"
+LINK_UPDATE="http://pxe.isdoll.de/menu.sh"
 CRON_STATS="/etc/cron.monthly/stats_report.sh"
 SCRIPT_STATS="/root/send_report.sh"
 CRON_ANOMALY="/etc/cron.d/anomaly_detect.sh"
@@ -189,6 +190,7 @@ install_rspamd() {
     yum update -y
     yum install -y redis rspamd
     rspamadm configwizard
+    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_RSPAMD\";"$'\n\t''action = "accept";'$'\n''}' > /etc/rspamd/local.d/multimap.conf
     chkconfig rspamd on
     chkconfig redis on
     [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
@@ -423,6 +425,16 @@ enable_rspamd() {
         grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES || echo 'learnham: "| rspamc learn_ham"' >> $MAP_ALIASES
         newaliases
     fi
+    echo "# start managed by $TITLE_MAIN" >> $WHITELIST_RSPAMD
+    if [ -f "$CLIENT_MAP" ]; then
+        CLIENT_REJECT="$(postmulti -i postfix-inbound -x postconf -n | grep '^cp_client_' | grep 'REJECT' | awk '{print $1}')"
+        if [ -z "$CLIENT_REJECT" ]; then
+            awk '{print $1}' $CLIENT_MAP >> $WHITELIST_RSPAMD
+        else
+            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $CLIENT_MAP >> $WHITELIST_RSPAMD
+        fi
+    fi
+    echo "# end managed by $TITLE_MAIN" >> $WHITELIST_RSPAMD
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -831,6 +843,7 @@ dialog_enable() {
                 newaliases
             fi
             postmulti -i postfix-inbound -x postconf mydestination | grep -q "$(hostname)" && postmulti -i postfix-inbound -x postconf -e mydestination=
+            sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_RSPAMD
         fi
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED="$LIST_ENABLED"$'\n'"None"
         echo "$SETTINGS_END" >> $PF_IN
