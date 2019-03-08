@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.8.0 for Clearswift SEG >= 4.8
+# menu.sh V1.9.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -97,7 +97,7 @@ SSH_KEYS="/home/cs-admin/.ssh/authorized_keys"
 BLACKLISTS="zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4"
 TMP_PASSWORD="/tmp/TMPpassword"
 EMAIL_DEFAULT="uwe@usommer.de"
-LINK_UPDATE="http://pxe.isdoll.de/menu.sh"
+LINK_UPDATE="https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh"
 CRON_STATS="/etc/cron.monthly/stats_report.sh"
 SCRIPT_STATS="/root/send_report.sh"
 CRON_ANOMALY="/etc/cron.d/anomaly_detect.sh"
