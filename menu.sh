@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.9.0 for Clearswift SEG >= 4.8
+# menu.sh V1.10.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,7 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# for rspamd, added IP whitelist for internal relays
+# added custom commands 'check_sender_ip.sh', 'add_external.sh' and 'remove_external.sh'
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -71,9 +71,8 @@ CONFIG_AUTO_UPDATE_ALT="/etc/sysconfig/yum-cron"
 CONFIG_LDAP="/var/cs-gateway/ldap/schedule.properties"
 MAP_ALIASES="/etc/aliases"
 MAP_TRANSPORT="/etc/postfix-outbound/transport.map"
-CUSTOM_DIR="/opt/cs-gateway/custom"
 DIR_CERT="/var/lib/acme/live/$(hostname)"
-DIR_COMMANDS="/opt/cs-gateway/scripts"
+DIR_COMMANDS="/opt/cs-gateway/scripts/netcon"
 DIR_MAPS="/etc/postfix/maps"
 DIR_ADDRESS_LISTS="/home/cs-admin/address-lists"
 ESMTP_ACCESS="$DIR_MAPS/esmtp_access"
@@ -366,7 +365,7 @@ dialog_install() {
     EXPLANATION_RSPAMD="Implemented as a milter on Port 11332.\nThe webinterface runs on Port 11334 on localhost.\nYou will need a SSH Tunnel to access the Webinterface.\nssh root@servername -L 11334:127.0.0.1:11334\n\nEnable corresponding feature in menu under 'Enable features->Rspamd'"
     EXPLANATION_LETSENCRYPT="Easy acquisition of Let's Encrypt certificates for TLS. It will autorenew the certificates via cronjob.\n\nEnable corresponding feature in menu under 'Enable features->Let's-Encrypt-Cert'"
     EXPLANATION_LOCAL_DNS="DNS forwarding disabled and local DNSSec resolver enabled for DANE validation.\n\nEnable corresponding feature in menu under 'Enable features->DANE'"
-    while [ 1 ]; do
+    while true; do
         DIALOG_RSPAMD_INSTALLED="$DIALOG_RSPAMD"
         DIALOG_LETSENCRYPT_INSTALLED="$DIALOG_LETSENCRYPT"
         DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE"
@@ -921,7 +920,7 @@ add_ssh() {
 # return values:
 # none
 ssh_access() {
-    while [ 1 ]; do
+    while true; do
         LIST_IP=""
         [ -f $CONFIG_FW ] && LIST_IP=$(grep "I INPUT 4 -i eth0 -p tcp --dport 22 -s " $CONFIG_FW | awk '{print $11}')
         if [ -z "$LIST_IP" ]; then
@@ -987,7 +986,7 @@ add_key() {
 # return values:
 # none
 key_auth() {
-    while [ 1 ]; do
+    while true; do
         LIST_KEY=""
         [ -f $SSH_KEYS ] && LIST_KEY=$(sed 's/ /,/g' $SSH_KEYS)
         if [ -z "$LIST_KEY" ]; then
@@ -1190,7 +1189,7 @@ add_mail() {
 # return values:
 # none
 mail_intern() {
-    while [ 1 ]; do
+    while true; do
         LIST_IP=""
         [ -f $CONFIG_INTERN ] && LIST_IP=$(grep "^mail" $CONFIG_INTERN | awk '{print $5}')
         if [ -z "$LIST_IP" ]; then
@@ -1260,7 +1259,7 @@ add_forward() {
 # return values:
 # none
 internal_forwarding() {
-    while [ 1 ]; do
+    while true; do
         LIST_FORWARD=""
         if [ -f $CONFIG_BIND ]; then
             ZONE_NAME=""
@@ -1327,7 +1326,7 @@ add_report() {
 # return values:
 # none
 monthly_report() {
-    while [ 1 ]; do
+    while true; do
         LIST_EMAIL=""
         [ -f $CRON_STATS ] && LIST_EMAIL=$(grep "^$SCRIPT_STATS" $CRON_STATS | awk '{print $2}')
         if [ -z "$LIST_EMAIL" ]; then
@@ -1381,7 +1380,7 @@ add_alert() {
 # return values:
 # none
 anomaly_detect() {
-    while [ 1 ]; do
+    while true; do
         LIST_EMAIL=""
         [ -f $CRON_ANOMALY ] && LIST_EMAIL=$(grep "^30 1,7,13,19 \* \* \* root $SCRIPT_ANOMALY" $CRON_ANOMALY | awk '{print $8}')
         if [ -z "$LIST_EMAIL" ]; then
@@ -1617,7 +1616,7 @@ dialog_postfix() {
     DIALOG_SENDER_REWRITE="Sender rewrite"
     DIALOG_HEADER_REWRITE="Header rewrite"
     DIALOG_RESTRICTIONS="Postfix restrictions"
-    while [ 1 ]; do
+    while true; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix configuration" 0 0 0 \
@@ -1666,7 +1665,7 @@ dialog_postfix() {
 # none
 dialog_restrictions() {
     DIALOG_RECIPIENT="Recipient restrictions"
-    while [ 1 ]; do
+    while true; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix restrictions" 0 0 0  \
@@ -1698,7 +1697,7 @@ dialog_clearswift() {
     DIALOG_EXPORT_ADDRESS="Export address lists"
     DIALOG_TOGGLE_PASSWORD="Toggle CS admin password check"
     DIALOG_TOGGLE_CLEANUP="Toggle mqueue cleanup"
-    while [ 1 ]; do
+    while true; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                     \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Clearswift configuration" 0 0 0 \
@@ -1748,7 +1747,7 @@ dialog_report() {
     DIALOG_STATUS="Current status: "
     DIALOG_EMAIL="Add/remove email recipients"
     DIALOG_SCRIPT="Edit script"
-    while [ 1 ]; do
+    while true; do
         [ -f $SCRIPT_STATS ] && [ -f $CRON_STATS ] && STATUS_CRON="enabled" || STATUS_CRON="disabled"
         ARRAY=()
         ARRAY+=("$DIALOG_STATUS$STATUS_CRON" "")
@@ -1818,7 +1817,7 @@ dialog_anomaly() {
     DIALOG_STATUS="Current status: "
     DIALOG_EMAIL="Add/remove email recipients"
     DIALOG_SCRIPT="Edit script"
-    while [ 1 ]; do
+    while true; do
         [ -f $SCRIPT_ANOMALY ] && [ -f $CRON_ANOMALY ] && STATUS_CRON="enabled" || STATUS_CRON="disabled"
         ARRAY=()
         ARRAY+=("$DIALOG_STATUS$STATUS_CRON" "")
@@ -1892,7 +1891,7 @@ dialog_other() {
     DIALOG_FORWARDING="Internal DNS forwarding"
     DIALOG_REPORT="Monthly email stats reports"
     DIALOG_ANOMALY="Sender anomaly detection"
-    while [ 1 ]; do
+    while true; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                   \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage other configuration" 0 40 0   \
@@ -2057,7 +2056,7 @@ dialog_show() {
     DIALOG_TLS_IN="TLS inbound daily stats"
     DIALOG_TLS_OUT="TLS outbound daily stats"
     DIALOG_LOG="Search Postfix daily mail log"
-    while [ 1 ]; do
+    while true; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                        \
             --cancel-label "Back" --ok-label "Edit" --menu "Postfix infos & stats" 0 40 0             \
@@ -2150,24 +2149,76 @@ init_cs() {
     # create alias shortcuts for menu and Mail Logs
     grep -qF 'alias pflogs' /root/.bashrc || echo 'alias pflogs="tail -f /var/log/cs-gateway/mail.$(date +%Y-%m-%d).log"' >> /root/.bashrc
     grep -qF "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
-    # write example custom command
-    EXAMPLE_COMMAND="$DIR_COMMANDS/example_script.sh"
-    if [ ! -f $EXAMPLE_COMMAND ]; then
-        echo '!/bin/bash' >> $EXAMPLE_COMMAND
-        echo 'filename=$1' >> $EXAMPLE_COMMAND
-        echo 'LOG_FILE=/var/log/cs-gateway/removetxt.log' >> $EXAMPLE_COMMAND
-        echo 'touch $LOG_FILE' >> $EXAMPLE_COMMAND
-        echo >> $EXAMPLE_COMMAND
-        echo 'if grep -iFq "#encrypt" $filename; then' >> $EXAMPLE_COMMAND
-        echo '        sed -i 's/#encrypt#//g' "$filename"' >> $EXAMPLE_COMMAND
-        echo '        echo "Found encrypt text.. Removed it..done" $filename >>  $LOG_FILE' >> $EXAMPLE_COMMAND
-        echo '        exit 5' >> $EXAMPLE_COMMAND
-        echo 'else' >> $EXAMPLE_COMMAND
-        echo '        exit 0' >> $EXAMPLE_COMMAND
-        echo >> $EXAMPLE_COMMAND
-        echo 'fi' >> $EXAMPLE_COMMAND
-        chown cs-admin:cs-adm $EXAMPLE_COMMAND
-        chmod +x $EXAMPLE_COMMAND
+    # write custom commands
+    mkdir -p "$DIR_COMMANDS"
+    chown cs-admin:cs-adm "$DIR_COMMANDS"
+    CUSTOM_COMMAND="$DIR_COMMANDS/check_sender_ip.sh"
+    if [ ! -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT="
+        H4sIAIhuhlwAA71WbW/iRhD+7l8xITSGBvMSKZUgog0K3BU1yUXh7nQV5JCxx9iKvevuLoH0cv+9
+        s2sDhiR9yYeiRODd8czzPPPs2IcHjVnEGjNXhpZ1CF6I3v1UIvNRTKO0LkP43Kq36k3rkHYvePoo
+        onmooOJV4aTZasM1qgvO4BNTKBiGCTI5Q+GqBZvD+2T2aw0iFvBzhsrjzKF/uYhVxOZ1jycmZ2+h
+        Qi5kBz4tEUY8SVDU4MoVHvQjFPcEReMSqBaCgcd9lB26boIDGUoY3lAJiCOpaP10Z51xVdhrt2lz
+        wQR6/IEgzmIEFIILyxreTN8NLwddu96I0qkOt/Xa5fD6t64dKpV2Go10hfVI+jyO6z5uw656X6a9
+        94PuSeunZhMOdTlJBZgvrcFVb3g5vR1cDG+Gg+uPXXuxxPOFNBQph615RQFg4kYxBBHB8TlKAxpX
+        lBxUiOwlwFDJvrQa3Xa7ao3BCaBUbpXgDp6e9N2K2GbphzeORrqfm26PJPBYK6VCl0FOpAZKPILi
+        FL9kMXd9YLgEKi8janMgeAI+BhFDH5Y4I2nZvUVVDiDHkEuZIxnTSgVXqYByxXcVwvEPskpdyK8c
+        Ws9vMDvVEjhzRffkYCjLmVHBAvos56iyCroxFPqhWO/o54aPDw22iGMTbchvSASkMUHOFE1NcRUl
+        CFK5SQo8yPQn2owvtTaeQB2juZsdyrXRToLLfOMycGMUKu+g1ixXhjoWpREyZZDQvWMo/wIHXbJt
+        kZD+KL7wwgKPzUb/A9nnumAfraQXcordM1bpCdzlPTjvSuclsL+lImIKyiff7eo2m1HD9X2BUmq6
+        GeQM/gYtJG4ccJFshPoX1lsXoPb/SdD2UWsfHB1tHLmOzglc9n7XtPxoDseSpoCCY8Z9JukEQbKC
+        Z9ngCaSOcpign0pTcFqQ0f874p7LdPd8pCGVUIfg6gv1TxAzIL77MtiSfEP6sDersKX3Cv+skRc5
+        rLVJ10fVnDJ7bXS7RAxNuxwJ9vhCT2gYrWfcXeGA73jdBmcEMlFpt4inc3JaMseuEnKpmJtg9Xz7
+        Gxy/Cvv2MqCDyKK/Q/rW1lcu6WUOjaDC9i16GD2g3zHIbT0DM3+F6BLKs/XpCfiC/QdrEYLB8POg
+        Px197N0a/88FptR8sL/ulzTD78kUzCzhLcgmQYsYTTpkh7wxuyn3mpOz0+f6/+M2uO53NzNyFx4c
+        U5skHUZi/HpIq1qblCEtrSXYajQZ2a9LQkO49YIuBOeZKrhSwvXUa4rQIwDPsgdZqh7fIAGZfKA1
+        2FDd5VjbQfct/Z5RfQG8TvRyT+ldYD38qIH/ROQN/aSz2uv3bwej0WZO7+JaT6nEVV5YKTdr0JiM
+        K+Om067fHVcnd40auFXIZ5g7bt2ZKZYz3GZ/Rs884Yvk6CrevDwUUJ7WAGOJxaWmlZnlDyh9LdSY
+        yB/Lpe2DeV2uuXm1OLX+AvB0OQY2CgAA
+        "
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
+    fi
+    CUSTOM_COMMAND="$DIR_COMMANDS/add_external.sh"
+    if [ ! -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT="
+        H4sIACFvhlwAA81WbXPaRhD+zq/YyJoIBYSszDgTu7YnnhjaTBsnA3aSjuVkhLRCGsQdPR2xXdv/
+        PXt6ASRkkqYfWmwGdC/7vOzeHjtP7HHM7LGXRq3WDnhB8AVvJArmJb00gg9Oj/5aOzT1ms9vRTyJ
+        JLR9E57vOi/hDOVrzuCCqQ0YzZClYxSeXLAJ/Dob/9aFmIX8FUPpc2bRO10kMmaTns9nWcyThYy4
+        SA/g4hphxGczFF146wkfTmMU0xSZIiVQLgQDnweYHtDzLljAuIQZD+IwxoCG9mho7XF/n54XTKDP
+        vxKhcYKAQnDRasUhXIIVgqY7Glz9AjIiDKDXDoQxCyCVnpDAQ3oSqQRjIPjsAAwSAjjz4gQi9AIU
+        2ZbB8N3bL6Pzk+H5kaa3JwLnYDEwPrvtgXsfumaxNYO6zzaC5dA3fyGJggNW4B6Y2jo60vsfYPfP
+        ThUy3swF6Cs20AG9nWKg2DRPO2bX1WGuldzWuI+Mx7mSqc6SMJWJ8HxZJ5vEDFcM/3hz1lcUl2xW
+        NLp6qeFu/pAzKWJTjp6oLP1drldRqtmqUsjADZji7TUXwXJBtvf3/p8f3w1zn/yIwypiqc4Ha69A
+        roal8ivtXqWb+PaHW6O9sCrR0mk8V5LyaJTJubwFLsBLBLl8C9KbTHBFekN8jkjy4elTyEBrE2X6
+        /gLrKxiae9n/dO5egVGzK2cjBSHyvNrosAtMU1Vfh8fWmDRPUaaVDRnQyenpsD8a1UTn8ITuXU/B
+        mHnSj9r6bhfsw3av86rXcXu9jnlsd8Ez4W4uYibBu3SuHow1d3JOJLmkoo71Fjr56V1aUxDbLI2t
+        ejdW/YzINY3fl7iU6XtMKay4r4g39Spo5x+q7R3t75sbEZudyKrkJpbUAxs4lKU9FxjGN+CpjrcI
+        1dcxhlyg7YXUy7c79X7YH7z5tM0oa7DByyj80Z0H1WBUPzBS+7ObPrPtydoIDehrI1Y/G9TavWem
+        q9muYzd5mzO4GPwLWs9/jFYNHJMU/1OXDyt6jv8/Pj9O7OecDuNa01C/JqRYkMsMr6vXD4T0UN4G
+        3TILbTp/6vBlDdjsgkFt0lDdt7s8imuJqq7e7Iln/Y9HRTEVNwy4ZeutMl8/pnlSi1NaxukcaVAr
+        y/v7htlicyMXWuVq4FZdd48fZ5JnUTFpxCqma54HmKBE4ElQM7zpF0r5ysorfuzqD4qrv4ZEGWnI
+        KzXy78PcrXAe4kIOaWuAydrk3nKoKDH6oP9sbrf1DX7vj3kfCwAA
+        "
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
+    fi
+    CUSTOM_COMMAND="$DIR_COMMANDS/remove_external.sh"
+    if [ ! -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT="
+        H4sIAAdvhlwAA5WR3U/CMBTF3/dXHMFQSBhjJCQGQ6IZfvCgPgjGhKIZ425rZK22xY+I/7tlBOKD
+        Gr1pk97TnpNfc6t7wUzIYBab3POq0FSoZ7qnV0taxouWyXETtjqt0Ku620g9vmmR5Rb1pIFOOzzA
+        JdlISYzl2kB5QdLMSMd2KTOcFbPzJoRM1ZEkmyjpu22WCytk1kpUUWYeL22utOlh/EK4VkVBuomL
+        WCcYCNIPhuSGyy61RKLmZHqub8OHVBaFmotU0NxJXSftWu/iajA8HZ4M+ox5IsUEforKfljB9BA2
+        d6Fwtf0v2MntiMHGGVKtCrCR6jEshKTymfNnmh7hP4Hd8fqIryxvqB4qfOJ8fApWRn8JXpehOXwB
+        ZoJvPQEP122w8e5cO+6wlFLxO2gU/QLK6xFfJbzB3zv8gzf+Bfyz14H/idut6ppoOxOQ1kqXI+x3
+        m6CFoa9S25u4xG1MBX2EmKJWA70K64a7Wm1Obe8TJTtzIbMCAAA=
+        "
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
     fi
 }
 # print program information in dialog msgbox
@@ -2245,7 +2296,7 @@ DIALOG_CLEARSWIFT="Clearswift configs"
 DIALOG_OTHER="Other configs"
 DIALOG_SHOW="Postfix infos & stats"
 DIALOG_APPLY="Apply configuration"
-while [ 1 ]; do
+while true; do
     ARRAY=()
     if check_installed_seg; then
         ARRAY+=("$DIALOG_INSTALL" "")
