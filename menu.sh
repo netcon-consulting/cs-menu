@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.10.0 for Clearswift SEG >= 4.8
+# menu.sh V1.11.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,7 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# added custom commands 'check_sender_ip.sh', 'add_external.sh' and 'remove_external.sh'
+# added custom commands 'wildfire_scan.sh' and 'hybrid_scan.sh'
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1118,10 +1118,10 @@ toggle_password() {
 # none
 toggle_cleanup() {
     PACKED_SCRIPT="
-    H4sIAL8b3FsAA22PS0vDQBSF9/MrrkkXLZpM2pUoBUMbasEICnElhMn0JhnM3KnzUIP43w0+cOPi                                                                                                     
-    wIHD98GJT3ijiDfC9YzFIAcUttbPAQOmroeHZZqlGYunaWOOo1Vd72EuF7DKludwi35jCCryaAl7                                                                                                     
-    jeQatMIH6mCnm+szIPTSUDLFhcEr6lJp9JcuD7439gJKYSVsFdonhwRznR5++tW/7IKx7f6+Lu+q                                                                                                     
-    oirWEX8RlkuXdMLjqxi5Fmrg7mjMwL9P1CZ4HrEy39/U+a5YrxhrFR0gmv1pIkj8eERoIdFeaYTT                                                                                                     
+    H4sIAL8b3FsAA22PS0vDQBSF9/MrrkkXLZpM2pUoBUMbasEICnElhMn0JhnM3KnzUIP43w0+cOPi
+    wIHD98GJT3ijiDfC9YzFIAcUttbPAQOmroeHZZqlGYunaWOOo1Vd72EuF7DKludwi35jCCryaAl7
+    jeQatMIH6mCnm+szIPTSUDLFhcEr6lJp9JcuD7439gJKYSVsFdonhwRznR5++tW/7IKx7f6+Lu+q
+    oirWEX8RlkuXdMLjqxi5Fmrg7mjMwL9P1CZ4HrEy39/U+a5YrxhrFR0gmv1pIkj8eERoIdFeaYTT
     aPYLTBu+oQSrIWnh/QMeL9knhMlH1DQBAAA=
     "
 
@@ -2215,6 +2215,61 @@ init_cs() {
         d6Fwtf0v2MntiMHGGVKtCrCR6jEshKTymfNnmh7hP4Hd8fqIryxvqB4qfOJ8fApWRn8JXpehOXwB
         ZoJvPQEP122w8e5cO+6wlFLxO2gU/QLK6xFfJbzB3zv8gzf+Bfyz14H/idut6ppoOxOQ1kqXI+x3
         m6CFoa9S25u4xG1MBX2EmKJWA70K64a7Wm1Obe8TJTtzIbMCAAA=
+        "
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
+    fi
+    CUSTOM_COMMAND="$DIR_COMMANDS/wildfire_scan.sh"
+    if [ ! -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT="
+        H4sIAKuzi1wAA5VV/2/aOBT/PX/FWxopcFdIwukmlZZqrIUWXbuboLR36vUiEwyxmjiR7Yyxdf/7
+        PZswwoDpaimSnx1/Pu/zvthHb7wJ496EyNiyjmDBkumMCRrKiPCmjOE+aPpN3zrCvYssXwo2jxXU
+        ojq0/OAEPlB1kXEYc0UFp3FKuZxQQVTB53CVTq6PgVMVZbyBnywSxfi8GWWpgesWKs5EG26JiOCS
+        UfEsKYda2pyW83d7z9a1m4KqQnCIsimVbbR9aMCEcjbnaARopCRZEEHRaqE1F2RZmicnaBdc0Cj7
+        hJ5OEgpUiEwg6v8eCJMnlEgKjEsqFCyzQkC24ND9OIBnuoSYCtp+DSIeDP/o/d1xNVRIchYiTKhh
+        3NfAGJyHwc1lfzDsddxYqVy2PW+d1WZOkowkKsPILjIMsg6olxeThEXI6Zrjo/H728Fdx3aqWJ4s
+        JilT3owl1Da/3feGl4OLnf/mVHkY2CmLlG1ZN39ehR+Hvf7gr457jsM1K6Nx36yc4XAt625w2wsf
+        usj51ocjjClIzA6fSlOQgikqIaVSkjkFlUGSzUG7gbWqYlAxhSmdMU6nZicXtIHOzmbsM+g8EUFS
+        itVpysQxpbGC2lTRJ5IUqzLiGBjLMIaIVavDVwtw0CjOwHY2YpzA2eiw4fwcd/uDm16Iq7b1zbLY
+        DB6h8QWXAxue4OVlbbbQPNVO8wryWPvTBqeGXUg5+guOXzcaQ5WZTtTSwlXszbHPTGElWzNmWWve
+        jgY3zG802azkrpB9Fwb2BeE8U5Dl2HEmlq4TuLvYq1IIux9GD70hEtSiQiTQaEg8whU0+mBj2WCl
+        dpyygG2zqCE77zS/s6moul2Nyxb0IT/dkak6IFwuqAAmgaa5WrqHHL3ujq61myas2xTwAmTxDG5K
+        VBTXHP8YvDMZk9bvb89rj/+ePf1aP/vHKxe8YyCY+1wwFEkeg6dv7l7nNd1B18sQT3XxpViesOog
+        iPGm3RWwiHUWlCjoKUwzsy0TSnNwvneHWSy77vUp0bSdbcedShtrfRp/o3GbaVvmD1LvV/2+P01V
+        pXqu1VaVDHuj8c1dZ520bdp9WStvl0ra1iv78nZI1or2p7J2Mljy4L2h36Ofy4v087BLxzZMbiPw
+        AxcV6klrPfkNXYbK2BPmFf3q2XK3fi4dOT3dkPiH8d6bB3MPgl8FCA4D3K4e2T0IQRWhdRjhqnyY
+        90C0KhC/HAKwx3x9+a+T4/4Q8/Ja2x8iKklkTfWt/x8zrM8ECAkAAA==
+        "
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
+    fi
+    CUSTOM_COMMAND="$DIR_COMMANDS/hybrid_scan.sh"
+    if [ ! -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT="
+        H4sIAGy0i1wAA7VXa3PiNhT97l9x12HWsA0B0nZnkpRMszwST8mjEJJ0kiwjbIHVgOyxRIBu9r/3
+        SjbgGCdhM61nmLEk38c5ujpXbH0o9Rkv9YnwDGMLvHk/ZG5POITvCA+uKjvlnbKxhSs1P5iHbOhJ
+        yDsF2C1X9uCMyprPocslDTn1xpSLPg2JnPAhHI/7J9vAqXR8XsSfmIwk48Mdxx9rd0cT6fnhPpyS
+        0IE6o+GDoBzy4x03fv8907agkgypnIQcHN+lYh/HZShCn3I25Dio4GBMRlMSUhzt7eFwwkPq+I+Y
+        Wn9EgYahHxpG7bTeu7o5urCrZskPZMkRxSGRdErmJeGELJCiFGVQuprhV6XHGQnYTjA3jcu/Lhq9
+        a/usfn7dqVZ2y9FEyz7r3lR/LpcNo3V+3LtoN5r2TdU6xMfSM51uU8/8ho9lGJf2aaP3Z9eu/YFG
+        sAWMg8AsuSuipWa31ap+Tq0gomnIJBUwpkKQIQXpw8gfwoAhsimTHkiPgksHjFNXrwQhLZbEZDBg
+        M0DzgIRkTHHDNHM5zVbkakXsIxlNIma5z6mhI/bQV74A3wzAhzqeD2ZuhTNXya0gmnB4iKtNu4Ws
+        nB+bxnfDYAO4heI/OF0x4R6enhbDXRweqKR5wnNX5bMPuTyWJeWYL+TKBY2xJ31dnApaT02YkdmM
+        SdxrY8AMYxG3qpzryB9UsEEcOxFsCQzMGuHcl+AHWISaSytXsdZ9d2pHZz27jq7zuWUBgUpIJwNF
+        LmSgSpA4BMsS6SWjETzBMKQBWF/vxCeTueY+WDjnUeJCsYJvZPoAxSbc3pl35j1Y34KQcQm5X75b
+        BTNJXRz9JRBWDMJV2zvGAtCJgV231nBMPZWtDCf0AFxfL4sRxRxzq7LUszpku9Hpti6zQA+p7IVU
+        nU9YZFcwV4ZN+8zunDQ0X3pncwl/MXBrTKTj5XPlbSiZWLZMeFRRlL/9un3/U2G7tA0E6y7ihNxW
+        7jUrKoQmJmZlEcmEKlgKl/WMJPX0Q0oeIiZGKU5X1mmjN9kVEvVOWEuDBcvqHZl21QGKyubkqHOy
+        MRHCI7u/fkYaTOTBRB7MF4hIl4eK8oMF4qH2r5eI9nZ+1Whf2Y3r1N4rLX1kdKr2H1ZxVTp6cNSu
+        paEuPGWBxRbgYY4Oig9NQs5GnESrAik9+fgR3hNYzgPaE9iHJIa9u30rcprrOPqGXGuBSEJd59xB
+        uXvunEV+rbjdKN2wAkpn1CosS05/rnoQIk/2JvPgIDLWrUmb0tHgNUP94cLsUyHjFJhd7MZBgIxh
+        e1lDhKq5zD1WzwRE9EsFcV5VUWxzWFtSyfxggtKZFtTYNH5RST9X17/9fm+psP+frhLu9v3Zu/VV
+        9fZslUzwgaCQZi2xSmToCvwzxHptI8CvamanW6s1Op0NZDPLutFun7fXbRMcNtStS19lEtxly+Z/
+        Jc/JTYqa1CYyndnsknsxGY9JOE/2u3QpRS5+UIWTGa7pMGpY3a5dbtw+8Ay5zJHv6B9xpIxb2Qt5
+        x6GsFMoMRVu6Xoga95fWSpymSkdGTKC0WFnaY33Rd/zUJpYXKoeXfuYwH5txpvFp9J8gZV15Q+wW
+        N+k4z4XAxVBe1rh/ATSVanZXDQAA
         "
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
