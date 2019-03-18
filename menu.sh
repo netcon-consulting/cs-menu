@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.11.0 for Clearswift SEG >= 4.8
+# menu.sh V1.12.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,8 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# added custom commands 'wildfire_scan.sh' and 'hybrid_scan.sh'
+# - updated 'check_sender_ip.sh'
+# - install 'vim' editor if not installed
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -274,7 +275,7 @@ install_local_dns() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_seg() {
-    service cs-services status >/dev/null 2>&1
+    service cs-services status &>/dev/null
     [ $? = 1 ] && return 1 || return 0
 }
 # check whether Rspamd is installed
@@ -283,7 +284,7 @@ check_installed_seg() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_rspamd() {
-    service rspamd status >/dev/null 2>&1
+    service rspamd status &>/dev/null
     [ $? = 1 ] && return 1 || return 0
 }
 # check whether ACME Tool is installed
@@ -292,7 +293,7 @@ check_installed_rspamd() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_letsencrypt() {
-    which acmetool >/dev/null 2>&1
+    which acmetool &>/dev/null
     return $?
 }
 # check whether Auto update is installed
@@ -310,7 +311,7 @@ check_installed_auto_update() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_vmware_tools() {
-    which vmware-toolbox-cmd >/dev/null 2>&1
+    which vmware-toolbox-cmd &>/dev/null
     return $?
 }
 # check whether local DNS resolver is installed
@@ -461,7 +462,7 @@ enable_letsencrypt() {
 enable_tls() {
     echo '# Verbose TLS' >> $PF_IN
     echo 'smtpd_tls_loglevel=1' >> $PF_IN
-    [ -f /etc/postfix/dh1024.pem ] || openssl dhparam -out /etc/postfix/dh1024.pem 1024 >/dev/null 2>&1
+    [ -f /etc/postfix/dh1024.pem ] || openssl dhparam -out /etc/postfix/dh1024.pem 1024 &>/dev/null
     echo 'smtpd_tls_dh1024_param_file=/etc/postfix/dh1024.pem' >> $PF_IN
     echo '# Verbose TLS' >> $PF_OUT
     echo 'smtp_tls_note_starttls_offer=yes' >> $PF_OUT
@@ -748,8 +749,8 @@ activate_config() {
             fi
         done < $PF_OUT
     fi
-    postfix stop >/dev/null 2>&1
-    postfix start >/dev/null 2>&1
+    postfix stop &>/dev/null
+    postfix start &>/dev/null
 }
 ###################################################################################################
 # select features to enable in dialog checkbox
@@ -1029,11 +1030,11 @@ import_keystore() {
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ] && [ -f $DIALOG_RET ]; then
-        keytool -importkeystore -destkeystore $TMP_KEYSTORE -srckeystore $DIALOG_RET -srcstoretype pkcs12 -deststorepass $PASSWORD_KEYSTORE -srcstorepass $PASSWORD_KEYSTORE >/dev/null 2>&1
+        keytool -importkeystore -destkeystore $TMP_KEYSTORE -srckeystore $DIALOG_RET -srcstoretype pkcs12 -deststorepass $PASSWORD_KEYSTORE -srcstorepass $PASSWORD_KEYSTORE &>/dev/null
         if [ $? = 0 ]; then
             mv /var/cs-gateway/keystore /var/cs-gateway/keystore.old
             mv $TMP_KEYSTORE /var/cs-gateway/keystore
-            cs-servicecontrol restart tomcat >/dev/null 2>&1
+            cs-servicecontrol restart tomcat &>/dev/null
         fi
     fi
 }
@@ -2134,6 +2135,8 @@ apply_config() {
 init_cs() {
     # enable CS RHEL repo
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
+    # install vim editor
+    which vim &>/dev/null || yum install -y vim --enablerepo=cs-* &>/dev/null
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch $CONFIG_PF
@@ -2303,7 +2306,7 @@ print_info() {
 # none
 check_update() {
     TMP_UPDATE="/tmp/TMPupdate"
-    wget $LINK_UPDATE -O $TMP_UPDATE >/dev/null 2>&1
+    wget $LINK_UPDATE -O $TMP_UPDATE &>/dev/null
     VERSION="$(grep '^# menu.sh V' $TMP_UPDATE | awk -FV '{print $2}' | awk '{print $1}')"
     MAJOR_DL="$(echo $VERSION | awk -F. '{print $1}')"
     MINOR_DL="$(echo $VERSION | awk -F. '{print $2}')"

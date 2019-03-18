@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_sender_ip.sh V1.1.0
+# check_sender_ip.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, info@netcon-consulting.com
 #
@@ -11,7 +11,7 @@
 # 5 - sender IP not in list
 # 99 - unrecoverable error
 
-IP_FILE='./ip_list'
+IP_FILE='/tmp/TMPip_list'
 IP_LINK='http://pxe.isdoll.de/ip_list'
 MAX_AGE=21600 # in seconds
 EMAIL_RECIPIENT='uwe@usommer.de'
@@ -45,5 +45,5 @@ RECEIVED_LINE="$(sed -n "$RECEIVED_START,$RECEIVED_END{p}" "$1")"
 # find IP address in first 'Received: from' line; if not found then unrecoverable error (error code=99)
 IP_ADDRESS="$(echo $RECEIVED_LINE | awk 'match($0, /\[([0-9.]+)\]/, a) {print a[1]}')"
 [ -z "$IP_ADDRESS" ] && exit 99
-# if IP address in IP list then error code=5, else error code=0
-grep -q "^$IP_ADDRESS\s*$" $IP_FILE && exit 0 || exit 5
+# if IP address in IP list then error code=0, else error code=5
+grep -q "^$IP_ADDRESS\s*$" $IP_FILE || exit 5
