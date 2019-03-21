@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.12.0 for Clearswift SEG >= 4.8
+# menu.sh V1.13.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,27 +55,27 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - updated 'check_sender_ip.sh'
-# - install 'vim' editor if not installed
+# - automatic rspamd master-slave cluster configuration on installation
+# - IPs added for SSH access also get access to port 11334 for the rspamd web UI
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
-DIALOG="dialog"
-TXT_EDITOR="vim"
-PF_CUSTOMISE="/opt/cs-gateway/scripts/deployment/postfix_customise"
-CONFIG_PF="/opt/cs-gateway/scripts/deployment/netcon-postfix.sh" # linked in postfix_customise
-CONFIG_FW="/opt/cs-gateway/custom/custom.rules"
-CONFIG_INTERN="/var/named/intern.db"
-CONFIG_BIND="/etc/named.conf"
-CONFIG_AUTO_UPDATE="/etc/yum/yum-cron.conf"
-CONFIG_AUTO_UPDATE_ALT="/etc/sysconfig/yum-cron"
-CONFIG_LDAP="/var/cs-gateway/ldap/schedule.properties"
-MAP_ALIASES="/etc/aliases"
-MAP_TRANSPORT="/etc/postfix-outbound/transport.map"
-DIR_CERT="/var/lib/acme/live/$(hostname)"
-DIR_COMMANDS="/opt/cs-gateway/scripts/netcon"
-DIR_MAPS="/etc/postfix/maps"
-DIR_ADDRESS_LISTS="/home/cs-admin/address-lists"
+DIALOG='dialog'
+TXT_EDITOR='vim'
+PF_CUSTOMISE='/opt/cs-gateway/scripts/deployment/postfix_customise'
+CONFIG_PF='/opt/cs-gateway/scripts/deployment/netcon-postfix.sh' # linked in postfix_customise
+CONFIG_FW='/opt/cs-gateway/custom/custom.rules'
+CONFIG_INTERN='/var/named/intern.db'
+CONFIG_BIND='/etc/named.conf'
+CONFIG_AUTO_UPDATE='/etc/yum/yum-cron.conf'
+CONFIG_AUTO_UPDATE_ALT='/etc/sysconfig/yum-cron'
+CONFIG_LDAP='/var/cs-gateway/ldap/schedule.properties'
+MAP_ALIASES='/etc/aliases'
+MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
+DIR_CERT='/var/lib/acme/live/$(hostname)'
+DIR_COMMANDS='/opt/cs-gateway/scripts/netcon'
+DIR_MAPS='/etc/postfix/maps'
+DIR_ADDRESS_LISTS='/home/cs-admin/address-lists'
 ESMTP_ACCESS="$DIR_MAPS/esmtp_access"
 HELO_ACCESS="$DIR_MAPS/check_helo_access"
 RECIPIENT_ACCESS="$DIR_MAPS/check_recipient_access"
@@ -84,28 +84,28 @@ SENDER_REWRITE="$DIR_MAPS/sender_canonical_maps"
 WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
-WHITELIST_RSPAMD="/var/lib/rspamd/ip_whitelist"
-CLIENT_MAP="/etc/postfix-inbound/client.map"
-LOG_FILES="/var/log/cs-gateway/mail."
-LAST_CONFIG="/var/cs-gateway/deployments/lastAppliedConfiguration.xml"
-PASSWORD_KEYSTORE="changeit"
-PF_IN="/opt/cs-gateway/custom/postfix-inbound/main.cf"
-PF_OUT="/opt/cs-gateway/custom/postfix-outbound/main.cf"
-PF_INBOUND="/var/cs-gateway/pending/postfix/postfix-inbound"
-PF_OUTBOUND="/var/cs-gateway/pending/postfix/postfix-outbound"
-SSH_KEYS="/home/cs-admin/.ssh/authorized_keys"
-BLACKLISTS="zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4"
-TMP_PASSWORD="/tmp/TMPpassword"
-EMAIL_DEFAULT="uwe@usommer.de"
-LINK_UPDATE="https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh"
-CRON_STATS="/etc/cron.monthly/stats_report.sh"
-SCRIPT_STATS="/root/send_report.sh"
-CRON_ANOMALY="/etc/cron.d/anomaly_detect.sh"
-SCRIPT_ANOMALY="/root/check_anomaly.sh"
-CRON_CLEANUP="/etc/cron.daily/cleanup_mqueue.sh"
+WHITELIST_RSPAMD='/var/lib/rspamd/ip_whitelist'
+CLIENT_MAP='/etc/postfix-inbound/client.map'
+LOG_FILES='/var/log/cs-gateway/mail.'
+LAST_CONFIG='/var/cs-gateway/deployments/lastAppliedConfiguration.xml'
+PASSWORD_KEYSTORE='changeit'
+PF_IN='/opt/cs-gateway/custom/postfix-inbound/main.cf'
+PF_OUT='/opt/cs-gateway/custom/postfix-outbound/main.cf'
+PF_INBOUND='/var/cs-gateway/pending/postfix/postfix-inbound'
+PF_OUTBOUND='/var/cs-gateway/pending/postfix/postfix-outbound'
+SSH_KEYS='/home/cs-admin/.ssh/authorized_keys'
+BLACKLISTS='zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4'
+TMP_PASSWORD='/tmp/TMPpassword'
+EMAIL_DEFAULT='uwe@usommer.de'
+LINK_UPDATE='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh'
+CRON_STATS='/etc/cron.monthly/stats_report.sh'
+SCRIPT_STATS='/root/send_report.sh'
+CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
+SCRIPT_ANOMALY='/root/check_anomaly.sh'
+CRON_CLEANUP='/etc/cron.daily/cleanup_mqueue.sh'
 APPLY_NEEDED=0
 ###################################################################################################
-TITLE_MAIN="NetCon Clearswift Configuration"
+TITLE_MAIN='NetCon Clearswift Configuration'
 ###################################################################################################
 # get install confirmation for specified feature
 # parameters:
@@ -114,9 +114,7 @@ TITLE_MAIN="NetCon Clearswift Configuration"
 # error code - 0 for install, 1 for cancel
 confirm_install() {
     exec 3>&1
-    $DIALOG --backtitle "Install features"  \
-        --yesno "Install '$1'?" 0 40        \
-        2>&1 1>&3
+    $DIALOG --backtitle "Install features" --yesno "Install '$1'?" 0 40 2>&1 1>&3
     RET_CODE=$?
     exec 3>&-
     return $RET_CODE
@@ -128,9 +126,7 @@ confirm_install() {
 # error code - 0 for install, 1 for cancel
 confirm_reinstall() {
     exec 3>&1
-    $DIALOG --backtitle "Install features"  \
-        --yesno "'$1' already installed. Reinstall?" 0 60        \
-        2>&1 1>&3
+    $DIALOG --backtitle "Install features" --yesno "'$1' already installed. Reinstall?" 0 60 2>&1 1>&3
     RET_CODE=$?
     exec 3>&-
     return $RET_CODE
@@ -191,6 +187,46 @@ install_rspamd() {
     yum install -y redis rspamd
     rspamadm configwizard
     echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_RSPAMD\";"$'\n\t''action = "accept";'$'\n''}' > /etc/rspamd/local.d/multimap.conf
+    echo 'extended_spam_headers = true;' > /etc/rspamd/override.d/milter_headers.conf
+    echo 'autolearn = true;' > /etc/rspamd/override.d/classifier-bayes.conf
+    echo 'reject = null;' > /etc/rspamd/override.d/actions.conf
+    LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
+    if [ "$(echo $LIST_PEER | wc -w)" == 2 ]; then
+        IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
+        IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
+        HOST_NAME="$(hostname -f)"
+        IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
+        HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
+        echo $'\n''====================================================================================='
+        echo "Configuring rspamd as master-slave cluster with peer '$HOSTNAME_OTHER' ($IP_OTHER)..."
+        echo '====================================================================================='$'\n'
+        CONFIG_REDIS='/etc/redis.conf'
+        sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
+        sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
+        CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
+        if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
+            echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
+        else
+            echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
+        fi
+        echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
+        CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
+        echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
+        echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
+        echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
+        echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
+        if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
+            echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
+        fi
+        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+            echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+            iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
+        fi
+        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+            echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+            iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
+        fi
+    fi
     chkconfig rspamd on
     chkconfig redis on
     [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
@@ -208,8 +244,8 @@ install_letsencrypt() {
     TMP_REPONSE="/tmp/TMPreponse"
     clear
     install_epel
-    if [ ! -f $CONFIG_FW ] || ! grep -qF "I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT" $CONFIG_FW; then
-        echo "-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT" >> $CONFIG_FW
+    if [ ! -f $CONFIG_FW ] || ! grep -q '\-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' $CONFIG_FW; then
+        echo '-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' >> $CONFIG_FW
         iptables -I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT
     fi
     yum-config-manager --add-repo https://copr.fedorainfracloud.org/coprs/hlandau/acmetool/repo/epel-6/hlandau-acmetool-epel-6.repo
@@ -260,9 +296,9 @@ install_vmware_tools() {
 # none
 install_local_dns() {
     clear
-    grep -qF "dnssec-validation auto;" $CONFIG_BIND || sed -i '/include/a   \ \ dnssec-validation auto;' $CONFIG_BIND
-    grep -qF "#include" $CONFIG_BIND || sed -i 's/include/#include/' $CONFIG_BIND
-    grep -qF "named.ca" $CONFIG_BIND || sed -i 's/db\.cache/named\.ca/' $CONFIG_BIND
+    grep -q "dnssec-validation auto;" $CONFIG_BIND || sed -i '/include/a   \ \ dnssec-validation auto;' $CONFIG_BIND
+    grep -q "#include" $CONFIG_BIND || sed -i 's/include/#include/' $CONFIG_BIND
+    grep -q "named.ca" $CONFIG_BIND || sed -i 's/db\.cache/named\.ca/' $CONFIG_BIND
     /etc/init.d/named restart
     get_keypress
 }
@@ -320,7 +356,7 @@ check_installed_vmware_tools() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_local_dns() {
-    RET_CODE=$(grep -qF "dnssec-validation auto;" $CONFIG_BIND || grep -qF "#include" $CONFIG_BIND || grep -qF "named.ca" $CONFIG_BIND)
+    RET_CODE=$(grep -q "dnssec-validation auto;" $CONFIG_BIND || grep -q "#include" $CONFIG_BIND || grep -q "named.ca" $CONFIG_BIND)
     return $RET_CODE
 }
 ###################################################################################################
@@ -909,7 +945,9 @@ add_ssh() {
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
         echo "-I INPUT 4 -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT" >> $CONFIG_FW
+        echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT" >> $CONFIG_FW
         iptables -I INPUT 4 -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT
+        iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT
         return 0
     else
         return 1
@@ -942,8 +980,11 @@ ssh_access() {
                 add_ssh
             else
                 if [ $RET_CODE = 3 ]; then
-                    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 22 -s $(echo "$DIALOG_RET" | sed 's/\//\\\//g') -j ACCEPT/d" $CONFIG_FW
+                    IP_ADDRESS="$(echo "$DIALOG_RET" | sed 's/\//\\\//g')"
+                    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 22 -s $IP_ADDRESS -j ACCEPT/d" $CONFIG_FW
+                    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_ADDRESS -j ACCEPT/d" $CONFIG_FW
                     iptables -D INPUT -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT
+                    iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT
                 else
                     break
                 fi
@@ -964,8 +1005,8 @@ add_key() {
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-        if ! grep -qF "^PubkeyAuthentication yes" /etc/ssh/sshd_config                    ||
-            ! grep -qF "^AuthorizedKeysFile .ssh/authorized_keys" /etc/ssh/sshd_config ]  ||
+        if ! grep -q "^PubkeyAuthentication yes" /etc/ssh/sshd_config                    ||
+            ! grep -q "^AuthorizedKeysFile .ssh/authorized_keys" /etc/ssh/sshd_config ]  ||
             ! [ -d /home/cs-admin/.ssh ]; then
             echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
             echo "AuthorizedKeysFile .ssh/authorized_keys" >> /etc/ssh/sshd_config
@@ -2133,6 +2174,8 @@ apply_config() {
 }
 ###################################################################################################
 init_cs() {
+    clear
+    echo 'Performing base setup... this may take a while on first run'
     # enable CS RHEL repo
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     # install vim editor
@@ -2144,14 +2187,14 @@ init_cs() {
     chown cs-admin:cs-adm $CONFIG_PF
     grep -q $CONFIG_PF $PF_CUSTOMISE || echo $'\n'"$CONFIG_PF" >> $PF_CUSTOMISE
     head -1 $CONFIG_PF | grep -q '^#!/bin/bash' || echo '#!/bin/bash' >> $CONFIG_PF
-    grep -qF '*filter' "$CONFIG_FW" || echo '*filter' >> "$CONFIG_FW"
-    grep -qF ':INPUT DROP [0:0]' "$CONFIG_FW" || echo ':INPUT DROP [0:0]' >> "$CONFIG_FW"
-    grep -qF ':FORWARD DROP [0:0]' "$CONFIG_FW" || echo ':FORWARD DROP [0:0]'  >> "$CONFIG_FW"
-    grep -qF ':OUTPUT DROP [0:0]' "$CONFIG_FW" || echo ':OUTPUT DROP [0:0]' >> "$CONFIG_FW"
+    grep -q '*filter' "$CONFIG_FW" || echo '*filter' >> "$CONFIG_FW"
+    grep -q ':INPUT DROP \[0:0\]' "$CONFIG_FW" || echo ':INPUT DROP [0:0]' >> "$CONFIG_FW"
+    grep -q ':FORWARD DROP \[0:0\]' "$CONFIG_FW" || echo ':FORWARD DROP [0:0]'  >> "$CONFIG_FW"
+    grep -q ':OUTPUT DROP \[0:0\]' "$CONFIG_FW" || echo ':OUTPUT DROP [0:0]' >> "$CONFIG_FW"
     chown -R cs-admin:cs-adm /opt/cs-gateway/custom
     # create alias shortcuts for menu and Mail Logs
-    grep -qF 'alias pflogs' /root/.bashrc || echo 'alias pflogs="tail -f /var/log/cs-gateway/mail.$(date +%Y-%m-%d).log"' >> /root/.bashrc
-    grep -qF "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
+    grep -q 'alias pflogs' /root/.bashrc || echo 'alias pflogs="tail -f /var/log/cs-gateway/mail.$(date +%Y-%m-%d).log"' >> /root/.bashrc
+    grep -q "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
     # write custom commands
     mkdir -p "$DIR_COMMANDS"
     chown cs-admin:cs-adm "$DIR_COMMANDS"
@@ -2341,7 +2384,7 @@ check_update() {
 # none
 # return values:
 # none
-grep -qF "alias menu=/root/menu.sh" /root/.bashrc || echo "alias menu=/root/menu.sh" >> /root/.bashrc
+grep -q "alias menu=/root/menu.sh" /root/.bashrc || echo "alias menu=/root/menu.sh" >> /root/.bashrc
 check_installed_seg && init_cs
 write_examples
 check_update
