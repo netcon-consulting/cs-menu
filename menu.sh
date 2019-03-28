@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.13.0 for Clearswift SEG >= 4.8
+# menu.sh V1.14.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,8 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - automatic rspamd master-slave cluster configuration on installation
-# - IPs added for SSH access also get access to port 11334 for the rspamd web UI
+# - disabled automatic rspamd master-slave cluster configuration on installation for now
+# - disabled rspamd greylisting
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -190,43 +190,44 @@ install_rspamd() {
     echo 'extended_spam_headers = true;' > /etc/rspamd/override.d/milter_headers.conf
     echo 'autolearn = true;' > /etc/rspamd/override.d/classifier-bayes.conf
     echo 'reject = null;' > /etc/rspamd/override.d/actions.conf
-    LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
-    if [ "$(echo $LIST_PEER | wc -w)" == 2 ]; then
-        IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
-        IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
-        HOST_NAME="$(hostname -f)"
-        IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
-        HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
-        echo $'\n''====================================================================================='
-        echo "Configuring rspamd as master-slave cluster with peer '$HOSTNAME_OTHER' ($IP_OTHER)..."
-        echo '====================================================================================='$'\n'
-        CONFIG_REDIS='/etc/redis.conf'
-        sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
-        sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
-        CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
-        if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
-            echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
-        else
-            echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
-        fi
-        echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
-        CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
-        echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
-        echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
-        echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
-        echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
-        if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
-            echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
-        fi
-        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
-            echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
-            iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
-        fi
-        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
-            echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
-            iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
-        fi
-    fi
+    echo 'enabled = false;' > /etc/rspamd/local.d/greylisting.conf
+#    LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
+#    if [ "$(echo $LIST_PEER | wc -w)" == 2 ]; then
+#        IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
+#        IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
+#        HOST_NAME="$(hostname -f)"
+#        IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
+#        HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
+#        echo $'\n''====================================================================================='
+#        echo "Configuring rspamd as master-slave cluster with peer '$HOSTNAME_OTHER' ($IP_OTHER)..."
+#        echo '====================================================================================='$'\n'
+#        CONFIG_REDIS='/etc/redis.conf'
+#        sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
+#        sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
+#        CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
+#        if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
+#            echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
+#        else
+#            echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
+#        fi
+#        echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
+#        CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
+#        echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
+#        echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
+#        echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
+#        echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
+#        if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
+#            echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
+#        fi
+#        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+#            echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+#            iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
+#        fi
+#        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+#            echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+#            iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
+#        fi
+#    fi
     chkconfig rspamd on
     chkconfig redis on
     [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
