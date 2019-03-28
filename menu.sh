@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.14.0 for Clearswift SEG >= 4.8
+# menu.sh V1.15.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,7 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - disabled automatic rspamd master-slave cluster configuration on installation for now
-# - disabled rspamd greylisting
+# - added toggle for Rspamd master-slave cluster to 'Other configs' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -190,44 +189,9 @@ install_rspamd() {
     echo 'extended_spam_headers = true;' > /etc/rspamd/override.d/milter_headers.conf
     echo 'autolearn = true;' > /etc/rspamd/override.d/classifier-bayes.conf
     echo 'reject = null;' > /etc/rspamd/override.d/actions.conf
+    echo 'greylist = null;' >> /etc/rspamd/override.d/actions.conf
     echo 'enabled = false;' > /etc/rspamd/local.d/greylisting.conf
-#    LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
-#    if [ "$(echo $LIST_PEER | wc -w)" == 2 ]; then
-#        IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
-#        IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
-#        HOST_NAME="$(hostname -f)"
-#        IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
-#        HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
-#        echo $'\n''====================================================================================='
-#        echo "Configuring rspamd as master-slave cluster with peer '$HOSTNAME_OTHER' ($IP_OTHER)..."
-#        echo '====================================================================================='$'\n'
-#        CONFIG_REDIS='/etc/redis.conf'
-#        sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
-#        sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
-#        CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
-#        if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
-#            echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
-#        else
-#            echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
-#        fi
-#        echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
-#        CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
-#        echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
-#        echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
-#        echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
-#        echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
-#        if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
-#            echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
-#        fi
-#        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
-#            echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
-#            iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
-#        fi
-#        if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
-#            echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
-#            iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
-#        fi
-#    fi
+    sed -i 's/sleep 1/sleep 2/' /etc/init.d/rspamd
     chkconfig rspamd on
     chkconfig redis on
     [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
@@ -880,7 +844,7 @@ dialog_enable() {
                 newaliases
             fi
             postmulti -i postfix-inbound -x postconf mydestination | grep -q "$(hostname)" && postmulti -i postfix-inbound -x postconf -e mydestination=
-            sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_RSPAMD
+            [ -f "$WHITELIST_RSPAMD" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_RSPAMD
         fi
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED="$LIST_ENABLED"$'\n'"None"
         echo "$SETTINGS_END" >> $PF_IN
@@ -1188,6 +1152,73 @@ toggle_cleanup() {
         else
             rm -f $CRON_CLEANUP
         fi
+    fi
+}
+# toggle rspamd master-slave cluster
+# parameters:
+# none
+# return values:
+# none
+toggle_cluster() {
+    CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
+    if [ -f "$CONFIG_OPTIONS" ]; then
+        STATUS_CURRENT="enabled"
+        STATUS_TOGGLE="Disable"
+    else
+        STATUS_CURRENT="disabled"
+        STATUS_TOGGLE="Enable"
+    fi
+    exec 3>&1
+    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle Rspamd master-slave cluster"    \
+        --yesno "Rspamd master-slave cluster is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60   \
+        2>&1 1>&3
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ]; then
+        LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
+        IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
+        IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
+        HOST_NAME="$(hostname -f)"
+        IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
+        HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
+        CONFIG_REDIS='/etc/redis.conf'
+        CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
+        CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
+        if [ $STATUS_CURRENT = "disabled" ]; then
+            sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
+            sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
+            if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
+                echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
+            else
+                echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
+            fi
+            echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
+            echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
+            echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
+            echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
+            echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
+            if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
+                echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
+            fi
+            if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+                echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+                iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
+            fi
+            if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+                echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+                iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
+            fi
+        else
+            sed -i 's/^#bind 127.0.0.1/bind 127.0.0.1/' "$CONFIG_REDIS"
+            sed -i 's/^protected-mode no/protected-mode yes/' "$CONFIG_REDIS"
+            rm -f "$CONFIG_LOCAL" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
+            sed -i '/bind_socket = "\*:11334";/d' /etc/rspamd/local.d/worker-controller.inc
+            sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
+            iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
+            sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
+            iptables -D INPUT -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
+        fi
+        service rspamd restart &>/dev/null
     fi
 }
 # add IP address for mail.intern zone in dialog inputbox
@@ -1926,33 +1957,38 @@ dialog_anomaly() {
 # return values:
 # none
 dialog_other() {
-    DIALOG_WHITELIST_RSPAMD="Rspamd whitelist"
-    DIALOG_AUTO_UPDATE="Auto-update"
-    DIALOG_MAIL_INTERN="Mail.intern RoundRobin"
-    DIALOG_CONFIG_FW="Firewall settings"
-    DIALOG_RECENT_UPDATES="Recently updated packages"
-    DIALOG_FORWARDING="Internal DNS forwarding"
-    DIALOG_REPORT="Monthly email stats reports"
-    DIALOG_ANOMALY="Sender anomaly detection"
+    DIALOG_WHITELIST_RSPAMD='Rspamd whitelist'
+    DIALOG_RSPAMD_CLUSTER='Rspamd master-slave cluster'
+    DIALOG_AUTO_UPDATE='Auto-update'
+    DIALOG_MAIL_INTERN='Mail.intern RoundRobin'
+    DIALOG_CONFIG_FW='Firewall settings'
+    DIALOG_RECENT_UPDATES='Recently updated packages'
+    DIALOG_FORWARDING='Internal DNS forwarding'
+    DIALOG_REPORT='Monthly email stats reports'
+    DIALOG_ANOMALY='Sender anomaly detection'
+    ARRAY=()
+    check_installed_rspamd && ARRAY+=("$DIALOG_WHITELIST_RSPAMD" '')
+    check_installed_rspamd && [ "$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)" -gt 1 ] && ARRAY+=("$DIALOG_RSPAMD_CLUSTER" '')
+    ARRAY+=("$DIALOG_AUTO_UPDATE" '')
+    ARRAY+=("$DIALOG_MAIL_INTERN" '')
+    ARRAY+=("$DIALOG_CONFIG_FW" '')
+    ARRAY+=("$DIALOG_RECENT_UPDATES" '')
+    ARRAY+=("$DIALOG_FORWARDING" '')
+    ARRAY+=("$DIALOG_REPORT" '')
+    ARRAY+=("$DIALOG_ANOMALY" '')
     while true; do
         exec 3>&1
         DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                   \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage other configuration" 0 40 0   \
-            "$DIALOG_WHITELIST_RSPAMD" ""                                                        \
-            "$DIALOG_AUTO_UPDATE" ""                                                             \
-            "$DIALOG_MAIL_INTERN" ""                                                             \
-            "$DIALOG_CONFIG_FW" ""                                                               \
-            "$DIALOG_RECENT_UPDATES" ""                                                          \
-            "$DIALOG_FORWARDING" ""                                                              \
-            "$DIALOG_REPORT" ""                                                                  \
-            "$DIALOG_ANOMALY" ""                                                                 \
-            2>&1 1>&3)
+            "${ARRAY[@]}" 2>&1 1>&3)
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_WHITELIST_RSPAMD")
                     $TXT_EDITOR $WHITELIST_RSPAMD;;
+                "$DIALOG_RSPAMD_CLUSTER")
+                    toggle_cluster;;
                 "$DIALOG_AUTO_UPDATE")
                     [ -f $CONFIG_AUTO_UPDATE ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE
                     [ -f $CONFIG_AUTO_UPDATE_ALT ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE_ALT;;
