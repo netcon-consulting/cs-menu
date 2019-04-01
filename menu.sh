@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.15.0 for Clearswift SEG >= 4.8
+# menu.sh V1.16.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -45,6 +45,7 @@
 #
 # Addons (1)
 # - rspamd installation and milter integration
+# - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
 #
 # Todo:
 # - report based anomaly detection
@@ -55,7 +56,11 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - added toggle for Rspamd master-slave cluster to 'Other configs' submenu
+# - added 'Rspamd config' submenu and relocated the rspamd config options
+# - added sender domain and sender from whitelists for rspamd
+# - added fix for rspamd init.d script
+# - added rspamd option for automatic management of sender domain and sender from whitelists
+# - updated 'wildfire_scan.sh' and 'hybrid_scan.sh' custom commands
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -94,7 +99,7 @@ PF_INBOUND='/var/cs-gateway/pending/postfix/postfix-inbound'
 PF_OUTBOUND='/var/cs-gateway/pending/postfix/postfix-outbound'
 SSH_KEYS='/home/cs-admin/.ssh/authorized_keys'
 BLACKLISTS='zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4'
-TMP_PASSWORD='/tmp/TMPpassword'
+FILE_PASSWORD='/tmp/TMPpassword'
 EMAIL_DEFAULT='uwe@usommer.de'
 LINK_UPDATE='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh'
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
@@ -102,6 +107,7 @@ SCRIPT_STATS='/root/send_report.sh'
 CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
 SCRIPT_ANOMALY='/root/check_anomaly.sh'
 CRON_CLEANUP='/etc/cron.daily/cleanup_mqueue.sh'
+CRON_SENDER='/etc/cron.daily/sender_whitelist.sh'
 APPLY_NEEDED=0
 ###################################################################################################
 TITLE_MAIN='NetCon Clearswift Configuration'
@@ -178,6 +184,28 @@ install_seg() {
 # return values:
 # none
 install_rspamd() {
+    PACKED_SCRIPT="
+    H4sIAAj0nVwAA41WbW/bNhD+PP2KqywEyQBZSYN0QwJ36BolM+rYhu1sGNrBkCXKFiKLDkmlDeL8
+    9x1JUaJsI6g+yNLdc2/PHU/uvAsWWRHwldNxOsD4Jlon4INYZRx4zLKNAC4iJjhERYKPdMNRSQwy
+    iciaFk6n04E/w9v+EPrD/gxvNyP0Nmb0KUsIv4T60maom5DHMmMk8afSu0J4DH0JMk85eAUR3yl7
+    aAPpRnsyWssCgdckjcpcWA7hoiVGc3yfrigT/jXRxWW0uIRJuxZoKfVVQeQd0iwXhGXFsrKADaMx
+    4VyxEA6vbQ7QW7x6iGmRZkvpy4ffL+BM5pW0glR0IunRbhD+zAVZo0UVpojW5LIhsvGNV0BEHGhV
+    9dOV+oMw9KuFQe1rkyUYl2hU8BSxgJXFjj/EOJJGWrKYQFoWsSwB8mzBIvbcdbpVEnE3CbIiE/hj
+    QNwyrFooC9RZlCySmNpBk56ZBTT+vCLxA85fJGwHyFq56TpfwfWG4eyf0eRLf3jrQg/cgrrwHxwd
+    AfmRCTh1HF1Ezw1KztTga4GrFVGy3lWhyHWQ+WXPO15EnEj2ce6U1YnjTKbjT3fX88+j4c38pj8I
+    0fxwC1wDvZ+Gk547N3Er6e1kdD+2xFiMnx7uky5oj6WqiU5O4wfZxJ7qn3wLeLlAXI1Q5/n4BF4c
+    2WYM9MMUhK63W83VhVGmRtkUacE+KBiJVxT8AjxXHT7ZE09ydgmu0lfnxETxY/B2iQO/rIWSIvCX
+    9bsiRzliRDxFec/7ow5bpelpDfjkEU41Q4KW8Qo8w4exL1lh0M6rJINuai7sOuhms1fHQ5bn8hRq
+    KfizcHJ3IK8s3c/oSm7NwjF7UEFcD8ufjgbh7N9x6MI7HFiOZz7K3T18nRwpwP327fT8/OvZh1u3
+    1qdZ/Tidjcaz/l04up/1zk9r8fcVkiDzsvRIstDJJdQOBWw1xykRJZ8/ylYvGIkeWgCeE7KBs5Ys
+    J6IV3Hux3l79BpzQgrSZaCd1kLGKAHeWrQktBRDGKAMaxyXDrwMI9izbJaj6RlX7ugs3FJdNWub5
+    s5arTxdZR7iZEF1tVMK7rhVnt8tf+oOBpcYVpopPKSNPhEGU4qKGaf9W4mBB1M4mhYBj0l124X7Y
+    H85gOgjD8YnlRbfD4tnS7TTjENfNpLZSbzFrzQRbq4PcOguVuj5E+2eDkfaq0JtGoFQOhcHrmZfs
+    Vg9ooq1zGiU/ZdxUM1FGbxw8s0L+qjbCJJz9/WnQ2ggYO5Vtn+9kUJUj9U0yldYzy97O89CeUpWZ
+    rtWu9avOuYWYPzbhjQw+Bgl5CgqcSnj/8ehMJYSfFtwHZy5kRUNjMzD2gWw+Z0brNcNxdVW347C1
+    2dxvWVdMbRsuTt5ES5rfjvbbG/aqWf6uF7uF+9VJ9wci7gKxgMQUgxvCr55/lhkzMb9YLn9tjNXY
+    eu49j5b4n8k7hRcdSZK/1W63FpWHMtnqArc2Bxbtr83hVqm9dwiPYud/KV75gbULAAA=
+    "
     clear
     install_epel
     curl https://rspamd.com/rpm-stable/centos-6/rspamd.repo > /etc/yum.repos.d/rspamd.repo
@@ -185,13 +213,16 @@ install_rspamd() {
     yum update -y
     yum install -y redis rspamd
     rspamadm configwizard
-    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_RSPAMD\";"$'\n\t''action = "accept";'$'\n''}' > /etc/rspamd/local.d/multimap.conf
+    CONFIG_MULTIMAP='/etc/rspamd/local.d/multimap.conf'
+    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_RSPAMD\";"$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
+    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"/var/lib/rspamd/whitelist_sender_domain\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo $'\n''SENDER_FROM_WHITELIST_USER {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"/var/lib/rspamd/whitelist_sender_from\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
     echo 'extended_spam_headers = true;' > /etc/rspamd/override.d/milter_headers.conf
     echo 'autolearn = true;' > /etc/rspamd/override.d/classifier-bayes.conf
     echo 'reject = null;' > /etc/rspamd/override.d/actions.conf
     echo 'greylist = null;' >> /etc/rspamd/override.d/actions.conf
     echo 'enabled = false;' > /etc/rspamd/local.d/greylisting.conf
-    sed -i 's/sleep 1/sleep 2/' /etc/init.d/rspamd
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     chkconfig rspamd on
     chkconfig redis on
     [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
@@ -1131,7 +1162,6 @@ toggle_cleanup() {
     oirWEX8RlkuXdMLjqxi5Fmrg7mjMwL9P1CZ4HrEy39/U+a5YrxhrFR0gmv1pIkj8eERoIdFeaYTT
     aPYLTBu+oQSrIWnh/QMeL9knhMlH1DQBAAA=
     "
-
     if [ -f "$CRON_CLEANUP" ]; then
         STATUS_CURRENT="enabled"
         STATUS_TOGGLE="Disable"
@@ -1219,6 +1249,98 @@ toggle_cluster() {
             iptables -D INPUT -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
         fi
         service rspamd restart &>/dev/null
+    fi
+}
+# perform login to CS GUI
+# parameters:
+# none
+# return values:
+# none
+cs_login() {
+    DOMAIN="https://$(hostname -I | sed 's/ //')"
+    SESSION_ID=''
+    if [ -f $FILE_PASSWORD ]; then
+        OUTPUT_CURL="$(curl -k -i -d "pass=$(cat $FILE_PASSWORD)&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent)"
+        if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.' ||         \
+            echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
+            rm -f $FILE_PASSWORD
+        else
+            SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
+        fi
+    fi
+    if [ -z "$SESSION_ID" ]; then
+        exec 3>&1
+        DIALOG_RET=$(dialog --clear --backtitle "$TITLE_MAIN" --title "Clearswift GUI login" --passwordbox "Enter CS admin password" 0 50 2>&1 1>&3)
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+            OUTPUT_CURL="$(curl -k -i -d "pass=$DIALOG_RET&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent)"
+            if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.'; then
+                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Too many incorrect login attempts. Account locked. Try again in 10m." 0 0
+            elif echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
+                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Incorrect password." 0 0
+            else
+                SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
+                echo "$DIALOG_RET" > $FILE_PASSWORD
+            fi
+        fi
+    fi
+}
+# toggle sender whitelist
+# parameters:
+# none
+# return values:
+# none
+toggle_sender() {
+    PACKED_SCRIPT="
+    H4sIAM78oVwAA71WbXPaRhD+bP2KjaJaIo6QcfulMTghgB21GHss3HQmzmgO6UBX6613JztO4v/e
+    PUmAcPySzLRlhgHdy+6zzz67q+fPnBlLnRkRkaY9B0HTkHL/OmKSxkzItojgj057t72rPcftQZbf
+    cLaIJFhBC/Z2O7/ChMpBlsJ5KilPaZTQVMwoJ7JIF3CUzN69hJTKIEtt/IoilixdtIMsKc31Cxll
+    /BUcEx7AkFF+if7BStph/f/NvXdbmnbujc78Sf941DNJmLDU1E77nvf+5GzYM2+ygvsDzz86d/2c
+    CHGd8dCPKKemNjw57ruT6qIeSZmLV45jWFEmZEoSCrYLX5GDEEzhgOOYLV3TDt3xyB+cTA7do57p
+    yCR3psenCGjOFu3FZ7Tpnvn94fBs7HrT9QEShpwKoTg0Ne39O3c6Ugf8CgGeuyLcidnM4SInSeis
+    GPfrFIRZQlRc66sjvDn+jptzniXoc0Glr1D4ksxiClYLvmhbiyL9zHKwA9CNjo7BLjjFRyQ4zjjY
+    GdinYFqvu72Lbr+KYIyWp8rCxUGr/cJ6jTsXzj17pnbb8KnwLF1u4qj9kutLsA/BbFgywfwyRxQW
+    63X2gXV71uRwp9Ny9vZhZ4e1IOcslWBY7MVe63bDXe1JZaGnGxYNouwBPz/mA+8HhQQ7hIsDsOew
+    11joqoUOCmTrA9if0Z3yrsNH+PoVagDlisJ5NvLOx1N/fHKEqUeAQcFjsBEYU6Z0JdKesRTwtihm
+    CZOShj3JC7pdCMpZ2DNWktfB/hNOT7wpGA09O/08jxlJA+owlMGn9l9CJVawmKZS6ZjNl7iacNYa
+    +BtU5UCYQZpJiMgVhZzyhAnBsL5lBnG2AFTkPsiIptpWZWycLVgKc8LigmP9wDXPsPCXZfcM6aGf
+    mISONmffgwBNAwmCrMAsKDQEjRLkIslV8SsUuIt5BCYQT3BJwyfwLI1Vh1d49hQezRt5nnsy8d1h
+    Qzb3YjM9Ku1Bll0y+gp+q++5Q7NWmPmlFs7erVlzXati7QK1sQl1QFLFNIoYW07FsjtcIfy5RPi2
+    P/j9/LQGWMnGZqmgQRldnV38E1GCpY82a4iJuFa6aahmHzawoISORg8qyLsRyLkYUNXVnbckuCxy
+    Z0gl0lrqaslKN2RXEMRKv7oqeRtbUaIDylU3G8VXPTdJWrdZ3XEW6lFFAHZnk71V+I+RNyvhNbn7
+    peTu/6NrSPM4u0Gm+jyI2BV9XRQq5CZ8W0mrMUowzOQyZNhzc9xozhBdw46OjZIrQsbuBKGEmbZV
+    kvKsokWtNhjZUnD8cv6sVFwdWaVAlzc57enrHHRuGwnS1fDrXej63RxJXvY6vTkV/Spf9bNvqPy1
+    EMSqGS+dH9wJzDFWONuxkJgszFKYpRS60LU2R8cmVzjwN4anqTUHIs461dJXxrFJYQePBWx4b5U0
+    An6WbWgNp9mBPly//7icqMveAvWnAWIHyTSsqgpevDEfDnWdhDd328SG2TKYhlX76inDtYWaRE3j
+    Cdh8fldN38iuNOANztzTqWoq+OZHy3cfY1fV3gc11nTj7guLGmzb22XScWjpDr4pSsIlJCQlC1yc
+    3dR0Voadl3gC30Ye3A/1+5xolXifMA5WkYcE5yNSpX5h56fDVgv1dvCwTaOxhAn5RPhCgJ1C59Fb
+    +qNBPOjxWxLL5P7HHFY+/lUKmyaN9cqjBN6B8SP81Vf/Ab2aLTKTDAAA
+    "
+    if [ -f "$CRON_SENDER" ]; then
+        STATUS_CURRENT="enabled"
+        STATUS_TOGGLE="Disable"
+    else
+        STATUS_CURRENT="disabled"
+        STATUS_TOGGLE="Enable"
+    fi
+    exec 3>&1
+    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle sender whitelist management"  \
+        --yesno "Sender whitelist management is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 \
+        2>&1 1>&3
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ]; then
+        if [ $STATUS_CURRENT = "disabled" ]; then
+            cs_login
+            if [ -f "$FILE_PASSWORD" ]; then
+                printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
+                sed -i "s/your_CS_GUI_password_here/$(cat $FILE_PASSWORD)/" $CRON_SENDER
+                chmod 700 $CRON_SENDER
+            fi
+        else
+            rm -f $CRON_SENDER
+        fi
     fi
 }
 # add IP address for mail.intern zone in dialog inputbox
@@ -1812,6 +1934,38 @@ dialog_clearswift() {
         fi
     done
 }
+# select rspamd configuration to manage in dialog menu
+# parameters:
+# none
+# return values:
+# none
+dialog_rspamd() {
+    DIALOG_CLUSTER='Toggle master-slave cluster'
+    DIALOG_IP='IP whitelist'
+    DIALOG_SENDER='Toggle sender whitelist management'
+    ARRAY=()
+    [ "$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)" -gt 1 ] && ARRAY+=("$DIALOG_CLUSTER" '')
+    ARRAY+=("$DIALOG_IP" '')
+    ARRAY+=("$DIALOG_SENDER" '')
+    while true; do
+        exec 3>&1
+        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label "Back" --ok-label "Edit" --menu "Manage Rspamd configuration" 0 0 0 "${ARRAY[@]}" 2>&1 1>&3)
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ]; then
+            case "$DIALOG_RET" in
+                "$DIALOG_CLUSTER")
+                    toggle_cluster;;
+                "$DIALOG_IP")
+                    $TXT_EDITOR $WHITELIST_RSPAMD;;
+                "$DIALOG_SENDER")
+                    toggle_sender;;
+            esac
+        else
+            break
+        fi
+    done
+}
 # manage monthly email stats reports in dialog menu
 # parameters:
 # none
@@ -1957,8 +2111,6 @@ dialog_anomaly() {
 # return values:
 # none
 dialog_other() {
-    DIALOG_WHITELIST_RSPAMD='Rspamd whitelist'
-    DIALOG_RSPAMD_CLUSTER='Rspamd master-slave cluster'
     DIALOG_AUTO_UPDATE='Auto-update'
     DIALOG_MAIL_INTERN='Mail.intern RoundRobin'
     DIALOG_CONFIG_FW='Firewall settings'
@@ -1967,8 +2119,6 @@ dialog_other() {
     DIALOG_REPORT='Monthly email stats reports'
     DIALOG_ANOMALY='Sender anomaly detection'
     ARRAY=()
-    check_installed_rspamd && ARRAY+=("$DIALOG_WHITELIST_RSPAMD" '')
-    check_installed_rspamd && [ "$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)" -gt 1 ] && ARRAY+=("$DIALOG_RSPAMD_CLUSTER" '')
     ARRAY+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY+=("$DIALOG_MAIL_INTERN" '')
     ARRAY+=("$DIALOG_CONFIG_FW" '')
@@ -1985,10 +2135,6 @@ dialog_other() {
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
-                "$DIALOG_WHITELIST_RSPAMD")
-                    $TXT_EDITOR $WHITELIST_RSPAMD;;
-                "$DIALOG_RSPAMD_CLUSTER")
-                    toggle_cluster;;
                 "$DIALOG_AUTO_UPDATE")
                     [ -f $CONFIG_AUTO_UPDATE ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE
                     [ -f $CONFIG_AUTO_UPDATE_ALT ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE_ALT;;
@@ -2171,42 +2317,15 @@ dialog_show() {
 # return values:
 # none
 apply_config() {
-    DOM="https://$(hostname -I | sed 's/ //')/"
-    SESSION_ID=""
-    if [ -f $TMP_PASSWORD ]; then
-        OUTPUT_CURL="$(curl -k -i -d "pass=$(cat $TMP_PASSWORD)&submitted=true&userid=admin" -X POST "$DOM"Appliance/index.jsp --silent)"
-        if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.' ||         \
-            echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
-            rm -f $TMP_PASSWORD
-        else
-            SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
+    DOMAIN="https://$(hostname -I | sed 's/ //')"
+    cs_login
+    if [ -f "$FILE_PASSWORD" ]; then
+        SESSION_ID="$(curl -k -i -d "pass=$(cat $FILE_PASSWORD)&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
+        if [ ! -z "$SESSION_ID" ]; then
+            curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='applied by NetCon CS Config'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
+        	    --header "Cookie: $SESSION_ID" -X POST "$DOMAIN/Appliance/Deployer/StartDeployment.jsp"
+            APPLY_NEEDED=0
         fi
-    fi
-    if [ -z "$SESSION_ID" ]; then
-        exec 3>&1
-        DIALOG_RET=$(dialog --clear --backtitle "$TITLE_MAIN"              \
-            --title "Apply configuration"                                  \
-            --passwordbox "Enter CS admin password" 0 50 2>&1 1>&3)
-        RET_CODE=$?
-        exec 3>&-
-        if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-            OUTPUT_CURL="$(curl -k -i -d "pass=$DIALOG_RET&submitted=true&userid=admin" -X POST "$DOM"Appliance/index.jsp --silent)"
-            if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.'; then
-                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Too many incorrect login attempts. Account locked. Try again in 10m." 0 0
-            else
-                if echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
-                    $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Incorrect password." 0 0
-                else
-                    SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
-                    echo "$DIALOG_RET" > $TMP_PASSWORD
-                fi
-            fi
-        fi
-    fi
-    if [ ! -z "$SESSION_ID" ]; then
-        curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='applied by NetCon CS Config'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
-        	--header "Cookie: $SESSION_ID" -X POST ${DOM}/Appliance/Deployer/StartDeployment.jsp
-        APPLY_NEEDED=0
     fi
 }
 ###################################################################################################
@@ -2306,23 +2425,23 @@ init_cs() {
     CUSTOM_COMMAND="$DIR_COMMANDS/wildfire_scan.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
         PACKED_SCRIPT="
-        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
+        H4sIAJjsnVwAA6VV8W/iNhT+PX/FuzRSYCuEMO2k0lIda+GKrr2doLSbui4yiSFWEyeynePYev/7
+        nk0o4YDTqosUyc+xv+99732Oj954U8a9KZGxZR3BgiXRjAkayJDwpozhzm/6zZZ1hN8usnwp2DxW
+        UAvr0G75J/CRqouMw4QrKjiNU8rllAqiCj6H9+n06hg4VWHGG/jKIlGMz5thlhq4XqHiTHTghogQ
+        LhkVT5JyqKXNqBy/27u3rtMUVBWCQ5hFVHYwbkEDppSzOcfAxyAlyYIIilEbo7kgyzI8OcG44IKG
+        2WfMdJpQoEJkAlH/94MweUKJpMC4pELBMisEZAsOvU9DeKJLiKmgndcg4sbgQ//PrquhApKzAGEC
+        DeO+Bsbg3A+vLwfDUb/rxkrlsuN56642c5JkJFEZVnaRYZF1Qb28mCYsRE7XbB9PfrsZ3nZtp4rl
+        yWKaMuXNWEJts+yuP7ocXuysm1PlYWEjFirbsq5/fx98GvUHwz+67jk+rpkZTwZm5gwf17Juhzf9
+        4L6HnG9bcIQ1BYnd4ZE0hhRMUQkplZLMKagMkmwOOg30qopBxRQiOmOcRuZLLmgDk53N2BfQfSKC
+        pBTdaWziGGusoDYu+kySYmUjjoWxDGOAWLU6/GsBPjSMM7CdjRjHdzY6bDg/x6+D4XU/wFnb+mpZ
+        bAYP0PgHp30bHuH5eR22MTzVSfMK8kTn0wGnhqeQcswXnFbdaAxUZk6ilhasam+2fWEKnWzNmGWt
+        ebsa3DC/0WSzkrtC9iIM7AvCeaYgy/HEmVq6ju/uYq+sEPQ+ju/7IySohYVIoNGQuIUraAzARtug
+        U7tOaWDbTGrI7jvN72wcVberddmCPpSnOzauA8LlggpgEmiaq6V7KNGr3vhKp2nKuk0Bz0AWT+Cm
+        RIVxzWkdg3cmY9L+9e157eHvs8ef62d/eeWEdwwEe58LhiLJg//41d2bvKY7mHpZ4kibL0V7wuoE
+        QYx/2l0Bi1h3QYmCnkKUmc8yoTQH5+V0mMny1L2+JZq2u524UznGWp/G32jcZtqW+Y3Uu9V539+m
+        qlI91mqrSkb98eT6dtO1bd59bSt/L5W+rWcONG6/sBXxd4Xt9LAkwj+HvpG+LzDUF8QuHdswuQ2/
+        5bsoUQ/a68Evbv1lxYFCr+hXF5e7tbhM5PR0Q9I6iLfHFLtgrSqW/2NYfhWr/WNY7QrWTweRJnx9
+        Oaxb537TEXcP9ksBqSShFelb4T9jMhrtKAkAAA==
         "
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
@@ -2331,28 +2450,30 @@ init_cs() {
     CUSTOM_COMMAND="$DIR_COMMANDS/hybrid_scan.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
         PACKED_SCRIPT="
-        H4sIAGy0i1wAA7VXa3PiNhT97l9x12HWsA0B0nZnkpRMszwST8mjEJJ0kiwjbIHVgOyxRIBu9r/3
-        SjbgGCdhM61nmLEk38c5ujpXbH0o9Rkv9YnwDGMLvHk/ZG5POITvCA+uKjvlnbKxhSs1P5iHbOhJ
-        yDsF2C1X9uCMyprPocslDTn1xpSLPg2JnPAhHI/7J9vAqXR8XsSfmIwk48Mdxx9rd0cT6fnhPpyS
-        0IE6o+GDoBzy4x03fv8907agkgypnIQcHN+lYh/HZShCn3I25Dio4GBMRlMSUhzt7eFwwkPq+I+Y
-        Wn9EgYahHxpG7bTeu7o5urCrZskPZMkRxSGRdErmJeGELJCiFGVQuprhV6XHGQnYTjA3jcu/Lhq9
-        a/usfn7dqVZ2y9FEyz7r3lR/LpcNo3V+3LtoN5r2TdU6xMfSM51uU8/8ho9lGJf2aaP3Z9eu/YFG
-        sAWMg8AsuSuipWa31ap+Tq0gomnIJBUwpkKQIQXpw8gfwoAhsimTHkiPgksHjFNXrwQhLZbEZDBg
-        M0DzgIRkTHHDNHM5zVbkakXsIxlNIma5z6mhI/bQV74A3wzAhzqeD2ZuhTNXya0gmnB4iKtNu4Ws
-        nB+bxnfDYAO4heI/OF0x4R6enhbDXRweqKR5wnNX5bMPuTyWJeWYL+TKBY2xJ31dnApaT02YkdmM
-        SdxrY8AMYxG3qpzryB9UsEEcOxFsCQzMGuHcl+AHWISaSytXsdZ9d2pHZz27jq7zuWUBgUpIJwNF
-        LmSgSpA4BMsS6SWjETzBMKQBWF/vxCeTueY+WDjnUeJCsYJvZPoAxSbc3pl35j1Y34KQcQm5X75b
-        BTNJXRz9JRBWDMJV2zvGAtCJgV231nBMPZWtDCf0AFxfL4sRxRxzq7LUszpku9Hpti6zQA+p7IVU
-        nU9YZFcwV4ZN+8zunDQ0X3pncwl/MXBrTKTj5XPlbSiZWLZMeFRRlL/9un3/U2G7tA0E6y7ihNxW
-        7jUrKoQmJmZlEcmEKlgKl/WMJPX0Q0oeIiZGKU5X1mmjN9kVEvVOWEuDBcvqHZl21QGKyubkqHOy
-        MRHCI7u/fkYaTOTBRB7MF4hIl4eK8oMF4qH2r5eI9nZ+1Whf2Y3r1N4rLX1kdKr2H1ZxVTp6cNSu
-        paEuPGWBxRbgYY4Oig9NQs5GnESrAik9+fgR3hNYzgPaE9iHJIa9u30rcprrOPqGXGuBSEJd59xB
-        uXvunEV+rbjdKN2wAkpn1CosS05/rnoQIk/2JvPgIDLWrUmb0tHgNUP94cLsUyHjFJhd7MZBgIxh
-        e1lDhKq5zD1WzwRE9EsFcV5VUWxzWFtSyfxggtKZFtTYNH5RST9X17/9fm+psP+frhLu9v3Zu/VV
-        9fZslUzwgaCQZi2xSmToCvwzxHptI8CvamanW6s1Op0NZDPLutFun7fXbRMcNtStS19lEtxly+Z/
-        Jc/JTYqa1CYyndnsknsxGY9JOE/2u3QpRS5+UIWTGa7pMGpY3a5dbtw+8Ay5zJHv6B9xpIxb2Qt5
-        x6GsFMoMRVu6Xoga95fWSpymSkdGTKC0WFnaY33Rd/zUJpYXKoeXfuYwH5txpvFp9J8gZV15Q+wW
-        N+k4z4XAxVBe1rh/ATSVanZXDQAA
+        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
         "
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
@@ -2429,9 +2550,10 @@ print_info
 DIALOG_SEG="Install Clearswift SEG"
 DIALOG_INSTALL="Install features"
 DIALOG_ENABLE="Enable features"
-DIALOG_POSTFIX="Postfix configs"
-DIALOG_CLEARSWIFT="Clearswift configs"
-DIALOG_OTHER="Other configs"
+DIALOG_POSTFIX="Postfix config"
+DIALOG_CLEARSWIFT="Clearswift config"
+DIALOG_RSPAMD="Rspamd config"
+DIALOG_OTHER="Other config"
 DIALOG_SHOW="Postfix infos & stats"
 DIALOG_APPLY="Apply configuration"
 while true; do
@@ -2441,6 +2563,7 @@ while true; do
         ARRAY+=("$DIALOG_ENABLE" "")
         ARRAY+=("$DIALOG_POSTFIX" "")
         ARRAY+=("$DIALOG_CLEARSWIFT" "")
+        check_installed_rspamd && ARRAY+=("$DIALOG_RSPAMD" "")
         ARRAY+=("$DIALOG_OTHER" "")
         ARRAY+=("$DIALOG_SHOW" "")
         [ $APPLY_NEEDED = 1 ] && ARRAY+=("$DIALOG_APPLY" "")
@@ -2465,6 +2588,8 @@ while true; do
                 dialog_postfix;;
             "$DIALOG_CLEARSWIFT")
                 dialog_clearswift;;
+            "$DIALOG_RSPAMD")
+                dialog_rspamd;;
             "$DIALOG_OTHER")
                 dialog_other;;
             "$DIALOG_SHOW")

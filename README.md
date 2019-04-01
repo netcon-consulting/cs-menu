@@ -1,4 +1,4 @@
-NetCon Clearswift Configuration V1.15.0
+NetCon Clearswift Configuration V1.16.0
 =======================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root!
@@ -40,3 +40,4 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 
 ### Addons:
 * rspamd installation and milter integration
+* Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration

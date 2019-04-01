@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# hybrid_scan.sh V1.0.0
+# hybrid_scan.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -9,17 +9,30 @@
 # return codes:
 # 0 - benign
 # 1 - malware
+# 2 - grayware
 # 99 - unrecoverable error
 
-CMD_VXAPI="/opt/cs-gateway/scripts/netcon/VxAPI/vxapi.py"
+##########################################################################
+# please insert your own API key here:
+##########################################################################
+API_KEY='your_api_key_here'
+##########################################################################
+
+API_HYBRID='https://www.hybrid-analysis.com/api/v2'
+API_SUBMIT="$API_HYBRID/submit/file"
+API_STATE="$API_HYBRID/report/IDENTIFIER/state"
+API_VERDICT="$API_HYBRID/report/IDENTIFIER/summary"
+
+HEADER_AGENT='user-agent: Falcon Sandbox'
+HEADER_KEY="api-key: $API_KEY"
+
 TYPE_WINDOWS=120
 TYPE_LINUX=300
 
 LOG_PREFIX='>>>>'
 LOG_SUFFIX='<<<<'
 
-TIME_QUICK=30 # in seconds
-TIME_FULL=60 # in seconds
+TIME_WAIT=60 # in seconds
 
 # writes message to log file with the defined log pre-/suffix 
 # parameters:
@@ -42,96 +55,76 @@ if ! [ -f "$1" ]; then
     exit 99
 fi
 
-SCAN_ID="$($CMD_VXAPI scan_file -nstp 1 -aca 0 $1 all | grep '^\s*"id": ' | head -1 | awk -F [\"\"] '{print $4}')"
+TYPE_INFO="$(objdump -f $1 | grep 'file format' | awk '{print $4}')"
 
-if [ -z "$SCAN_ID" ]; then
-    write_log 'Cannot determine scan ID'
-    exit 99
-fi
-
-while true; do
-    sleep $TIME_QUICK
-    SCAN_RESULT="$($CMD_VXAPI scan_get_result $SCAN_ID)"
-    SCAN_FINISHED="$(echo $SCAN_RESULT | awk 'match($0, /"finished": ([^,]+),/, a) {print a[1]}')"
-    if [ "$SCAN_FINISHED" = 'true' ]; then
-        break
-    elif [ -z "$SCAN_FINISHED" ]; then
-        write_log 'Cannot determine scan status'
-        exit 99
-    fi
-done
-
-SCAN_HASH="$(echo $SCAN_RESULT | awk 'match($0, /"sha256": "([^"]+)",/, a) {print a[1]}')"
-
-if [ -z "$SCAN_HASH" ]; then
-    write_log 'Cannot determine scan hash'
-    exit 99
-fi
-
-SCAN_OVERVIEW="$($CMD_VXAPI overview_get $SCAN_HASH)"
-
-SCAN_ARCH="$(echo $SCAN_OVERVIEW | awk 'match($0, /"architecture": "([^"]+)"/, a) {print a[1]}')"
-[ -z "$SCAN_ARCH" ] && SCAN_ARCH="$(echo $SCAN_OVERVIEW | awk 'match($0, /"type_short": \[ "([^"]+)"/, a) {print a[1]}')"
-
-if [ -z "$SCAN_ARCH" ]; then
-    write_log 'Cannot determine file architecture'
-    exit 99
-fi
-
-case "$SCAN_ARCH" in
-    'WINDOWS' | 'peexe')
-        SCAN_TYPE="$TYPE_WINDOWS";;
-    'LINUX' | 'elf')
-        SCAN_TYPE="$TYPE_LINUX";;
+case "$TYPE_INFO" in
+    'elf32-i386' | 'elf64-x86-64' | 'elf32-x86-64')
+        FILE_TYPE="$TYPE_LINUX";;
+    'pei-i386' | 'pei-x86-64' | 'pe-i386')
+        FILE_TYPE="$TYPE_WINDOWS";;
     *)
-        write_log "Unsupported file architecture '$SCAN_ARCH'"
+        write_log "Unknown file type '$TYPE_INFO'"
         exit 99;;
 esac
 
-SCAN_ID="$($CMD_VXAPI scan_convert_to_full -nstp 1 -aca 0 $SCAN_ID $SCAN_TYPE | grep '^\s*"job_id": ' | awk -F [\"\"] '{print $4}')"
+SUBMIT_ANSWER="$(curl --silent -H "$HEADER_AGENT" -H "$HEADER_KEY" -F "file=@$1" -F "environment_id=$FILE_TYPE" -F 'no_share_third_party=true' -F 'allow_community_access=false' $API_SUBMIT)"
 
-if [ -z "$SCAN_ID" ]; then
-    write_log 'Cannot determine sandbox scan ID'
+if [ -z "$SUBMIT_ANSWER" ]; then
+    write_log 'Submit answer is empty'
     exit 99
 fi
+
+SUBMIT_HASH="$(echo $SUBMIT_ANSWER | awk 'match($0, /"sha256":"([^"]+)"/, a) {print a[1]}')"
+
+if [ -z "$SUBMIT_HASH" ]; then
+    write_log 'Cannot determine submit hash'
+    exit 99
+fi
+
+API_STATE="$(echo $API_STATE | sed "s/IDENTIFIER/$SUBMIT_HASH:$FILE_TYPE/")"
+API_VERDICT="$(echo $API_VERDICT | sed "s/IDENTIFIER/$SUBMIT_HASH:$FILE_TYPE/")"
 
 while true; do
-    sleep $TIME_FULL
-    SCAN_FINISHED="$($CMD_VXAPI report_get_state $SCAN_ID | grep '^\s*"state": ' | awk -F [\"\"] '{print $4}')"
+    sleep $TIME_WAIT
+    STATE_ANSWER="$(curl --silent -H "$HEADER_AGENT" -H "$HEADER_KEY" $API_STATE)"
 
-    if [ "$SCAN_FINISHED" = 'SUCCESS' ]; then
-        break
-    elif [ "$SCAN_FINISHED" = 'ERROR' ]; then
-        write_log 'Error in sandbox scan'
-        exit 99
-    elif [ -z "$SCAN_FINISHED" ]; then
-        write_log 'Cannot determine sandbox scan result'
+    if [ -z "$STATE_ANSWER" ]; then
+        write_log 'State answer is empty'
         exit 99
     fi
+
+    case "$(echo $STATE_ANSWER | awk 'match($0, /"state":"([^"]+)"/, a) {print a[1]}')" in
+        'SUCCESS')
+            VERDICT_ANSWER="$(curl --silent -H "$HEADER_AGENT" -H "$HEADER_KEY" $API_VERDICT)"
+
+            if [ -z "$VERDICT_ANSWER" ]; then
+                write_log 'Verdict answer is empty'
+                exit 99
+            fi
+
+            VERDICT_RESULT="$(echo $VERDICT_ANSWER | awk 'match($0, /"verdict":"([^"]+)"/, a) {print a[1]}')"
+
+            if [ -z "$VERDICT_RESULT" ]; then
+                write_log 'Cannot determine verdict result'
+                exit 99
+            fi
+
+            case "$VERDICT_RESULT" in
+                'benign' | 'whitelisted')
+                    write_log "hash=$SUBMIT_HASH"
+                    exit 0;;
+                'malicious')
+                    write_log "hash=$SUBMIT_HASH"
+                    exit 1;;
+                'suspicious')
+                    write_log "hash=$SUBMIT_HASH"
+                    exit 2;;
+                *)
+                    write_log "Undefined verdict '$VERDICT_RESULT'"
+                    exit 99;;
+            esac;;
+        'ERROR')
+            write_log 'Error during sandbox scan'
+            exit 99;;
+    esac
 done
-
-SCAN_RESULT="$($CMD_VXAPI report_get_summary $SCAN_ID)"
-
-if [ -z "$SCAN_RESULT" ]; then
-    write_log 'Cannot determine scan result'
-    exit 99
-fi
-
-SCAN_VERDICT="$(echo $SCAN_RESULT | awk 'match($0, /"verdict": "([^"]+)",/, a) {print a[1]}')"
-
-if [ -z "$SCAN_VERDICT" ]; then
-    echo 'Cannot determine scan verdict'
-    write_log 99
-fi
-
-case "$SCAN_VERDICT" in
-    'no verdict' | 'whitelisted')
-        write_log 'Benign'
-        exit 0;;
-    'malicious')
-        write_log 'Malware'
-        exit 1;;
-    *)
-        write_log "Undefined verdict '$SCAN_VERDICT'"
-        exit 99;;
-esac

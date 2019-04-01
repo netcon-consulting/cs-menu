@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# wildfire_scan.sh V1.0.0
+# wildfire_scan.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -71,7 +71,7 @@ while true; do
         exit 99
     fi
 
-    VERDICT_RESULT=$(echo $VERDICT_ANSWER | awk 'match($0, /<verdict>([^<]+)<\/verdict>/, a) {print a[1]}')
+    VERDICT_RESULT="$(echo $VERDICT_ANSWER | awk 'match($0, /<verdict>([^<]+)<\/verdict>/, a) {print a[1]}')"
 
     if [ -z "$VERDICT_RESULT" ]; then
         write_log 'Cannot determine verdict result'
@@ -83,13 +83,13 @@ while true; do
             write_log 'Verdict result error'
             exit 99;;
         '0')
-            write_log 'Benign'
+            write_log "hash=$SUBMIT_HASH"
             exit 0;;
         '1')
-            write_log 'Malware'
+            write_log "hash=$SUBMIT_HASH"
             exit 1;;
         '2')
-            write_log 'Grayware'
+            write_log "hash=$SUBMIT_HASH"
             exit 2;;
         *)
             write_log "Undefined verdict '$VERDICT_RESULT'"
