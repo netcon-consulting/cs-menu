@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.16.0 for Clearswift SEG >= 4.8
+# menu.sh V1.17.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,11 +56,9 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - added 'Rspamd config' submenu and relocated the rspamd config options
-# - added sender domain and sender from whitelists for rspamd
-# - added fix for rspamd init.d script
-# - added rspamd option for automatic management of sender domain and sender from whitelists
-# - updated 'wildfire_scan.sh' and 'hybrid_scan.sh' custom commands
+# - removed edit IP whitelist option from rspamd config submenu
+# - changed rspamd config submenu to checklist
+# - sender whitelist management script uses last applied config
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -74,6 +72,7 @@ CONFIG_BIND='/etc/named.conf'
 CONFIG_AUTO_UPDATE='/etc/yum/yum-cron.conf'
 CONFIG_AUTO_UPDATE_ALT='/etc/sysconfig/yum-cron'
 CONFIG_LDAP='/var/cs-gateway/ldap/schedule.properties'
+CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
 DIR_CERT='/var/lib/acme/live/$(hostname)'
@@ -820,10 +819,7 @@ dialog_enable() {
     ARRAY+=("$DIALOG_POSTSCREEN" "" $(echo $FEATURES_ENABLED | awk '{print $9}'))
     ARRAY+=("$DIALOG_POSTSCREEN_DEEP" "" $(echo $FEATURES_ENABLED | awk '{print $10}'))
     exec 3>&1
-    DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                   \
-        --cancel-label "Back" --ok-label "Apply"                                             \
-        --checklist "Choose features to enable" 0 0 0                                        \
-        "${ARRAY[@]}" 2>&1 1>&3)
+    DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label "Back" --ok-label "Apply" --checklist "Choose Postfix features to enable" 0 0 0 "${ARRAY[@]}" 2>&1 1>&3)
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
@@ -1109,14 +1105,13 @@ export_address_list() {
     cd /home/cs-admin
     mkdir -p $DIR_ADDRESS_LISTS
     LIST_EXPORTED="Address lists exported to '$DIR_ADDRESS_LISTS':\n"
-    while read LINE
-    do
+    while read LINE; do
         if [ ! -z "$LINE" ]; then
             NAME_LIST=$(echo "$LINE" | awk -F "type=" '{print $1}' | awk -F "name=\"" '{print $2}' | tr -d \" | sed 's/ /_/g' | sed 's/_$//g')
             get_addr "$LINE" > $DIR_ADDRESS_LISTS/"$NAME_LIST".lst
             LIST_EXPORTED="$LIST_EXPORTED\n$NAME_LIST.lst"
         fi
-    done < <(get_addr_list "$1")
+    done < <(get_addr_list)
     chown -R cs-admin:cs-adm $DIR_ADDRESS_LISTS
     $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox "$LIST_EXPORTED" 0 0
 }
@@ -1181,165 +1176,6 @@ toggle_cleanup() {
             chmod 700 $CRON_CLEANUP
         else
             rm -f $CRON_CLEANUP
-        fi
-    fi
-}
-# toggle rspamd master-slave cluster
-# parameters:
-# none
-# return values:
-# none
-toggle_cluster() {
-    CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
-    if [ -f "$CONFIG_OPTIONS" ]; then
-        STATUS_CURRENT="enabled"
-        STATUS_TOGGLE="Disable"
-    else
-        STATUS_CURRENT="disabled"
-        STATUS_TOGGLE="Enable"
-    fi
-    exec 3>&1
-    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle Rspamd master-slave cluster"    \
-        --yesno "Rspamd master-slave cluster is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60   \
-        2>&1 1>&3
-    RET_CODE=$?
-    exec 3>&-
-    if [ $RET_CODE = 0 ]; then
-        LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
-        IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
-        IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
-        HOST_NAME="$(hostname -f)"
-        IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
-        HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
-        CONFIG_REDIS='/etc/redis.conf'
-        CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
-        CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
-        if [ $STATUS_CURRENT = "disabled" ]; then
-            sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
-            sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
-            if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
-                echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
-            else
-                echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
-            fi
-            echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
-            echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
-            echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
-            echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
-            echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
-            if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
-                echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
-            fi
-            if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
-                echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
-                iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
-            fi
-            if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
-                echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
-                iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
-            fi
-        else
-            sed -i 's/^#bind 127.0.0.1/bind 127.0.0.1/' "$CONFIG_REDIS"
-            sed -i 's/^protected-mode no/protected-mode yes/' "$CONFIG_REDIS"
-            rm -f "$CONFIG_LOCAL" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
-            sed -i '/bind_socket = "\*:11334";/d' /etc/rspamd/local.d/worker-controller.inc
-            sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
-            iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
-            sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
-            iptables -D INPUT -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
-        fi
-        service rspamd restart &>/dev/null
-    fi
-}
-# perform login to CS GUI
-# parameters:
-# none
-# return values:
-# none
-cs_login() {
-    DOMAIN="https://$(hostname -I | sed 's/ //')"
-    SESSION_ID=''
-    if [ -f $FILE_PASSWORD ]; then
-        OUTPUT_CURL="$(curl -k -i -d "pass=$(cat $FILE_PASSWORD)&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent)"
-        if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.' ||         \
-            echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
-            rm -f $FILE_PASSWORD
-        else
-            SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
-        fi
-    fi
-    if [ -z "$SESSION_ID" ]; then
-        exec 3>&1
-        DIALOG_RET=$(dialog --clear --backtitle "$TITLE_MAIN" --title "Clearswift GUI login" --passwordbox "Enter CS admin password" 0 50 2>&1 1>&3)
-        RET_CODE=$?
-        exec 3>&-
-        if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-            OUTPUT_CURL="$(curl -k -i -d "pass=$DIALOG_RET&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent)"
-            if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.'; then
-                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Too many incorrect login attempts. Account locked. Try again in 10m." 0 0
-            elif echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
-                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Incorrect password." 0 0
-            else
-                SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
-                echo "$DIALOG_RET" > $FILE_PASSWORD
-            fi
-        fi
-    fi
-}
-# toggle sender whitelist
-# parameters:
-# none
-# return values:
-# none
-toggle_sender() {
-    PACKED_SCRIPT="
-    H4sIAM78oVwAA71WbXPaRhD+bP2KjaJaIo6QcfulMTghgB21GHss3HQmzmgO6UBX6613JztO4v/e
-    PUmAcPySzLRlhgHdy+6zzz67q+fPnBlLnRkRkaY9B0HTkHL/OmKSxkzItojgj057t72rPcftQZbf
-    cLaIJFhBC/Z2O7/ChMpBlsJ5KilPaZTQVMwoJ7JIF3CUzN69hJTKIEtt/IoilixdtIMsKc31Cxll
-    /BUcEx7AkFF+if7BStph/f/NvXdbmnbujc78Sf941DNJmLDU1E77nvf+5GzYM2+ygvsDzz86d/2c
-    CHGd8dCPKKemNjw57ruT6qIeSZmLV45jWFEmZEoSCrYLX5GDEEzhgOOYLV3TDt3xyB+cTA7do57p
-    yCR3psenCGjOFu3FZ7Tpnvn94fBs7HrT9QEShpwKoTg0Ne39O3c6Ugf8CgGeuyLcidnM4SInSeis
-    GPfrFIRZQlRc66sjvDn+jptzniXoc0Glr1D4ksxiClYLvmhbiyL9zHKwA9CNjo7BLjjFRyQ4zjjY
-    GdinYFqvu72Lbr+KYIyWp8rCxUGr/cJ6jTsXzj17pnbb8KnwLF1u4qj9kutLsA/BbFgywfwyRxQW
-    63X2gXV71uRwp9Ny9vZhZ4e1IOcslWBY7MVe63bDXe1JZaGnGxYNouwBPz/mA+8HhQQ7hIsDsOew
-    11joqoUOCmTrA9if0Z3yrsNH+PoVagDlisJ5NvLOx1N/fHKEqUeAQcFjsBEYU6Z0JdKesRTwtihm
-    CZOShj3JC7pdCMpZ2DNWktfB/hNOT7wpGA09O/08jxlJA+owlMGn9l9CJVawmKZS6ZjNl7iacNYa
-    +BtU5UCYQZpJiMgVhZzyhAnBsL5lBnG2AFTkPsiIptpWZWycLVgKc8LigmP9wDXPsPCXZfcM6aGf
-    mISONmffgwBNAwmCrMAsKDQEjRLkIslV8SsUuIt5BCYQT3BJwyfwLI1Vh1d49hQezRt5nnsy8d1h
-    Qzb3YjM9Ku1Bll0y+gp+q++5Q7NWmPmlFs7erVlzXati7QK1sQl1QFLFNIoYW07FsjtcIfy5RPi2
-    P/j9/LQGWMnGZqmgQRldnV38E1GCpY82a4iJuFa6aahmHzawoISORg8qyLsRyLkYUNXVnbckuCxy
-    Z0gl0lrqaslKN2RXEMRKv7oqeRtbUaIDylU3G8VXPTdJWrdZ3XEW6lFFAHZnk71V+I+RNyvhNbn7
-    peTu/6NrSPM4u0Gm+jyI2BV9XRQq5CZ8W0mrMUowzOQyZNhzc9xozhBdw46OjZIrQsbuBKGEmbZV
-    kvKsokWtNhjZUnD8cv6sVFwdWaVAlzc57enrHHRuGwnS1fDrXej63RxJXvY6vTkV/Spf9bNvqPy1
-    EMSqGS+dH9wJzDFWONuxkJgszFKYpRS60LU2R8cmVzjwN4anqTUHIs461dJXxrFJYQePBWx4b5U0
-    An6WbWgNp9mBPly//7icqMveAvWnAWIHyTSsqgpevDEfDnWdhDd328SG2TKYhlX76inDtYWaRE3j
-    Cdh8fldN38iuNOANztzTqWoq+OZHy3cfY1fV3gc11nTj7guLGmzb22XScWjpDr4pSsIlJCQlC1yc
-    3dR0Voadl3gC30Ye3A/1+5xolXifMA5WkYcE5yNSpX5h56fDVgv1dvCwTaOxhAn5RPhCgJ1C59Fb
-    +qNBPOjxWxLL5P7HHFY+/lUKmyaN9cqjBN6B8SP81Vf/Ab2aLTKTDAAA
-    "
-    if [ -f "$CRON_SENDER" ]; then
-        STATUS_CURRENT="enabled"
-        STATUS_TOGGLE="Disable"
-    else
-        STATUS_CURRENT="disabled"
-        STATUS_TOGGLE="Enable"
-    fi
-    exec 3>&1
-    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle sender whitelist management"  \
-        --yesno "Sender whitelist management is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 \
-        2>&1 1>&3
-    RET_CODE=$?
-    exec 3>&-
-    if [ $RET_CODE = 0 ]; then
-        if [ $STATUS_CURRENT = "disabled" ]; then
-            cs_login
-            if [ -f "$FILE_PASSWORD" ]; then
-                printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
-                sed -i "s/your_CS_GUI_password_here/$(cat $FILE_PASSWORD)/" $CRON_SENDER
-                chmod 700 $CRON_SENDER
-            fi
-        else
-            rm -f $CRON_SENDER
         fi
     fi
 }
@@ -1934,37 +1770,162 @@ dialog_clearswift() {
         fi
     done
 }
+# check whether master-slave cluster is enabled
+# parameters:
+# none
+# return values:
+# master-slave cluster status
+check_enabled_cluster() {
+    if [ -f "$CONFIG_OPTIONS" ]; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether sender whitelist management is enabled
+# parameters:
+# none
+# return values:
+# sender whitelist management status
+check_enabled_sender() {
+    if [ -f "$CRON_SENDER" ]; then
+        echo on
+    else
+        echo off
+    fi
+}
+# enable master-slave cluster
+# parameters:
+# none
+# return values:
+# none
+enable_cluster() {
+    LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
+    IP_MASTER="$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $1}')"
+    IP_SLAVE="$(echo $LIST_PEER | awk '{print $2}' | awk -F, '{print $1}')"
+    HOST_NAME="$(hostname -f)"
+    IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
+    HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
+    CONFIG_REDIS='/etc/redis.conf'
+    CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
+    sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
+    sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
+    if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
+        echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
+    else
+        echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
+    fi
+    echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
+    echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
+    echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
+    echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
+    echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
+    if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
+        echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
+    fi
+    if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+        echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+        iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
+    fi
+    if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
+        echo "-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
+        iptables -I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
+    fi
+    service rspamd restart &>/dev/null
+}
+# disable master-slave cluster
+# parameters:
+# none
+# return values:
+# none
+disable_cluster() {
+    LIST_PEER="$(grep '<Peer address="' /var/cs-gateway/peers.xml | awk 'match($0, /<Peer address="([^"]+)" /, a) match($0, / name="([^"]+)" /, b) {print a[1]","b[1]}')"
+    HOST_NAME="$(hostname -f)"
+    IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
+    CONFIG_REDIS='/etc/redis.conf'
+    CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
+    sed -i 's/^#bind 127.0.0.1/bind 127.0.0.1/' "$CONFIG_REDIS"
+    sed -i 's/^protected-mode no/protected-mode yes/' "$CONFIG_REDIS"
+    rm -f "$CONFIG_LOCAL" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
+    sed -i '/bind_socket = "\*:11334";/d' /etc/rspamd/local.d/worker-controller.inc
+    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
+    iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
+    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
+    iptables -D INPUT -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT
+    service rspamd restart &>/dev/null
+}
+# enable sender whitelist management
+# parameters:
+# none
+# return values:
+# none
+enable_sender() {
+    PACKED_SCRIPT="
+    H4sIANoUo1wAA7VUUW/aSBB+zv6KqeOr7VDjwFsvkAYFaCwRGiXc9QGQteDFrGKvfeulKdf0v9+s
+    cYihIb1Kd5YQ3hnP9818MzvHb7wZF96M5ktCjiFnImQyeFhyxWKeq3q+hD8b9Ub9lByj+zLN1pJH
+    SwX23IHmaeM9DJm6TAX8IRSTgi0TJvIZk1StRAQfk9nVOxBMzVPh4i9fxYqLqD5PkwKus1LLVP4O
+    11TOocuZvEd+sJN6WL5fvBjrENL1b4NOt3s78O9GbctTSeaNrm9oGEqW5zpxi5BB524UXH4a9v2P
+    +MkXKr157kZUsQe69kKWxekas1W5F9NcdbIs5izEUhY8WmH+PBX1r0mMOJ+v/FFPEwXdT9cdf1iC
+    xXzmyTyjSeht5QpK/cI0oVxYldAeRg7+ReRCpglyRkwFuppA0VnMwHbgGzkag7sAw6zUZcAU3r6F
+    OVX79keIJMvATcG9Acv+0GpPWp2NPAOkG2nYyblTP7E/oGfiveCzyPdKIjrJMo+95Ayzofnowz24
+    fbAqSBZY3xapBJu3G2fAW2172K81HK95BrUadyCTXCgwbX7SdL7v0JVMusVtw7TZfJke4Pk1Doyf
+    rxS4IUzOtZrNiqGlDQ3HKIT+G+k0u1b48RHKBAqLzjO5D7kEN0NbdRQNgg1FSSSjIQz8Ye8MwpQc
+    8QWM4c0GVFsR9AzUkglydDTsXPeCYoy3ZW4+2VZqqHXG2gbWWdbSKOp48gqasPbEqPibhV/JoioN
+    lLMQrNwDL/Ai6/kcmB6eHUxiK/sT+fleYZ65zbMe5wo1WnASpoJBC1r2zpDg7dy5LBapXgCcbd2t
+    LRpwgc2Jc9ihcwrdAB+UrlDlmX872n+BNX74PB0vr6Zj7k/HajQds950HA825/yusFml1FA+leRq
+    qKppF2jWyYV1uObnblzsyIzDsgNbFFlBdb/8DLhEKNUkRCbgysX+WOG57w96T7ebkALg7vLWvxnp
+    +4Hrm+k5APMUAUm5KPYXV7ktdPddDoaH615RqSChgkZonK1LmTfA3jv8ArfSQX9ovERCNlP8E3Cw
+    V1mIuzhEqfQ/1H7rOw4O3vlhTLNiwoZ8pTLKwRXQeDXKeLWIg4w/ilg093/WcMPxn0pYhTSfLa8K
+    uJfGr+hXhv4DI9A3ylgIAAA=
+    "
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
+    chmod 700 $CRON_SENDER
+}
+# enable sender whitelist management
+# parameters:
+# none
+# return values:
+# none
+disable_sender() {
+    rm -f $CRON_SENDER
+}
 # select rspamd configuration to manage in dialog menu
 # parameters:
 # none
 # return values:
 # none
 dialog_rspamd() {
-    DIALOG_CLUSTER='Toggle master-slave cluster'
-    DIALOG_IP='IP whitelist'
-    DIALOG_SENDER='Toggle sender whitelist management'
+    DIALOG_CLUSTER='Master-slave-cluster'
+    DIALOG_SENDER='Sender-whitelist-management'
+    STATUS_CLUSTER="$(check_enabled_cluster)"
+    STATUS_SENDER="$(check_enabled_sender)"
+    NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
     ARRAY=()
-    [ "$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)" -gt 1 ] && ARRAY+=("$DIALOG_CLUSTER" '')
-    ARRAY+=("$DIALOG_IP" '')
-    ARRAY+=("$DIALOG_SENDER" '')
-    while true; do
-        exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label "Back" --ok-label "Edit" --menu "Manage Rspamd configuration" 0 0 0 "${ARRAY[@]}" 2>&1 1>&3)
-        RET_CODE=$?
-        exec 3>&-
-        if [ $RET_CODE = 0 ]; then
-            case "$DIALOG_RET" in
-                "$DIALOG_CLUSTER")
-                    toggle_cluster;;
-                "$DIALOG_IP")
-                    $TXT_EDITOR $WHITELIST_RSPAMD;;
-                "$DIALOG_SENDER")
-                    toggle_sender;;
-            esac
-        else
-            break
+    [ "$NUM_PEERS" -gt 1 ] && ARRAY+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
+    ARRAY+=("$DIALOG_SENDER" '' "$STATUS_SENDER")
+    exec 3>&1
+    DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY[@]}" 2>&1 1>&3)
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ]; then
+        LIST_ENABLED=''
+        if [ "$NUM_PEERS" -gt 1 ]; then
+            if echo "$DIALOG_RET" | grep -q "$DIALOG_CLUSTER"; then
+                [ "$STATUS_CLUSTER" = 'off' ] && enable_cluster
+                LIST_ENABLED+=$'\n''Master-slave cluster'
+            else
+                [ "$STATUS_CLUSTER" = 'on' ] && disable_cluster
+            fi
         fi
-    done
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_SENDER"; then
+            [ "$STATUS_SENDER" = 'off' ] && enable_sender
+            LIST_ENABLED+=$'\n''Sender whitelist management'
+        else
+            [ "$STATUS_SENDER" = 'on' ] && disable_sender
+        fi
+        [ -z "$LIST_ENABLED" ] && LIST_ENABLED+=$'\n''None'
+        $DIALOG --backtitle "$TITLE_MAIN" --title 'Enabled features' --clear --msgbox "$LIST_ENABLED" 0 0
+    fi
 }
 # manage monthly email stats reports in dialog menu
 # parameters:
@@ -2311,6 +2272,41 @@ dialog_show() {
         fi
     done
 }
+# perform login to CS GUI
+# parameters:
+# none
+# return values:
+# none
+cs_login() {
+    DOMAIN="https://$(hostname -I | sed 's/ //')"
+    SESSION_ID=''
+    if [ -f $FILE_PASSWORD ]; then
+        OUTPUT_CURL="$(curl -k -i -d "pass=$(cat $FILE_PASSWORD)&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent)"
+        if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.' ||         \
+            echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
+            rm -f $FILE_PASSWORD
+        else
+            SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
+        fi
+    fi
+    if [ -z "$SESSION_ID" ]; then
+        exec 3>&1
+        DIALOG_RET=$(dialog --clear --backtitle "$TITLE_MAIN" --title "Clearswift GUI login" --passwordbox "Enter CS admin password" 0 50 2>&1 1>&3)
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+            OUTPUT_CURL="$(curl -k -i -d "pass=$DIALOG_RET&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent)"
+            if echo "$OUTPUT_CURL" | grep -q 'Sorry, the account you are attempting to access is locked due to unsuccessful login attempts.'; then
+                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Too many incorrect login attempts. Account locked. Try again in 10m." 0 0
+            elif echo "$OUTPUT_CURL" | grep -q 'Sorry, the user name or password you supplied is invalid or you do not have permission to log in.'; then
+                $DIALOG --clear --backtitle "$TITLE_MAIN" --msgbox "Incorrect password." 0 0
+            else
+                SESSION_ID="$(echo "$OUTPUT_CURL" | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
+                echo "$DIALOG_RET" > $FILE_PASSWORD
+            fi
+        fi
+    fi
+}
 # commit selected configuration to CS
 # parameters:
 # none
@@ -2549,10 +2545,10 @@ check_update
 print_info
 DIALOG_SEG="Install Clearswift SEG"
 DIALOG_INSTALL="Install features"
-DIALOG_ENABLE="Enable features"
+DIALOG_ENABLE="Enable Postfix features"
 DIALOG_POSTFIX="Postfix config"
 DIALOG_CLEARSWIFT="Clearswift config"
-DIALOG_RSPAMD="Rspamd config"
+DIALOG_RSPAMD_MENU="Enable Rspamd features"
 DIALOG_OTHER="Other config"
 DIALOG_SHOW="Postfix infos & stats"
 DIALOG_APPLY="Apply configuration"
@@ -2563,7 +2559,7 @@ while true; do
         ARRAY+=("$DIALOG_ENABLE" "")
         ARRAY+=("$DIALOG_POSTFIX" "")
         ARRAY+=("$DIALOG_CLEARSWIFT" "")
-        check_installed_rspamd && ARRAY+=("$DIALOG_RSPAMD" "")
+        check_installed_rspamd && ARRAY+=("$DIALOG_RSPAMD_MENU" "")
         ARRAY+=("$DIALOG_OTHER" "")
         ARRAY+=("$DIALOG_SHOW" "")
         [ $APPLY_NEEDED = 1 ] && ARRAY+=("$DIALOG_APPLY" "")
@@ -2588,7 +2584,7 @@ while true; do
                 dialog_postfix;;
             "$DIALOG_CLEARSWIFT")
                 dialog_clearswift;;
-            "$DIALOG_RSPAMD")
+            "$DIALOG_RSPAMD_MENU")
                 dialog_rspamd;;
             "$DIALOG_OTHER")
                 dialog_other;;
