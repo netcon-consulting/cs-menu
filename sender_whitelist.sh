@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sender_whitelist.sh V1.1.0
+# sender_whitelist.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -57,3 +57,5 @@ echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_DOMAIN"
 echo "# start managed by $NAME_SCRIPT (updated $(date +%F))" >> "$WHITELIST_EMAIL"
 echo $LIST_EMAIL | xargs -n 1 >> "$WHITELIST_EMAIL"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_EMAIL"
+
+chown _rspamd:_rspamd "$WHITELIST_DOMAIN" "$WHITELIST_EMAIL"

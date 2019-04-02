@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.17.0 for Clearswift SEG >= 4.8
+# menu.sh V1.18.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,9 +56,7 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - removed edit IP whitelist option from rspamd config submenu
-# - changed rspamd config submenu to checklist
-# - sender whitelist management script uses last applied config
+# - sender whitelist management script changes owner of generated whitelist to _rspamd:_rspamd
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1861,22 +1859,22 @@ disable_cluster() {
 # none
 enable_sender() {
     PACKED_SCRIPT="
-    H4sIANoUo1wAA7VUUW/aSBB+zv6KqeOr7VDjwFsvkAYFaCwRGiXc9QGQteDFrGKvfeulKdf0v9+s
-    cYihIb1Kd5YQ3hnP9818MzvHb7wZF96M5ktCjiFnImQyeFhyxWKeq3q+hD8b9Ub9lByj+zLN1pJH
-    SwX23IHmaeM9DJm6TAX8IRSTgi0TJvIZk1StRAQfk9nVOxBMzVPh4i9fxYqLqD5PkwKus1LLVP4O
-    11TOocuZvEd+sJN6WL5fvBjrENL1b4NOt3s78O9GbctTSeaNrm9oGEqW5zpxi5BB524UXH4a9v2P
-    +MkXKr157kZUsQe69kKWxekas1W5F9NcdbIs5izEUhY8WmH+PBX1r0mMOJ+v/FFPEwXdT9cdf1iC
-    xXzmyTyjSeht5QpK/cI0oVxYldAeRg7+ReRCpglyRkwFuppA0VnMwHbgGzkag7sAw6zUZcAU3r6F
-    OVX79keIJMvATcG9Acv+0GpPWp2NPAOkG2nYyblTP7E/oGfiveCzyPdKIjrJMo+95Ayzofnowz24
-    fbAqSBZY3xapBJu3G2fAW2172K81HK95BrUadyCTXCgwbX7SdL7v0JVMusVtw7TZfJke4Pk1Doyf
-    rxS4IUzOtZrNiqGlDQ3HKIT+G+k0u1b48RHKBAqLzjO5D7kEN0NbdRQNgg1FSSSjIQz8Ye8MwpQc
-    8QWM4c0GVFsR9AzUkglydDTsXPeCYoy3ZW4+2VZqqHXG2gbWWdbSKOp48gqasPbEqPibhV/JoioN
-    lLMQrNwDL/Ai6/kcmB6eHUxiK/sT+fleYZ65zbMe5wo1WnASpoJBC1r2zpDg7dy5LBapXgCcbd2t
-    LRpwgc2Jc9ihcwrdAB+UrlDlmX872n+BNX74PB0vr6Zj7k/HajQds950HA825/yusFml1FA+leRq
-    qKppF2jWyYV1uObnblzsyIzDsgNbFFlBdb/8DLhEKNUkRCbgysX+WOG57w96T7ebkALg7vLWvxnp
-    +4Hrm+k5APMUAUm5KPYXV7ktdPddDoaH615RqSChgkZonK1LmTfA3jv8ArfSQX9ovERCNlP8E3Cw
-    V1mIuzhEqfQ/1H7rOw4O3vlhTLNiwoZ8pTLKwRXQeDXKeLWIg4w/ilg093/WcMPxn0pYhTSfLa8K
-    uJfGr+hXhv4DI9A3ylgIAAA=
+    H4sIAFo7o1wAA7VVUW/aSBB+zv6KqeOr7VDjwNs1kAYFaJAIjRLu+gDIWvBiVrHX7nop5Zr+95s1
+    DjEcpFfpzhKCnfF838w3s8PpG2/KhTel2YKQU8iYCJj0VwuuWMQzVc0W8GetWq+ek1N0XyfpWvJw
+    ocCeOVA/r/0OA6auEwF/CMWkYIuYiWzKJFVLEcLHeHrzDgRTs0S4+MmWkeIirM6SOIdrLdUike/h
+    lsoZtDmTj8gPdlwNit9XB2MdQtq9e7/Vbt/3ew/DpuWpOPWGt3c0CCTLMp24RUi/9TD0rz8Nur2P
+    +MpXKr1Z5oZUsRVdewFLo2SN2arMi2imWmkacRZgKXMeLjF/nojqtzhCnM83vWFHE/ntT7et3qAA
+    i/jUk1lK48DbyuUX+gVJTLmwSqEdjOz/i8i5TGLkDJnydTW+otOIge3Ad3IyAncOhlmqy4AJvH0L
+    M6r27U8QSpaCm4B7B5b9odEcN1obefpIN9Sw40unemZ/QM/YO+CzyI9SIjrJIo+95Ayzpvno6hHc
+    LlglJAus7/NEgs2btQvgjaY96FZqjle/gEqFO5BKLhSYNj+rOz926Aom3eKmYdpstkiO8PwaB8bP
+    lgrcAMaXWs16ydDQhppj5EL/hXSaXSv89ARFArlF5xk/BlyCm6KtPIoGwYaiJJLRAPq9QecCgoSc
+    8DmM4M0GVFsR9ALUgglycjJo3Xb8fIy3ZW5e2VZqqHXKmgbWWdRSy+t49goas+bYKPnruV/JvCoN
+    lLEArMwDz/dC6+Xsmx6eHUxiK/sz+eVeYZ65zbMaZQo1mnMSJIJBAxr2zpDg7dy5LBYpXwCcbd2t
+    LRpwgc2JMtihc3LdAB+ULlflhX872l/AGq0+T0aLm8mI9yYjNZyMWGcyivqbc/aQ26xCaiieUnIV
+    VNW0czTr7Mo6XvNLN652ZMZh2YHNiyyhul9/BlwgFGoSImNw5Xx/rPDc7fU7z7ebkBzg4fq+dzfU
+    9wPXN9NzAOY5ApJiUewvrmJb6O67HAwP172iUkFMBQ3ROF0XMm+AvXf4Bm6lo/7AOERCNlP8E3Cw
+    l2mAuzhAqfQ3VH7rOg4O3uVxTLNkwoZ8ozLMwBVQezXKeLWIo4z/FDFv7v+s4YbjP5WwDGm+WF4V
+    cC+NX9GvCCUYuhLgb/7n3hffB4fyQPTfjyoau5YIAAA=
     "
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
