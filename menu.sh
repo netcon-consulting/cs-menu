@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.18.0 for Clearswift SEG >= 4.8
+# menu.sh V1.19.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,7 +56,8 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - sender whitelist management script changes owner of generated whitelist to _rspamd:_rspamd
+# - added CS config email backup option to submenu 'Clearswift config'
+# - updated rspamd sender whitelist management script
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -105,6 +106,7 @@ CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
 SCRIPT_ANOMALY='/root/check_anomaly.sh'
 CRON_CLEANUP='/etc/cron.daily/cleanup_mqueue.sh'
 CRON_SENDER='/etc/cron.daily/sender_whitelist.sh'
+CRON_BACKUP='/etc/cron.daily/email_backup.sh'
 APPLY_NEEDED=0
 ###################################################################################################
 TITLE_MAIN='NetCon Clearswift Configuration'
@@ -407,7 +409,7 @@ dialog_install() {
         check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS_INSTALLED (installed)"
         check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS_INSTALLED (installed)"
         exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"              \
+            DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"             \
                 --cancel-label "Back" --ok-label "Apply"                        \
                 --menu "Choose features to install" 0 0 0                       \
                 "$DIALOG_LOCAL_DNS_INSTALLED" ""                                \
@@ -415,7 +417,7 @@ dialog_install() {
                 "$DIALOG_RSPAMD_INSTALLED" ""                                   \
                 "$DIALOG_LETSENCRYPT_INSTALLED" ""                              \
                 "$DIALOG_AUTO_UPDATE_INSTALLED" ""                              \
-                2>&1 1>&3)
+                2>&1 1>&3)"
             RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -534,10 +536,10 @@ enable_sender_rewrite() {
 enable_bounce_in() {
     if [ -z "$1" ]; then
         exec 3>&1
-        DIALOG_RET=$(dialog --clear --backtitle "Enable features"                       \
+        DIALOG_RET="$(dialog --clear --backtitle "Enable features"                      \
             --title "Inbound bounce notifications"                                      \
             --inputbox "Enter email for inbound bounce notifications" 0 50              \
-            $EMAIL_DEFAULT 2>&1 1>&3)
+            $EMAIL_DEFAULT 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -564,10 +566,10 @@ enable_bounce_in() {
 enable_bounce_out() {
     if [ -z "$1" ]; then
         exec 3>&1
-        DIALOG_RET=$(dialog --clear --backtitle "Enable features"                       \
+        DIALOG_RET="$(dialog --clear --backtitle "Enable features"                      \
             --title "Outbound bounce notifications"                                     \
             --inputbox "Enter email for outbound bounce notifications" 0 50             \
-            $EMAIL_DEFAULT 2>&1 1>&3)
+            $EMAIL_DEFAULT 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -805,19 +807,19 @@ dialog_enable() {
     EMAIL_BOUNCE_OUT=""
     [ $(echo $FEATURES_ENABLED | awk '{print $7}') = "on" ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')"
     [ $(echo $FEATURES_ENABLED | awk '{print $8}') = "on" ] && EMAIL_BOUNCE_OUT="$(grep '^bounce_notice_recipient=' $PF_OUT | awk -F\= '{print $2}' | tr -d \')"
-    ARRAY=()
-    check_installed_rspamd && ARRAY+=("$DIALOG_RSPAMD" "" $(echo $FEATURES_ENABLED | awk '{print $1}'))
-    check_installed_letsencrypt && ARRAY+=("$DIALOG_LETSENCRYPT" "" $(echo $FEATURES_ENABLED | awk '{print $2}'))
-    ARRAY+=("$DIALOG_TLS" "" $(echo $FEATURES_ENABLED | awk '{print $3}'))
-    ARRAY+=("$DIALOG_ESMTP_FILTER" "" $(echo $FEATURES_ENABLED | awk '{print $4}'))
-    check_installed_local_dns && ARRAY+=("$DIALOG_DANE" "" $(echo $FEATURES_ENABLED | awk '{print $5}'))
-    ARRAY+=("$DIALOG_SENDER_REWRITE" "" $(echo $FEATURES_ENABLED | awk '{print $6}'))
-    ARRAY+=("$DIALOG_BOUNCE_IN" "" $(echo $FEATURES_ENABLED | awk '{print $7}'))
-    ARRAY+=("$DIALOG_BOUNCE_OUT" "" $(echo $FEATURES_ENABLED | awk '{print $8}'))
-    ARRAY+=("$DIALOG_POSTSCREEN" "" $(echo $FEATURES_ENABLED | awk '{print $9}'))
-    ARRAY+=("$DIALOG_POSTSCREEN_DEEP" "" $(echo $FEATURES_ENABLED | awk '{print $10}'))
+    ARRAY_ENABLE=()
+    check_installed_rspamd && ARRAY_ENABLE+=("$DIALOG_RSPAMD" "" $(echo $FEATURES_ENABLED | awk '{print $1}'))
+    check_installed_letsencrypt && ARRAY_ENABLE+=("$DIALOG_LETSENCRYPT" "" $(echo $FEATURES_ENABLED | awk '{print $2}'))
+    ARRAY_ENABLE+=("$DIALOG_TLS" "" $(echo $FEATURES_ENABLED | awk '{print $3}'))
+    ARRAY_ENABLE+=("$DIALOG_ESMTP_FILTER" "" $(echo $FEATURES_ENABLED | awk '{print $4}'))
+    check_installed_local_dns && ARRAY_ENABLE+=("$DIALOG_DANE" "" $(echo $FEATURES_ENABLED | awk '{print $5}'))
+    ARRAY_ENABLE+=("$DIALOG_SENDER_REWRITE" "" $(echo $FEATURES_ENABLED | awk '{print $6}'))
+    ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" "" $(echo $FEATURES_ENABLED | awk '{print $7}'))
+    ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" "" $(echo $FEATURES_ENABLED | awk '{print $8}'))
+    ARRAY_ENABLE+=("$DIALOG_POSTSCREEN" "" $(echo $FEATURES_ENABLED | awk '{print $9}'))
+    ARRAY_ENABLE+=("$DIALOG_POSTSCREEN_DEEP" "" $(echo $FEATURES_ENABLED | awk '{print $10}'))
     exec 3>&1
-    DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label "Back" --ok-label "Apply" --checklist "Choose Postfix features to enable" 0 0 0 "${ARRAY[@]}" 2>&1 1>&3)
+    DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label "Back" --ok-label "Apply" --checklist "Choose Postfix features to enable" 0 0 0 "${ARRAY_ENABLE[@]}" 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
@@ -928,9 +930,9 @@ ldap_schedule() {
 # error code - 0 for added, 1 for cancel
 add_ssh() {
     exec 3>&1
-    DIALOG_RET=$(dialog --clear --backtitle "Manage SSH access"             \
+    DIALOG_RET="$(dialog --clear --backtitle "Manage SSH access"            \
         --title "Add allowed IP/-range"                                     \
-        --inputbox "Enter allowed IP/-range for SSH access" 0 50 2>&1 1>&3)
+        --inputbox "Enter allowed IP/-range for SSH access" 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -955,15 +957,15 @@ ssh_access() {
         if [ -z "$LIST_IP" ]; then
             add_ssh || break
         else
-            ARRAY=()
+            ARRAY_IP=()
             for IP_ADDRESS in $LIST_IP; do
-                ARRAY+=($IP_ADDRESS "")
+                ARRAY_IP+=($IP_ADDRESS "")
             done
             exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Manage configuration"                  \
+            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
                     --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
                     --menu "Add/remove IPs for SSH access" 0 0 0                                        \
-                    "${ARRAY[@]}" 2>&1 1>&3)
+                    "${ARRAY_IP[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1024,15 +1026,15 @@ key_auth() {
         if [ -z "$LIST_KEY" ]; then
             add_key || break
         else
-            ARRAY=()
+            ARRAY_KEY=()
             for SSH_KEY in $LIST_KEY; do
-                ARRAY+=("$(echo $SSH_KEY | sed 's/,/ /g')" "")
+                ARRAY_KEY+=("$(echo $SSH_KEY | sed 's/,/ /g')" "")
             done
             exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Manage configuration"                  \
+            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
                     --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
                     --menu "Add/remove public keys for SSH authentication for cs-admin" 0 0 0           \
-                    "${ARRAY[@]}" 2>&1 1>&3)
+                    "${ARRAY_KEY[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1055,9 +1057,8 @@ key_auth() {
 import_keystore() {
     TMP_KEYSTORE="/tmp/TMPkeystore"
     exec 3>&1
-    DIALOG_RET=$(dialog --clear --backtitle "Manage configuration"                                                 \
-        --title "Import PKCS12 keystore"                                                                              \
-        --inputbox "Enter filename of keystore to import [Note: keystore password must be '$PASSWORD_KEYSTORE']" 0 50 2>&1 1>&3)
+    DIALOG_RET="$(dialog --clear --backtitle "Manage configuration" --title "Import PKCS12 keystore"                              \
+        --inputbox "Enter filename of keystore to import [Note: keystore password must be '$PASSWORD_KEYSTORE']" 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ] && [ -f $DIALOG_RET ]; then
@@ -1177,6 +1178,54 @@ toggle_cleanup() {
         fi
     fi
 }
+# toggle config email backup
+# parameters:
+# none
+# return values:
+# none
+toggle_backup() {
+    PACKED_SCRIPT='
+    H4sIADK3pFwAA5WTUW/aMBDH3/0pbilrQCxJqbSHdUJqlkKHBrQCOmlqWWQSk1jEdmSbFrruu+8o
+    3RooL0NBcs73v/vd5e7oXTDjMphRkxNyBExQXsQzmiyWpW9y+N7yT/wTcoRXkSrXmme5hXrSgNOT
+    1icYMhspCTfSMi1ZLpg0M6apXcoMLsXs6weQzCZKevg3y8JymfmJEs/hwqXNlT6DAdUJXHCmF4ZJ
+    qAs/fTmfH9Q2COmH40kcXQ27vcu2G9xTHSTGy6hlD3QdpKws1BpJrAkKamxYlgVnKWLOebZENq6k
+    vxKFSyajcDi+vhpN4kF4jYEwW1AqY+d85amlnamlTAOrqTSl0tYXtHQJ6QzCXj8edaLeda8znLTd
+    ON4zxbFLhuGgE38Jo283GDgax8lzdrwgF+GkE0c3o9FG7NTqKWJD83234RDS7fX/qZzAijKoVQLV
+    qlL0Tkrw5uDUKt1w8LUSxCHZIy/3beJ+q6sY/exxT+rPFrtAzbaLtk0BV1jusNIBLIIluUL9XiOc
+    J6APC/C6zrkD7q9Sc2mhdvrbxVpfPPvhj7brktst0c4HcWAKx8dQccREmWZYz8/aPgQ4sKuGbe5q
+    VviLA+7t3R0+06m7j4UgjwjymvQgRcozaBocXgtNqVJpDEtArOAt1hOYjZcnNR4tbhZ4rQNomJnP
+    4VDyz2BzJgngb9vkiEqpLKQMN05wyWCzr6BZQdfO1m3FLbQIKwyryG6jsbdd6ilEY9jOI8y1ErA7
+    V0j3HNEz/yPyxmCELdtV+rPTj3ihoVbPcakkFaxx/noGL22AR/eG88AQkTknRIs3M+uQP5UHMWq6
+    BAAA
+    '
+    if [ -f "$CRON_BACKUP" ]; then
+        STATUS_CURRENT='enabled'
+        STATUS_TOGGLE='Disable'
+    else
+        STATUS_CURRENT='disabled'
+        STATUS_TOGGLE='Enable'
+    fi
+    exec 3>&1
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle config email backup'       \
+        --yesno "CS config email backup $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 2>&1 1>&3
+    exec 3>&-
+    if [ "$?" = 0 ]; then
+        if [ $STATUS_CURRENT = "disabled" ]; then
+            exec 3>&1
+            DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title "Config email backup"  \
+                --inputbox "Enter email for CS config backup" 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
+            RET_CODE=$?
+            exec 3>&-
+            if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+                printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_BACKUP
+                sed -i "s/__EMAIL_RECIPIENT__/$DIALOG_RET/" $CRON_BACKUP
+                chmod 700 $CRON_BACKUP
+            fi
+        else
+            rm -f $CRON_BACKUP
+        fi
+    fi
+}
 # add IP address for mail.intern zone in dialog inputbox
 # parameters:
 # none
@@ -1184,9 +1233,9 @@ toggle_cleanup() {
 # error code - 0 for added, 1 for cancel
 add_mail() {
     exec 3>&1
-    DIALOG_RET=$(dialog --clear --backtitle "Manage mail.intern access"     \
+    DIALOG_RET="$(dialog --clear --backtitle "Manage mail.intern access"    \
         --title "Add mail server IP to mail.intern"                         \
-        --inputbox "Enter mail server IP for mail.intern" 0 50 2>&1 1>&3)
+        --inputbox "Enter mail server IP for mail.intern" 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1225,15 +1274,15 @@ mail_intern() {
         if [ -z "$LIST_IP" ]; then
             add_mail || break
         else
-            ARRAY=()
+            ARRAY_INTERN=()
             for IP_ADDRESS in $LIST_IP; do
-                ARRAY+=($IP_ADDRESS "")
+                ARRAY_INTERN+=($IP_ADDRESS "")
             done
             exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Manage configuration"                  \
+            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
                     --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
                     --menu "Add/remove IPs for mail.intern" 0 0 0                                       \
-                    "${ARRAY[@]}" 2>&1 1>&3)
+                    "${ARRAY_INTERN[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1256,17 +1305,17 @@ mail_intern() {
 # error code - 0 for added, 1 for cancel
 add_forward() {
     exec 3>&1
-    DIALOG_RET=$(dialog --clear --backtitle "Internal DNS forwarding"       \
+    DIALOG_RET="$(dialog --clear --backtitle "Internal DNS forwarding"      \
         --title "Add zone for internal DNS forwarding"                      \
-        --inputbox "Enter zone name" 0 50 2>&1 1>&3)
+        --inputbox "Enter zone name" 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
         ZONE_NAME="$DIALOG_RET"
         exec 3>&1
-        DIALOG_RET=$(dialog --clear --backtitle "Internal DNS forwarding"       \
+        DIALOG_RET="$(dialog --clear --backtitle "Internal DNS forwarding"      \
             --title "Add zone for internal DNS forwarding"                      \
-            --inputbox "Enter IP" 0 50 2>&1 1>&3)
+            --inputbox "Enter IP" 0 50 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1307,15 +1356,15 @@ internal_forwarding() {
         if [ -z "$LIST_FORWARD" ]; then
             add_forward || break
         else
-            ARRAY=()
+            ARRAY_ZONE=()
             for ZONE_FORWARD in $LIST_FORWARD; do
-                ARRAY+=($ZONE_FORWARD "")
+                ARRAY_ZONE+=($ZONE_FORWARD "")
             done
             exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Manage configuration"                  \
+            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
                     --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
                     --menu "Add/remove zones for internal DNS forwarding" 0 0 0                         \
-                    "${ARRAY[@]}" 2>&1 1>&3)
+                    "${ARRAY_ZONE[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1362,15 +1411,15 @@ monthly_report() {
         if [ -z "$LIST_EMAIL" ]; then
             add_report || break
         else
-            ARRAY=()
+            ARRAY_EMAIL=()
             for EMAIL_ADDRESS in $LIST_EMAIL; do
-                ARRAY+=("$EMAIL_ADDRESS" "")
+                ARRAY_EMAIL+=("$EMAIL_ADDRESS" "")
             done
             exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Email recipients"                      \
+            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Email recipients"                     \
                     --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
                     --menu "Add/remove emails for monthly email stats reports" 0 0 0                    \
-                    "${ARRAY[@]}" 2>&1 1>&3)
+                    "${ARRAY_EMAIL[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1416,15 +1465,15 @@ anomaly_detect() {
         if [ -z "$LIST_EMAIL" ]; then
             add_alert || break
         else
-            ARRAY=()
+            ARRAY_ADDR=()
             for EMAIL_ADDRESS in $LIST_EMAIL; do
-                ARRAY+=("$EMAIL_ADDRESS" "")
+                ARRAY_ADDR+=("$EMAIL_ADDRESS" "")
             done
             exec 3>&1
-            DIALOG_RET=$($DIALOG --clear --backtitle "" --title "Email recipients"                      \
+            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Email recipients"                     \
                     --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
                     --menu "Add/remove emails for monthly email stats reports" 0 0 0                    \
-                    "${ARRAY[@]}" 2>&1 1>&3)
+                    "${ARRAY_ADDR[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1479,7 +1528,7 @@ recipient_validation() {
     DIALOG_UNVERIFIED_RECIPIENT="unverified_recipient"
     VALIDATION_ENABLED="$(check_validation_enabled)"
     exec 3>&1
-    DIALOG_RET=$($DIALOG --clear --backtitle "Clearswift configuration"                                \
+    DIALOG_RET="$($DIALOG --clear --backtitle "Clearswift configuration"                               \
         --cancel-label "Back" --ok-label "Apply"                                                       \
         --checklist "Choose recipient rejection criteria" 0 0 0                                        \
         "$DIALOG_UNKNOWN_CLIENT" ""                   $(echo $VALIDATION_ENABLED | awk '{print $1}')   \
@@ -1495,7 +1544,7 @@ recipient_validation() {
         "$DIALOG_NON_FQDN_RECIPIENT" ""               $(echo $VALIDATION_ENABLED | awk '{print $11}')  \
         "$DIALOG_UNAUTH_PIPELINING" ""                $(echo $VALIDATION_ENABLED | awk '{print $12}')  \
         "$DIALOG_UNVERIFIED_RECIPIENT" ""             $(echo $VALIDATION_ENABLED | awk '{print $13}')  \
-        2>&1 1>&3)
+        2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
@@ -1648,7 +1697,7 @@ dialog_postfix() {
     DIALOG_RESTRICTIONS="Postfix restrictions"
     while true; do
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                 \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix configuration" 0 0 0 \
             "$DIALOG_WHITELIST_POSTFIX" ""                                                      \
             "$DIALOG_WHITELIST_POSTSCREEN" ""                                                   \
@@ -1659,7 +1708,7 @@ dialog_postfix() {
             "$DIALOG_SENDER_REWRITE" ""                                                         \
             "$DIALOG_HEADER_REWRITE" ""                                                         \
             "$DIALOG_RESTRICTIONS" ""                                                           \
-            2>&1 1>&3)
+            2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -1697,10 +1746,10 @@ dialog_restrictions() {
     DIALOG_RECIPIENT="Recipient restrictions"
     while true; do
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                 \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix restrictions" 0 0 0  \
             "$DIALOG_RECIPIENT" ""                                                              \
-            2>&1 1>&3)
+            2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -1719,27 +1768,29 @@ dialog_restrictions() {
 # return values:
 # none
 dialog_clearswift() {
-    DIALOG_CUSTOM_COMMANDS="Custom commands"
-    DIALOG_LDAP="LDAP schedule"
-    DIALOG_SSH="SSH access"
-    DIALOG_KEY_AUTH="SSH key authentication for cs-admin"
-    DIALOG_IMPORT_KEYSTORE="Import PKCS12 for Tomcat"
-    DIALOG_EXPORT_ADDRESS="Export address lists"
-    DIALOG_TOGGLE_PASSWORD="Toggle CS admin password check"
-    DIALOG_TOGGLE_CLEANUP="Toggle mqueue cleanup"
+    DIALOG_CUSTOM_COMMANDS='Custom commands'
+    DIALOG_LDAP='LDAP schedule'
+    DIALOG_SSH='SSH access'
+    DIALOG_KEY_AUTH='SSH key authentication for cs-admin'
+    DIALOG_IMPORT_KEYSTORE='Import PKCS12 for Tomcat'
+    DIALOG_EXPORT_ADDRESS='Export address lists'
+    DIALOG_TOGGLE_PASSWORD='CS admin password check'
+    DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
+    DIALOG_TOGGLE_BACKUP='Config email backup'
     while true; do
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                     \
-            --cancel-label "Back" --ok-label "Edit" --menu "Manage Clearswift configuration" 0 0 0 \
-            "$DIALOG_CUSTOM_COMMANDS" ""                                                           \
-            "$DIALOG_LDAP" ""                                                                      \
-            "$DIALOG_SSH" ""                                                                       \
-            "$DIALOG_KEY_AUTH" ""                                                                  \
-            "$DIALOG_IMPORT_KEYSTORE" ""                                                           \
-            "$DIALOG_EXPORT_ADDRESS" ""                                                            \
-            "$DIALOG_TOGGLE_PASSWORD" ""                                                           \
-            "$DIALOG_TOGGLE_CLEANUP" ""                                                            \
-            2>&1 1>&3)
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
+            "$DIALOG_CUSTOM_COMMANDS" ''                                                           \
+            "$DIALOG_LDAP" ''                                                                      \
+            "$DIALOG_SSH" ''                                                                       \
+            "$DIALOG_KEY_AUTH" ''                                                                  \
+            "$DIALOG_IMPORT_KEYSTORE" ''                                                           \
+            "$DIALOG_EXPORT_ADDRESS" ''                                                            \
+            "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
+            "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
+            "$DIALOG_TOGGLE_BACKUP" ''                                                             \
+            2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -1762,6 +1813,8 @@ dialog_clearswift() {
                     toggle_password;;
                 "$DIALOG_TOGGLE_CLEANUP")
                     toggle_cleanup;;
+                "$DIALOG_TOGGLE_BACKUP")
+                    toggle_backup;;
             esac
         else
             break
@@ -1859,25 +1912,26 @@ disable_cluster() {
 # none
 enable_sender() {
     PACKED_SCRIPT="
-    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
+    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
+    h889r9/dvWuM77b2VctECAAA
     "
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
+    $CRON_SENDER
 }
 # enable sender whitelist management
 # parameters:
@@ -1898,11 +1952,11 @@ dialog_rspamd() {
     STATUS_CLUSTER="$(check_enabled_cluster)"
     STATUS_SENDER="$(check_enabled_sender)"
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
-    ARRAY=()
-    [ "$NUM_PEERS" -gt 1 ] && ARRAY+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
-    ARRAY+=("$DIALOG_SENDER" '' "$STATUS_SENDER")
+    ARRAY_RSPAMD=()
+    [ "$NUM_PEERS" -gt 1 ] && ARRAY_RSPAMD+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
+    ARRAY_RSPAMD+=("$DIALOG_SENDER" '' "$STATUS_SENDER")
     exec 3>&1
-    DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY[@]}" 2>&1 1>&3)
+    DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
@@ -1936,16 +1990,16 @@ dialog_report() {
     DIALOG_SCRIPT="Edit script"
     while true; do
         [ -f $SCRIPT_STATS ] && [ -f $CRON_STATS ] && STATUS_CRON="enabled" || STATUS_CRON="disabled"
-        ARRAY=()
-        ARRAY+=("$DIALOG_STATUS$STATUS_CRON" "")
+        ARRAY_MAIL=()
+        ARRAY_MAIL+=("$DIALOG_STATUS$STATUS_CRON" "")
         if [ "$STATUS_CRON" = "enabled" ]; then
-            ARRAY+=("$DIALOG_EMAIL" "")
-            ARRAY+=("$DIALOG_SCRIPT" "")
+            ARRAY_MAIL+=("$DIALOG_EMAIL" "")
+            ARRAY_MAIL+=("$DIALOG_SCRIPT" "")
         fi
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "Other configurations"                         \
+        DIALOG_RET="$($DIALOG --clear --backtitle "Other configurations"                        \
             --cancel-label "Back" --ok-label "Edit" --menu "Monthly email stats reports" 0 40 0 \
-            "${ARRAY[@]}" 2>&1 1>&3)
+            "${ARRAY_MAIL[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -2006,16 +2060,16 @@ dialog_anomaly() {
     DIALOG_SCRIPT="Edit script"
     while true; do
         [ -f $SCRIPT_ANOMALY ] && [ -f $CRON_ANOMALY ] && STATUS_CRON="enabled" || STATUS_CRON="disabled"
-        ARRAY=()
-        ARRAY+=("$DIALOG_STATUS$STATUS_CRON" "")
+        ARRAY_MAILADDR=()
+        ARRAY_MAILADDR+=("$DIALOG_STATUS$STATUS_CRON" "")
         if [ "$STATUS_CRON" = "enabled" ]; then
-            ARRAY+=("$DIALOG_EMAIL" "")
-            ARRAY+=("$DIALOG_SCRIPT" "")
+            ARRAY_MAILADDR+=("$DIALOG_EMAIL" "")
+            ARRAY_MAILADDR+=("$DIALOG_SCRIPT" "")
         fi
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "Other configurations"                         \
+        DIALOG_RET="$($DIALOG --clear --backtitle "Other configurations"                        \
             --cancel-label "Back" --ok-label "Edit" --menu "Sender anomaly detection" 0 40 0    \
-            "${ARRAY[@]}" 2>&1 1>&3)
+            "${ARRAY_MAILADDR[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -2077,19 +2131,19 @@ dialog_other() {
     DIALOG_FORWARDING='Internal DNS forwarding'
     DIALOG_REPORT='Monthly email stats reports'
     DIALOG_ANOMALY='Sender anomaly detection'
-    ARRAY=()
-    ARRAY+=("$DIALOG_AUTO_UPDATE" '')
-    ARRAY+=("$DIALOG_MAIL_INTERN" '')
-    ARRAY+=("$DIALOG_CONFIG_FW" '')
-    ARRAY+=("$DIALOG_RECENT_UPDATES" '')
-    ARRAY+=("$DIALOG_FORWARDING" '')
-    ARRAY+=("$DIALOG_REPORT" '')
-    ARRAY+=("$DIALOG_ANOMALY" '')
+    ARRAY_OTHER=()
+    ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
+    ARRAY_OTHER+=("$DIALOG_MAIL_INTERN" '')
+    ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
+    ARRAY_OTHER+=("$DIALOG_RECENT_UPDATES" '')
+    ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
+    ARRAY_OTHER+=("$DIALOG_REPORT" '')
+    ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
     while true; do
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                   \
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
             --cancel-label "Back" --ok-label "Edit" --menu "Manage other configuration" 0 40 0   \
-            "${ARRAY[@]}" 2>&1 1>&3)
+            "${ARRAY_OTHER[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -2147,22 +2201,22 @@ show_tls_in() {
 # return values:
 # internal mail relay
 get_internal() {
-    ARRAY=()
+    ARRAY_INTERNAL=()
     LIST_RELAY="$(grep 'smtp:\[.*\]' $MAP_TRANSPORT | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
     for NAME_RELAY in $LIST_RELAY; do
         COUNTER=0
         FOUND=""
-        for COLLECTED in "${ARRAY[@]}"; do
+        for COLLECTED in "${ARRAY_INTERNAL[@]}"; do
             if [ "$NAME_RELAY" = "$(echo $COLLECTED | awk '{print $1}')" ]; then
-                ARRAY[$COUNTER]="$NAME_RELAY $(expr $(echo $COLLECTED | awk '{print $2}') + 1)"
+                ARRAY_INTERNAL[$COUNTER]="$NAME_RELAY $(expr $(echo $COLLECTED | awk '{print $2}') + 1)"
                 FOUND=1
             fi
             COUNTER="$(expr $COUNTER + 1)"
         done
-        [ -z "$FOUND" ] && ARRAY+=("$NAME_RELAY 1")
+        [ -z "$FOUND" ] && ARRAY_INTERNAL+=("$NAME_RELAY 1")
     done
     MOST_FREQUENT=""
-    for COLLECTED in "${ARRAY[@]}"; do
+    for COLLECTED in "${ARRAY_INTERNAL[@]}"; do
         if [ -z "$MOST_FREQUENT" ] || [ "$(echo $COLLECTED | awk '{print $2}')" -gt "$(echo $MOST_FREQUENT | awk '{print $2}')" ]; then
             MOST_FREQUENT="$COLLECTED"
         fi
@@ -2242,14 +2296,14 @@ dialog_show() {
     DIALOG_LOG="Search Postfix daily mail log"
     while true; do
         exec 3>&1
-        DIALOG_RET=$($DIALOG --clear --backtitle "$TITLE_MAIN"                                        \
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                       \
             --cancel-label "Back" --ok-label "Edit" --menu "Postfix infos & stats" 0 40 0             \
             "$DIALOG_NEW_SETTINGS" ""                                                                 \
             "$DIALOG_GENERAL" ""                                                                      \
             "$DIALOG_TLS_IN" ""                                                                       \
             "$DIALOG_TLS_OUT" ""                                                                      \
             "$DIALOG_LOG" ""                                                                          \
-            2>&1 1>&3)
+            2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -2289,7 +2343,7 @@ cs_login() {
     fi
     if [ -z "$SESSION_ID" ]; then
         exec 3>&1
-        DIALOG_RET=$(dialog --clear --backtitle "$TITLE_MAIN" --title "Clearswift GUI login" --passwordbox "Enter CS admin password" 0 50 2>&1 1>&3)
+        DIALOG_RET="$(dialog --clear --backtitle "$TITLE_MAIN" --title "Clearswift GUI login" --passwordbox "Enter CS admin password" 0 50 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -2551,23 +2605,21 @@ DIALOG_OTHER="Other config"
 DIALOG_SHOW="Postfix infos & stats"
 DIALOG_APPLY="Apply configuration"
 while true; do
-    ARRAY=()
+    ARRAY_MAIN=()
     if check_installed_seg; then
-        ARRAY+=("$DIALOG_INSTALL" "")
-        ARRAY+=("$DIALOG_ENABLE" "")
-        ARRAY+=("$DIALOG_POSTFIX" "")
-        ARRAY+=("$DIALOG_CLEARSWIFT" "")
-        check_installed_rspamd && ARRAY+=("$DIALOG_RSPAMD_MENU" "")
-        ARRAY+=("$DIALOG_OTHER" "")
-        ARRAY+=("$DIALOG_SHOW" "")
-        [ $APPLY_NEEDED = 1 ] && ARRAY+=("$DIALOG_APPLY" "")
+        ARRAY_MAIN+=("$DIALOG_INSTALL" "")
+        ARRAY_MAIN+=("$DIALOG_ENABLE" "")
+        ARRAY_MAIN+=("$DIALOG_POSTFIX" "")
+        ARRAY_MAIN+=("$DIALOG_CLEARSWIFT" "")
+        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_RSPAMD_MENU" "")
+        ARRAY_MAIN+=("$DIALOG_OTHER" "")
+        ARRAY_MAIN+=("$DIALOG_SHOW" "")
+        [ $APPLY_NEEDED = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" "")
     else
-        ARRAY+=("$DIALOG_SEG" "")
+        ARRAY_MAIN+=("$DIALOG_SEG" "")
     fi
     exec 3>&1
-    DIALOG_RET=$($DIALOG --clear --title "$TITLE_MAIN $VERSION_MENU"           \
-        --cancel-label "Exit" --menu "" 0 0 0 \
-        "${ARRAY[@]}" 2>&1 1>&3)
+    DIALOG_RET="$($DIALOG --clear --title "$TITLE_MAIN $VERSION_MENU" --cancel-label "Exit" --menu "" 0 0 0 "${ARRAY_MAIN[@]}" 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then

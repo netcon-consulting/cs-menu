@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sender_whitelist.sh V1.2.0
+# sender_whitelist.sh V1.3.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -34,28 +34,25 @@ while read LINE; do
 	fi
 done < <(get_addr_list)
 
-LIST_DOMAIN=''
-LIST_EMAIL=''
+[ -f "$WHITELIST_DOMAIN" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_DOMAIN"
+[ -f "$WHITELIST_EMAIL" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_EMAIL"
+
+NAME_SCRIPT="$(basename $0)"
+DATE_CURRENT="$(date +%F)"
+
+echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_DOMAIN"
+echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_EMAIL"
 
 for NAME_LIST in $(ls $DIR_ADDRLIST); do
     if echo $NAME_LIST | grep -q '[wW][hH][iI][tT][eE][lL][iI][sS][tT]'; then
-        LIST_DOMAIN+=" $(grep '*@' "$DIR_ADDRLIST/$NAME_LIST" | awk -F@ '{print $2}')"
-        LIST_EMAIL+=" $(grep -v '*@' "$DIR_ADDRLIST/$NAME_LIST")"
+        grep '*@' "$DIR_ADDRLIST/$NAME_LIST" | awk -F@ '{print $2}' | sort >> "$WHITELIST_DOMAIN"
+        grep -v '*@' "$DIR_ADDRLIST/$NAME_LIST" | sort >> "$WHITELIST_EMAIL"
     fi
 done
 
-rm -rf "$DIR_ADDRLIST" "$FILE_CONFIG"
-
-NAME_SCRIPT="$(basename $0)"
-
-[ -f "$WHITELIST_DOMAIN" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_DOMAIN"
-echo "# start managed by $NAME_SCRIPT (updated $(date +%F))" >> "$WHITELIST_DOMAIN"
-echo $LIST_DOMAIN | xargs -n 1 >> "$WHITELIST_DOMAIN"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_DOMAIN"
-
-[ -f "$WHITELIST_EMAIL" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_EMAIL"
-echo "# start managed by $NAME_SCRIPT (updated $(date +%F))" >> "$WHITELIST_EMAIL"
-echo $LIST_EMAIL | xargs -n 1 >> "$WHITELIST_EMAIL"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_EMAIL"
 
 chown _rspamd:_rspamd "$WHITELIST_DOMAIN" "$WHITELIST_EMAIL"
+
+rm -rf "$DIR_ADDRLIST" "$FILE_CONFIG"
