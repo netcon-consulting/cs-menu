@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sender_whitelist.sh V1.3.0
+# sender_whitelist.sh V1.4.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -11,7 +11,10 @@ DIR_ADDRLIST='/tmp/TMPaddresslist'
 LAST_CONFIG='/var/cs-gateway/deployments/lastAppliedConfiguration.xml'
 
 WHITELIST_DOMAIN='/var/lib/rspamd/whitelist_sender_domain'
-WHITELIST_EMAIL='/var/lib/rspamd/whitelist_sender_from'
+WHITELIST_FROM='/var/lib/rspamd/whitelist_sender_from'
+
+TMP_DOMAIN='/tmp/TMPdomain'
+TMP_FROM='/tmp/TMPfrom'
 
 get_addr_table () {
 	[ -f "$LAST_CONFIG" ] && cat "$LAST_CONFIG" | grep -o -P '(?<=\<AddressListTable\>).*(?=\<\/AddressListTable\>)'
@@ -34,25 +37,30 @@ while read LINE; do
 	fi
 done < <(get_addr_list)
 
-[ -f "$WHITELIST_DOMAIN" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_DOMAIN"
-[ -f "$WHITELIST_EMAIL" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_EMAIL"
-
-NAME_SCRIPT="$(basename $0)"
-DATE_CURRENT="$(date +%F)"
-
-echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_DOMAIN"
-echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_EMAIL"
+rm -f "$TMP_DOMAIN" "$TMP_FROM"
 
 for NAME_LIST in $(ls $DIR_ADDRLIST); do
     if echo $NAME_LIST | grep -q '[wW][hH][iI][tT][eE][lL][iI][sS][tT]'; then
-        grep '*@' "$DIR_ADDRLIST/$NAME_LIST" | awk -F@ '{print $2}' | sort >> "$WHITELIST_DOMAIN"
-        grep -v '*@' "$DIR_ADDRLIST/$NAME_LIST" | sort >> "$WHITELIST_EMAIL"
+        grep '*@' "$DIR_ADDRLIST/$NAME_LIST" | awk -F@ '{print $2}' >> "$TMP_DOMAIN"
+        grep -v '*@' "$DIR_ADDRLIST/$NAME_LIST" >> "$TMP_FROM"
     fi
 done
 
+NAME_SCRIPT="$(basename $0)"
+
+[ -f "$WHITELIST_DOMAIN" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_DOMAIN"
+[ -f "$WHITELIST_FROM" ] && sed -i "/# start managed by $NAME_SCRIPT/,/# end managed by $NAME_SCRIPT/d" "$WHITELIST_FROM"
+
+DATE_CURRENT="$(date +%F)"
+
+echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_DOMAIN"
+sort "$TMP_DOMAIN" >> "$WHITELIST_DOMAIN"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_DOMAIN"
-echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_EMAIL"
 
-chown _rspamd:_rspamd "$WHITELIST_DOMAIN" "$WHITELIST_EMAIL"
+echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_FROM"
+sort "$TMP_FROM" >> "$WHITELIST_FROM"
+echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_FROM"
 
-rm -rf "$DIR_ADDRLIST" "$FILE_CONFIG"
+chown _rspamd:_rspamd "$WHITELIST_DOMAIN" "$WHITELIST_FROM"
+
+rm -rf "$DIR_ADDRLIST" "$TMP_DOMAIN" "$TMP_FROM"

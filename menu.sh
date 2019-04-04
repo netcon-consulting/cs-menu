@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.19.0 for Clearswift SEG >= 4.8
+# menu.sh V1.20.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,7 +56,9 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - added CS config email backup option to submenu 'Clearswift config'
+# - exported address lists from CS are mailed
+# - added rspamd features greylisting, rejecting, bayes-learning and detailed headers
+# - added 'Rspamd configs' submenu with options to edit IP, sender domain and sender from whitelists, reset the bayes learned spam and print rspamd stats
 # - updated rspamd sender whitelist management script
 #
 ###################################################################################################
@@ -72,12 +74,16 @@ CONFIG_AUTO_UPDATE='/etc/yum/yum-cron.conf'
 CONFIG_AUTO_UPDATE_ALT='/etc/sysconfig/yum-cron'
 CONFIG_LDAP='/var/cs-gateway/ldap/schedule.properties'
 CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
+CONFIG_ACTIONS='/etc/rspamd/override.d/actions.conf'
+CONFIG_HEADERS='/etc/rspamd/override.d/milter_headers.conf'
+CONFIG_BAYES='/etc/rspamd/override.d/classifier-bayes.conf'
+CONFIG_GREYLISTING='/etc/rspamd/local.d/greylisting.conf'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
 DIR_CERT='/var/lib/acme/live/$(hostname)'
 DIR_COMMANDS='/opt/cs-gateway/scripts/netcon'
 DIR_MAPS='/etc/postfix/maps'
-DIR_ADDRESS_LISTS='/home/cs-admin/address-lists'
+DIR_ADDRLIST='/tmp/TMPaddresslist'
 ESMTP_ACCESS="$DIR_MAPS/esmtp_access"
 HELO_ACCESS="$DIR_MAPS/check_helo_access"
 RECIPIENT_ACCESS="$DIR_MAPS/check_recipient_access"
@@ -86,7 +92,9 @@ SENDER_REWRITE="$DIR_MAPS/sender_canonical_maps"
 WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
-WHITELIST_RSPAMD='/var/lib/rspamd/ip_whitelist'
+WHITELIST_IP='/var/lib/rspamd/ip_whitelist'
+WHITELIST_DOMAIN='/var/lib/rspamd/whitelist_sender_domain'
+WHITELIST_FROM='/var/lib/rspamd/whitelist_sender_from'
 CLIENT_MAP='/etc/postfix-inbound/client.map'
 LOG_FILES='/var/log/cs-gateway/mail.'
 LAST_CONFIG='/var/cs-gateway/deployments/lastAppliedConfiguration.xml'
@@ -213,14 +221,14 @@ install_rspamd() {
     yum install -y redis rspamd
     rspamadm configwizard
     CONFIG_MULTIMAP='/etc/rspamd/local.d/multimap.conf'
-    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_RSPAMD\";"$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
-    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"/var/lib/rspamd/whitelist_sender_domain\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
-    echo $'\n''SENDER_FROM_WHITELIST_USER {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"/var/lib/rspamd/whitelist_sender_from\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
-    echo 'extended_spam_headers = true;' > /etc/rspamd/override.d/milter_headers.conf
-    echo 'autolearn = true;' > /etc/rspamd/override.d/classifier-bayes.conf
-    echo 'reject = null;' > /etc/rspamd/override.d/actions.conf
-    echo 'greylist = null;' >> /etc/rspamd/override.d/actions.conf
-    echo 'enabled = false;' > /etc/rspamd/local.d/greylisting.conf
+    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_IP\";"$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
+    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"$WHITELIST_DOMAIN\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo $'\n''SENDER_FROM_WHITELIST_USER {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"$WHITELIST_FROM\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo 'extended_spam_headers = true;' > "$CONFIG_HEADERS"
+    echo 'autolearn = true;' > "$CONFIG_BAYES"
+    echo 'reject = null;' > "$CONFIG_ACTIONS"
+    echo 'greylist = null;' >> "$CONFIG_ACTIONS"
+    echo 'enabled = false;' > "$CONFIG_GREYLISTING"
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     chkconfig rspamd on
     chkconfig redis on
@@ -456,16 +464,16 @@ enable_rspamd() {
         grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES || echo 'learnham: "| rspamc learn_ham"' >> $MAP_ALIASES
         newaliases
     fi
-    echo "# start managed by $TITLE_MAIN" >> $WHITELIST_RSPAMD
+    echo "# start managed by $TITLE_MAIN" >> $WHITELIST_IP
     if [ -f "$CLIENT_MAP" ]; then
         CLIENT_REJECT="$(postmulti -i postfix-inbound -x postconf -n | grep '^cp_client_' | grep 'REJECT' | awk '{print $1}')"
         if [ -z "$CLIENT_REJECT" ]; then
-            awk '{print $1}' $CLIENT_MAP >> $WHITELIST_RSPAMD
+            awk '{print $1}' $CLIENT_MAP >> $WHITELIST_IP
         else
-            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $CLIENT_MAP >> $WHITELIST_RSPAMD
+            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $CLIENT_MAP >> $WHITELIST_IP
         fi
     fi
-    echo "# end managed by $TITLE_MAIN" >> $WHITELIST_RSPAMD
+    echo "# end managed by $TITLE_MAIN" >> $WHITELIST_IP
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -789,7 +797,7 @@ activate_config() {
 # none
 # return values:
 # none
-dialog_enable() {
+dialog_feature_postfix() {
     DIALOG_RSPAMD="Rspamd"
     DIALOG_LETSENCRYPT="Let's-Encrypt-Cert"
     DIALOG_TLS="Verbose-TLS"
@@ -871,7 +879,7 @@ dialog_enable() {
                 newaliases
             fi
             postmulti -i postfix-inbound -x postconf mydestination | grep -q "$(hostname)" && postmulti -i postfix-inbound -x postconf -e mydestination=
-            [ -f "$WHITELIST_RSPAMD" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_RSPAMD
+            [ -f "$WHITELIST_IP" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_IP
         fi
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED="$LIST_ENABLED"$'\n'"None"
         echo "$SETTINGS_END" >> $PF_IN
@@ -1095,24 +1103,41 @@ get_addr() {
     ADDR="$(echo "$1" | awk -F 'Address' '{for (i=1; i<=(NF+1)/2; ++i) print $(i*2)}'| cut -d \> -f 2 | cut -d \< -f 1)"
     [ -z "$ADDR" ] || echo "$ADDR"
 }
-# export address lists from CS config
+# export and email address lists from CS config
 # parameters:
 # none
 # return values:
 # none
 export_address_list() {
-    cd /home/cs-admin
-    mkdir -p $DIR_ADDRESS_LISTS
-    LIST_EXPORTED="Address lists exported to '$DIR_ADDRESS_LISTS':\n"
+    mkdir -p "$DIR_ADDRLIST"
+    LIST_EXPORTED='Address lists exported:'$'\n'
     while read LINE; do
         if [ ! -z "$LINE" ]; then
             NAME_LIST=$(echo "$LINE" | awk -F "type=" '{print $1}' | awk -F "name=\"" '{print $2}' | tr -d \" | sed 's/ /_/g' | sed 's/_$//g')
-            get_addr "$LINE" > $DIR_ADDRESS_LISTS/"$NAME_LIST".lst
-            LIST_EXPORTED="$LIST_EXPORTED\n$NAME_LIST.lst"
+            get_addr "$LINE" > "$DIR_ADDRLIST/$NAME_LIST".lst
+            LIST_EXPORTED+=$'\n'"$NAME_LIST.lst"
         fi
     done < <(get_addr_list)
-    chown -R cs-admin:cs-adm $DIR_ADDRESS_LISTS
-    $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox "$LIST_EXPORTED" 0 0
+    FILE_ADDRLIST="/tmp/address_lists_$(date +%F).tgz"
+    tar -C "$DIR_ADDRLIST" -czf "$FILE_ADDRLIST" .
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title "Export and email address lists"  \
+        --inputbox "Enter email recipient for address lists" 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        DOMAIN_RECIPIENT="$(echo "$DIALOG_RET"| awk -F"@" '{print $2}')"
+        MAIL_RELAY=''
+        [ -f "$TRANSPORT_MAP" ] && MAIL_RELAY="$(grep "^$DOMAIN_RECIPIENT " $TRANSPORT_MAP | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
+        [ -z "$MAIL_RELAY" ] && MAIL_RELAY="$(dig +short +nodnssec mx $DOMAIN_RECIPIENT | sort -nr | tail -1 | awk '{print $2}')"
+        if [ -z "$MAIL_RELAY" ]; then
+            $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox 'Cannot determine mail relay' 0 0
+        else
+            echo "[CS-addresslists] Exported addresslists" | mail -s "[CS-addresslists] Exported addresslists" -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) -a "$FILE_ADDRLIST" "$DIALOG_RET"
+        fi
+        $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox "$LIST_EXPORTED" 0 0
+    fi
+    rm -rf "$DIR_ADDRLIST" "$FILE_ADDRLIST"
 }
 # toggle password check for cs-admin
 # parameters:
@@ -1127,13 +1152,9 @@ toggle_password() {
         STATUS_CURRENT="enabled"
         STATUS_TOGGLE="Disable"
     fi
-    exec 3>&1
     $DIALOG --backtitle "Clearswift Configuration" --title "Toggle CS admin password check"         \
-        --yesno "CS admin password check is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60        \
-        2>&1 1>&3
-    RET_CODE=$?
-    exec 3>&-
-    if [ $RET_CODE = 0 ]; then
+        --yesno "CS admin password check is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    if [ "$?" = 0 ]; then
         if [ $STATUS_CURRENT = "disabled" ]; then
             sed -i '/cs-admin ALL=(ALL) NOPASSWD:ALL/d' /etc/sudoers
             sed -i '/^\s*sudo su -s/s/sudo su -s/su -s/g' /opt/csrh/cli/climenu
@@ -1163,13 +1184,9 @@ toggle_cleanup() {
         STATUS_CURRENT="disabled"
         STATUS_TOGGLE="Enable"
     fi
-    exec 3>&1
     $DIALOG --backtitle "Clearswift Configuration" --title "Toggle CS mqueue cleanup"         \
-        --yesno "CS mqueue cleanup is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60        \
-        2>&1 1>&3
-    RET_CODE=$?
-    exec 3>&-
-    if [ $RET_CODE = 0 ]; then
+        --yesno "CS mqueue cleanup is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    if [ "$?" = 0 ]; then
         if [ $STATUS_CURRENT = "disabled" ]; then
             printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_CLEANUP
             chmod 700 $CRON_CLEANUP
@@ -1205,10 +1222,8 @@ toggle_backup() {
         STATUS_CURRENT='disabled'
         STATUS_TOGGLE='Enable'
     fi
-    exec 3>&1
     $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle config email backup'       \
         --yesno "CS config email backup $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 2>&1 1>&3
-    exec 3>&-
     if [ "$?" = 0 ]; then
         if [ $STATUS_CURRENT = "disabled" ]; then
             exec 3>&1
@@ -1773,7 +1788,7 @@ dialog_clearswift() {
     DIALOG_SSH='SSH access'
     DIALOG_KEY_AUTH='SSH key authentication for cs-admin'
     DIALOG_IMPORT_KEYSTORE='Import PKCS12 for Tomcat'
-    DIALOG_EXPORT_ADDRESS='Export address lists'
+    DIALOG_EXPORT_ADDRESS='Export and email address lists'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
     DIALOG_TOGGLE_BACKUP='Config email backup'
@@ -1840,6 +1855,54 @@ check_enabled_cluster() {
 # sender whitelist management status
 check_enabled_sender() {
     if [ -f "$CRON_SENDER" ]; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether greylisting is enabled
+# parameters:
+# none
+# return values:
+# greylisting status
+check_enabled_greylist() {
+    if [ -f "$CONFIG_ACTIONS" ] && grep -q 'greylist = null;' "$CONFIG_ACTIONS" && [ -f "$CONFIG_GREYLISTING" ] && grep -q 'enabled = false;' "$CONFIG_GREYLISTING"; then
+        echo off
+    else
+        echo on
+    fi
+}
+# check whether rejecting is enabled
+# parameters:
+# none
+# return values:
+# rejecting status
+check_enabled_reject() {
+    if [ -f "$CONFIG_ACTIONS" ] && grep -q 'reject = null;' "$CONFIG_ACTIONS"; then
+        echo off
+    else
+        echo on
+    fi
+}
+# check whether bayes-learning is enabled
+# parameters:
+# none
+# return values:
+# bayes-learning status
+check_enabled_bayes() {
+    if [ -f "$CONFIG_BAYES" ] && grep -q 'autolearn = true;' "$CONFIG_BAYES"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether detailed headers is enabled
+# parameters:
+# none
+# return values:
+# detailed headers status
+check_enabled_headers() {
+    if [ -f "$CONFIG_HEADERS" ] && grep -q 'extended_spam_headers = true;' "$CONFIG_HEADERS"; then
         echo on
     else
         echo off
@@ -1912,22 +1975,22 @@ disable_cluster() {
 # none
 enable_sender() {
     PACKED_SCRIPT="
-    H4sIAFaupFwAA7VVbW/aSBD+HP+KqcPVdlKzgX66BtIgXhpLhEaEXj8Asha84FXstW+9lOOa/vfO
-    GkMcjlxb6Q4JgWd25pl55pn16Ssy44LMaBYaxilkTARM+uuQKxbxTFWzEP6oVd9WL4xTdLeTdCP5
-    MlRgzx2oX9R+hwFT7UTAJ6GYFCyMmchmTFK1Ekv4EM9u3oBgap4IF7/ZKlJcLKvzJM7TtVYqTOQ7
-    uKVyDh3O5APigx1Xg+L/9dFYxzA63tBvdTrDvnc/alpExSkZ3d7RIJAsy3ThlmH0W/cjv/1x0PM+
-    4JEvVJJ55i6pYmu6IQFLo2SD1aqMRDRTrTSNOAuwlQVfrrB+nojqX3GEeT7feKOuBvI7H29b3qBI
-    FvEZkVlK44Ds6fIL/oIkplxYpdAuRvZ/InIhkxgxl0z5uhtf0VnEwHbgq3EyBncBZqXUlwlTeP0a
-    5lQd2h9hKVkKbgLuHVj2+0Zz0mht6ekj3EinnVw51TP7PXom5IjPMr6VCtFFFnUcFGdWahqPrh/A
-    7YFVymSB9XWRSLB5s3YJvNG0B73zmkPql3B+zh1IJRcKKjY/qzvfnsEVSHrETbNis3mYvIDzaxgY
-    P18pcAOYXGk26yVDQxtqjpkT/TfCaXTN8OMjFAXkFl1n/BBwCW6KtrIUTQMHipRIRgPoe4PuJQSJ
-    ccIXMIZX26TaikkvQYVMGCcng9Zt189lvG9ze2Tfqak2KWua2GfRSy3vY+cVNGbNiVny13O/knlX
-    OlHGArAyAsQnS+vp2a8QfHawiD3tO/Crg8ZIZV9nNcoUcrTgRpAIBg1o2M9EgttZCPVwcQq1anSX
-    g0nwulFUKoipoEs0zjawhblvD727EXmDJ3ArXvQH5jGQf6Lnu/c/g28xDKN0RAsX71WmBwSVCxRW
-    pzXq+u1Pw2F3kHsDvIzg/Lceuozt7H9QFdirVAcFUCnncnBgV0e5+G+z7prU+7bXA3CB6xVl8Eww
-    Tq58wA+KP6/iSUH7y+lPsMbrz9NxeDMdc286VqPpmHWn46i/fc7uc5tVLAsUnzzYOru2Xhbp0/pc
-    H+5FliATL9D1DMH98hMgx7IVNOlExZY8jfdfJPXDIf5K7G5UGLoW4G9fN++K36O7eSxaxuDKxeEl
-    h889r9/dvWuM77b2VctECAAA
+    H4sIAPLVpVwAA7VVXXPaOBR9jn7FrUNrO6lxYPZlG6Bh+GiYAZIhtH0AxmOwsDWxZVcWpWzT/76S
+    rYCh0HZ3Ws8wIF3dc849ur6cv7DnhNpzNw0QOocUUw8zZx0QjkOS8nIawIdK+a/yFToX4VacbBjx
+    Aw7GwoTqVeVvGGLeiim8pxwzioMI03SOmctX1Id30fz2NVDMFzG1xCddhZxQv7yIowyuueJBzN7A
+    wGULaBPMHgU/GFHZU79vjuaaCLV7I6fZbo/6vYdxXbd5lNjjwb3reQynqRSuI9RvPoyd1t2w23sn
+    jnx2mb1ILd/leO1ubA8nYbwRanlqh27Km0kSEuyJUpbEXwn9JKblL1EocD7e9sYdSeS07wbN3lCB
+    hWRuszRxI8/e2uUo/7w4cgnVC6nd0d3gFxKXLI4EpahlR6aKe8aUMYWmIirJx9yRDjjcnYcYDBO+
+    orMJWEvQSgUvNJjBq1ewcPnh/hP4DCdgxWDdg268rdWntWZuaV9oHEvYacMsXxhvRWRqH4np6FtB
+    iKxM6TgQp5Uqks9dP4LVBb2ApIP+dRkzMEi9cg2kVjeG3cuKaVev4fKSmJAwQjmUDHJRNb/t0Skm
+    2RZ1rWTgRRCf4PlvHCJ/seJgeTBtSDerhY2a3KiYWmb0P4JOskuHn55ACch2pM7o0SMMrETsFdtX
+    Q6ILhCUMux70e8PONXgxOiNLmMCLHFTuCtBr4AGm6Oxs2Bx0nKz1t2XmR7aVanyT4Lom6lS1VLI6
+    nqPUjXB9qhXi1SzOWVaVBEqxB3pqg+3Yvr5bOyVbrE0hYmv7M3njoDC7tNVZDlMuPFoS5MUUQw1q
+    xl6TiDeaRXmn7lpfUyvZ7BpC8sK2gECouJ8whT1GM7MOxCPcy4zZSdh29yfQJ+uPs0lwO5uQ3mzC
+    x7MJ7swmYT9fpw/Znq7cBvVkyfrFjX66yp3/N/vGNhr7he2DWp9/irsFyL2QqcpLhLJjD61R734s
+    215MciyvF0pXoi2Rev8PZ5gaAvJSLQKaLSY/dxmHyKWuLzbnG2VdDmy/FifEhDoZ97RjJN+zZ/r/
+    LLdql3Zz3HFa70ejzjDzxRODHy5fdqUp+TvzE14wVolM8kSPFbBMdRvfF5vGjB808ImTz/w/qOpk
+    7m8Wn7tVkJ7f0NFT/0e2ug2Ruabg5H97b9T30b48kixHA1sejs0fzIp/AfelrJzVCAAA
     "
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
@@ -1941,32 +2004,121 @@ enable_sender() {
 disable_sender() {
     rm -f $CRON_SENDER
 }
-# select rspamd configuration to manage in dialog menu
+# enable greylisting
 # parameters:
 # none
 # return values:
 # none
-dialog_rspamd() {
+enable_greylist() {
+    [ -f "$CONFIG_ACTIONS" ] && sed -i '/greylist = null;/d' "$CONFIG_ACTIONS"
+    [ -f "$CONFIG_GREYLISTING" ] && sed -i '/enabled = false;/d' "$CONFIG_GREYLISTING"
+}
+# disable greylisting
+# parameters:
+# none
+# return values:
+# none
+disable_greylist() {
+    if ! [ -f "$CONFIG_ACTIONS" ] || ! grep -q 'greylist = null' "$CONFIG_ACTIONS"; then
+        echo 'greylist = null;' >> "$CONFIG_ACTIONS"
+    fi
+    if ! [ -f "$CONFIG_GREYLISTING" ] || ! grep -q 'enabled = false;' "$CONFIG_GREYLISTING"; then
+        echo 'enabled = false;' >> "$CONFIG_GREYLISTING"
+    fi
+}
+# enable rejecting
+# parameters:
+# none
+# return values:
+# none
+enable_reject() {
+    sed -i '/reject = null;/d' "$CONFIG_ACTIONS"
+}
+# disable rejecting
+# parameters:
+# none
+# return values:
+# none
+disable_reject() {
+    echo 'reject = null;' >> "$CONFIG_ACTIONS"
+}
+# enable bayes
+# parameters:
+# none
+# return values:
+# none
+enable_bayes() {
+    echo 'autolearn = true;' >> "$CONFIG_BAYES"
+}
+# disable bayes
+# parameters:
+# none
+# return values:
+# none
+disable_bayes() {
+    sed -i '/autolearn = true;/d' "$CONFIG_BAYES"
+}
+# enable detailed headers
+# parameters:
+# none
+# return values:
+# none
+enable_headers() {
+    echo 'extended_spam_headers = true;' >> "$CONFIG_HEADERS"
+}
+# disable detailed headers
+# parameters:
+# none
+# return values:
+# none
+disable_headers() {
+    sed -i '/extended_spam_headers = true;/d' "$CONFIG_HEADERS"
+}
+# select rspamd feature in dialog checklist
+# parameters:
+# none
+# return values:
+# none
+dialog_feature_rspamd() {
     DIALOG_CLUSTER='Master-slave-cluster'
     DIALOG_SENDER='Sender-whitelist-management'
+    DIALOG_GREYLIST='Greylisting'
+    DIALOG_REJECT='Rejecting'
+    DIALOG_BAYES='Bayes-learning'
+    DIALOG_HEADERS='Detailed-headers'
     STATUS_CLUSTER="$(check_enabled_cluster)"
     STATUS_SENDER="$(check_enabled_sender)"
+    STATUS_GREYLIST="$(check_enabled_greylist)"
+    STATUS_REJECT="$(check_enabled_reject)"
+    STATUS_BAYES="$(check_enabled_bayes)"
+    STATUS_HEADERS="$(check_enabled_headers)"
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
     ARRAY_RSPAMD=()
     [ "$NUM_PEERS" -gt 1 ] && ARRAY_RSPAMD+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
     ARRAY_RSPAMD+=("$DIALOG_SENDER" '' "$STATUS_SENDER")
+    ARRAY_RSPAMD+=("$DIALOG_GREYLIST" '' "$STATUS_GREYLIST")
+    ARRAY_RSPAMD+=("$DIALOG_REJECT" '' "$STATUS_REJECT")
+    ARRAY_RSPAMD+=("$DIALOG_BAYES" '' "$STATUS_BAYES")
+    ARRAY_RSPAMD+=("$DIALOG_HEADERS" '' "$STATUS_HEADERS")
     exec 3>&1
     DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
         LIST_ENABLED=''
+        RSPAMD_RESTART=''
         if [ "$NUM_PEERS" -gt 1 ]; then
             if echo "$DIALOG_RET" | grep -q "$DIALOG_CLUSTER"; then
-                [ "$STATUS_CLUSTER" = 'off' ] && enable_cluster
+                if [ "$STATUS_CLUSTER" = 'off' ]; then
+                    enable_cluster
+                    RSPAMD_RESTART=1
+                fi
                 LIST_ENABLED+=$'\n''Master-slave cluster'
             else
-                [ "$STATUS_CLUSTER" = 'on' ] && disable_cluster
+                if [ "$STATUS_CLUSTER" = 'on' ]; then
+                    disable_cluster
+                    RSPAMD_RESTART=1
+                fi
             fi
         fi
         if echo "$DIALOG_RET" | grep -q "$DIALOG_SENDER"; then
@@ -1975,9 +2127,102 @@ dialog_rspamd() {
         else
             [ "$STATUS_SENDER" = 'on' ] && disable_sender
         fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_GREYLIST"; then
+            if [ "$STATUS_GREYLIST" = 'off' ]; then
+                enable_greylist
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Greylisting'
+        else
+            if [ "$STATUS_GREYLIST" = 'on' ]; then
+                disable_greylist
+                RSPAMD_RESTART=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_REJECT"; then
+            if [ "$STATUS_REJECT" = 'off' ]; then
+                enable_reject
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Rejecting'
+        else
+            if [ "$STATUS_REJECT" = 'on' ]; then
+                disable_reject
+                RSPAMD_RESTART=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_BAYES"; then
+            if [ "$STATUS_BAYES" = 'off' ]; then
+                enable_bayes
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Bayes-learning'
+        else
+            if [ "$STATUS_BAYES" = 'on' ]; then
+                disable_bayes
+                RSPAMD_RESTART=1
+            fi    
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_HEADERS"; then
+            if [ "$STATUS_HEADERS" = 'off' ]; then
+                enable_headers
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Detailed headers'
+        else
+            if [ "$STATUS_HEADERS" = 'on' ]; then
+                disable_headers
+                RSPAMD_RESTART=1
+            fi
+        fi
+        [ "$RSPAMD_RESTART" = 1 ] && service rspamd restart &>/dev/null
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED+=$'\n''None'
         $DIALOG --backtitle "$TITLE_MAIN" --title 'Enabled features' --clear --msgbox "$LIST_ENABLED" 0 0
     fi
+}
+# select Rspamd configuration to manage in dialog menu
+# parameters:
+# none
+# return values:
+# none
+dialog_config_rspamd() {
+    DIALOG_IP='Whitelist IP'
+    DIALOG_DOMAIN='Whitelist sender domain'
+    DIALOG_FROM='Whitelist sender from'
+    DIALOG_BAYES='Reset learned Bayes spam'
+    DIALOG_STATS='Rspamd stats'
+    while true; do
+        exec 3>&1
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
+            "$DIALOG_IP" ''                                                                        \
+            "$DIALOG_DOMAIN" ''                                                                    \
+            "$DIALOG_FROM" ''                                                                      \
+            "$DIALOG_BAYES" ''                                                                     \
+            "$DIALOG_STATS" ''                                                                     \
+            2>&1 1>&3)"
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ]; then
+            case "$DIALOG_RET" in
+                "$DIALOG_IP")
+                    "$TXT_EDITOR" "$WHITELIST_IP";;
+                "$DIALOG_DOMAIN")
+                    "$TXT_EDITOR" "$WHITELIST_DOMAIN";;
+                "$DIALOG_FROM")
+                    "$TXT_EDITOR" "$WHITELIST_FROM";;
+                "$DIALOG_BAYES")
+                    service rspamd stop &>/dev/null
+                    rm -f /var/lib/rspamd/bayes.spam.sqlite
+                    service rspamd start &>/dev/null;;
+                "$DIALOG_STATS")
+                    LIST_STATS='Rspamd stats:'$'\n\n'"$(rspamc stat | grep 'Messages scanned:\|Messages with action add header:\|Messages with action no action:\|Messages learned:\|Connections count:')"
+                    $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd stats' --clear --msgbox "$LIST_STATS" 0 0;;
+            esac
+        else
+            break
+        fi
+    done
 }
 # manage monthly email stats reports in dialog menu
 # parameters:
@@ -2590,28 +2835,30 @@ check_update() {
 # none
 # return values:
 # none
-grep -q "alias menu=/root/menu.sh" /root/.bashrc || echo "alias menu=/root/menu.sh" >> /root/.bashrc
+grep -q 'alias menu=/root/menu.sh' /root/.bashrc || echo 'alias menu=/root/menu.sh' >> /root/.bashrc
 check_installed_seg && init_cs
 write_examples
 check_update
 print_info
-DIALOG_SEG="Install Clearswift SEG"
-DIALOG_INSTALL="Install features"
-DIALOG_ENABLE="Enable Postfix features"
-DIALOG_POSTFIX="Postfix config"
-DIALOG_CLEARSWIFT="Clearswift config"
-DIALOG_RSPAMD_MENU="Enable Rspamd features"
-DIALOG_OTHER="Other config"
-DIALOG_SHOW="Postfix infos & stats"
-DIALOG_APPLY="Apply configuration"
+DIALOG_SEG='Install Clearswift SEG'
+DIALOG_INSTALL='Install features'
+DIALOG_FEATURE_POSTFIX='Postfix features'
+DIALOG_POSTFIX='Postfix configs'
+DIALOG_CLEARSWIFT='Clearswift configs'
+DIALOG_FEATURE_RSPAMD='Rspamd features'
+DIALOG_CONFIG_RSPAMD='Rspamd configs'
+DIALOG_OTHER='Other configs'
+DIALOG_SHOW='Postfix infos & stats'
+DIALOG_APPLY='Apply configuration'
 while true; do
     ARRAY_MAIN=()
     if check_installed_seg; then
         ARRAY_MAIN+=("$DIALOG_INSTALL" "")
-        ARRAY_MAIN+=("$DIALOG_ENABLE" "")
+        ARRAY_MAIN+=("$DIALOG_FEATURE_POSTFIX" "")
         ARRAY_MAIN+=("$DIALOG_POSTFIX" "")
         ARRAY_MAIN+=("$DIALOG_CLEARSWIFT" "")
-        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_RSPAMD_MENU" "")
+        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_FEATURE_RSPAMD" "")
+        ARRAY_MAIN+=("$DIALOG_CONFIG_RSPAMD" "")
         ARRAY_MAIN+=("$DIALOG_OTHER" "")
         ARRAY_MAIN+=("$DIALOG_SHOW" "")
         [ $APPLY_NEEDED = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" "")
@@ -2619,7 +2866,7 @@ while true; do
         ARRAY_MAIN+=("$DIALOG_SEG" "")
     fi
     exec 3>&1
-    DIALOG_RET="$($DIALOG --clear --title "$TITLE_MAIN $VERSION_MENU" --cancel-label "Exit" --menu "" 0 0 0 "${ARRAY_MAIN[@]}" 2>&1 1>&3)"
+    DIALOG_RET="$($DIALOG --clear --title "$TITLE_MAIN $VERSION_MENU" --cancel-label 'Exit' --menu '' 0 0 0 "${ARRAY_MAIN[@]}" 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
@@ -2628,14 +2875,16 @@ while true; do
                 install_seg;;
             "$DIALOG_INSTALL")
                 dialog_install;;
-            "$DIALOG_ENABLE")
-                dialog_enable;;
+            "$DIALOG_FEATURE_POSTFIX")
+                dialog_feature_postfix;;
             "$DIALOG_POSTFIX")
                 dialog_postfix;;
             "$DIALOG_CLEARSWIFT")
                 dialog_clearswift;;
-            "$DIALOG_RSPAMD_MENU")
-                dialog_rspamd;;
+            "$DIALOG_FEATURE_RSPAMD")
+                dialog_feature_rspamd;;
+            "$DIALOG_CONFIG_RSPAMD")
+                dialog_config_rspamd;;
             "$DIALOG_OTHER")
                 dialog_other;;
             "$DIALOG_SHOW")
