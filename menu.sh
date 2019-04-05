@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.20.0 for Clearswift SEG >= 4.8
+# menu.sh V1.21.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,10 +56,8 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - exported address lists from CS are mailed
-# - added rspamd features greylisting, rejecting, bayes-learning and detailed headers
-# - added 'Rspamd configs' submenu with options to edit IP, sender domain and sender from whitelists, reset the bayes learned spam and print rspamd stats
-# - updated rspamd sender whitelist management script
+# - changed rspamd features 'Greylisting' and 'Rejecting' to 'Disable greylisting' and 'Disable rejecting'
+# - added confirmation dialog for deleting bayes spam database
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -151,6 +149,14 @@ confirm_reinstall() {
 get_keypress() {
     echo
     read -p 'Press any key to continue.'
+}
+# show wait screen
+# parameters:
+# $1 - dialog back title
+# return values:
+# none
+show_wait() {
+	$DIALOG --backtitle "$1" --title '' --infobox 'Please wait...' 3 20
 }
 ###################################################################################################
 # Install Secion
@@ -905,6 +911,7 @@ dialog_feature_postfix() {
             LIST_ENABLED="$LIST_ENABLED"$'\n\n'"IMPORTANT: Apply configuration in main menu to activate."
         else
             LIST_ENABLED="$LIST_ENABLED"$'\n'" "
+            show_wait "$TITLE_MAIN"
             activate_config
         fi
         $DIALOG --backtitle "$TITLE_MAIN" --title "Enabled features" --clear --msgbox "$LIST_ENABLED" 0 0
@@ -1128,7 +1135,7 @@ export_address_list() {
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
         DOMAIN_RECIPIENT="$(echo "$DIALOG_RET"| awk -F"@" '{print $2}')"
         MAIL_RELAY=''
-        [ -f "$TRANSPORT_MAP" ] && MAIL_RELAY="$(grep "^$DOMAIN_RECIPIENT " $TRANSPORT_MAP | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
+        [ -f "$MAP_TRANSPORT" ] && MAIL_RELAY="$(grep "^$DOMAIN_RECIPIENT " $MAP_TRANSPORT | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
         [ -z "$MAIL_RELAY" ] && MAIL_RELAY="$(dig +short +nodnssec mx $DOMAIN_RECIPIENT | sort -nr | tail -1 | awk '{print $2}')"
         if [ -z "$MAIL_RELAY" ]; then
             $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox 'Cannot determine mail relay' 0 0
@@ -1860,28 +1867,28 @@ check_enabled_sender() {
         echo off
     fi
 }
-# check whether greylisting is enabled
+# check whether disabling greylisting is enabled
 # parameters:
 # none
 # return values:
 # greylisting status
 check_enabled_greylist() {
     if [ -f "$CONFIG_ACTIONS" ] && grep -q 'greylist = null;' "$CONFIG_ACTIONS" && [ -f "$CONFIG_GREYLISTING" ] && grep -q 'enabled = false;' "$CONFIG_GREYLISTING"; then
-        echo off
-    else
         echo on
+    else
+        echo off
     fi
 }
-# check whether rejecting is enabled
+# check whether disabling rejecting is enabled
 # parameters:
 # none
 # return values:
 # rejecting status
 check_enabled_reject() {
     if [ -f "$CONFIG_ACTIONS" ] && grep -q 'reject = null;' "$CONFIG_ACTIONS"; then
-        echo off
-    else
         echo on
+    else
+        echo off
     fi
 }
 # check whether bayes-learning is enabled
@@ -2004,21 +2011,12 @@ enable_sender() {
 disable_sender() {
     rm -f $CRON_SENDER
 }
-# enable greylisting
+# enable disabling greylisting
 # parameters:
 # none
 # return values:
 # none
 enable_greylist() {
-    [ -f "$CONFIG_ACTIONS" ] && sed -i '/greylist = null;/d' "$CONFIG_ACTIONS"
-    [ -f "$CONFIG_GREYLISTING" ] && sed -i '/enabled = false;/d' "$CONFIG_GREYLISTING"
-}
-# disable greylisting
-# parameters:
-# none
-# return values:
-# none
-disable_greylist() {
     if ! [ -f "$CONFIG_ACTIONS" ] || ! grep -q 'greylist = null' "$CONFIG_ACTIONS"; then
         echo 'greylist = null;' >> "$CONFIG_ACTIONS"
     fi
@@ -2026,21 +2024,30 @@ disable_greylist() {
         echo 'enabled = false;' >> "$CONFIG_GREYLISTING"
     fi
 }
-# enable rejecting
+# disable disabling greylisting
+# parameters:
+# none
+# return values:
+# none
+disable_greylist() {
+    [ -f "$CONFIG_ACTIONS" ] && sed -i '/greylist = null;/d' "$CONFIG_ACTIONS"
+    [ -f "$CONFIG_GREYLISTING" ] && sed -i '/enabled = false;/d' "$CONFIG_GREYLISTING"
+}
+# enable disabling rejecting
 # parameters:
 # none
 # return values:
 # none
 enable_reject() {
-    sed -i '/reject = null;/d' "$CONFIG_ACTIONS"
+    echo 'reject = null;' >> "$CONFIG_ACTIONS"
 }
-# disable rejecting
+# disable disabling rejecting
 # parameters:
 # none
 # return values:
 # none
 disable_reject() {
-    echo 'reject = null;' >> "$CONFIG_ACTIONS"
+    sed -i '/reject = null;/d' "$CONFIG_ACTIONS"
 }
 # enable bayes
 # parameters:
@@ -2074,6 +2081,19 @@ enable_headers() {
 disable_headers() {
     sed -i '/extended_spam_headers = true;/d' "$CONFIG_HEADERS"
 }
+# reset Bayes spam database
+# parameters:
+# none
+# return values:
+# none
+reset_bayes() {
+    $DIALOG --clear --backtitle "$TITLE_MAIN $VERSION_MENU" --ok-label 'Ok' --cancel-label 'Cancel' --yesno 'Delete Bayes spam database?' 0 0
+    if [ "$?" = 0 ]; then
+        service rspamd stop &>/dev/null
+        rm -f /var/lib/rspamd/bayes.spam.sqlite
+        service rspamd start &>/dev/null
+    fi
+}
 # select rspamd feature in dialog checklist
 # parameters:
 # none
@@ -2082,8 +2102,8 @@ disable_headers() {
 dialog_feature_rspamd() {
     DIALOG_CLUSTER='Master-slave-cluster'
     DIALOG_SENDER='Sender-whitelist-management'
-    DIALOG_GREYLIST='Greylisting'
-    DIALOG_REJECT='Rejecting'
+    DIALOG_GREYLIST='Disable greylisting'
+    DIALOG_REJECT='Disable rejecting'
     DIALOG_BAYES='Bayes-learning'
     DIALOG_HEADERS='Detailed-headers'
     STATUS_CLUSTER="$(check_enabled_cluster)"
@@ -2189,7 +2209,7 @@ dialog_config_rspamd() {
     DIALOG_IP='Whitelist IP'
     DIALOG_DOMAIN='Whitelist sender domain'
     DIALOG_FROM='Whitelist sender from'
-    DIALOG_BAYES='Reset learned Bayes spam'
+    DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_STATS='Rspamd stats'
     while true; do
         exec 3>&1
@@ -2212,9 +2232,7 @@ dialog_config_rspamd() {
                 "$DIALOG_FROM")
                     "$TXT_EDITOR" "$WHITELIST_FROM";;
                 "$DIALOG_BAYES")
-                    service rspamd stop &>/dev/null
-                    rm -f /var/lib/rspamd/bayes.spam.sqlite
-                    service rspamd start &>/dev/null;;
+                    reset_bayes;;
                 "$DIALOG_STATS")
                     LIST_STATS='Rspamd stats:'$'\n\n'"$(rspamc stat | grep 'Messages scanned:\|Messages with action add header:\|Messages with action no action:\|Messages learned:\|Connections count:')"
                     $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd stats' --clear --msgbox "$LIST_STATS" 0 0;;
@@ -2784,13 +2802,8 @@ print_info() {
         INFO_START=$(expr $(grep -n '###################################################################################################' $0 | head -1 | awk -F: '{print $1}') + 1)
         INFO_END=$(expr $(grep -n '# Todo:' $0 | head -1 | awk -F: '{print $1}') - 2)
         INFO_TEXT="$(sed -n "$INFO_START,"$INFO_END"p" $0 | sed 's/^#//g' | sed 's/^ //g')"
-        exec 3>&1
-        $DIALOG --clear --backtitle "$TITLE_MAIN" --title "Program info" --ok-label "ESC to not show again / Enter to continue" --msgbox "$INFO_TEXT" 0 0 2>&1 1>&3
-        RET_CODE=$?
-        exec 3>&-
-        if [ $RET_CODE != 0 ]; then
-            touch $TMP_INFO
-        fi
+        $DIALOG --clear --backtitle "$TITLE_MAIN" --title 'Program info' --ok-label 'ESC to not show again / Enter to continue' --msgbox "$INFO_TEXT" 0 0
+        [ "$?" != 0 ] && touch $TMP_INFO
     fi
 }
 # check for update and when available ask user whether to install it and show changelog
@@ -2799,7 +2812,7 @@ print_info() {
 # return values:
 # none
 check_update() {
-    TMP_UPDATE="/tmp/TMPupdate"
+    TMP_UPDATE='/tmp/TMPupdate'
     wget $LINK_UPDATE -O $TMP_UPDATE &>/dev/null
     VERSION="$(grep '^# menu.sh V' $TMP_UPDATE | awk -FV '{print $2}' | awk '{print $1}')"
     MAJOR_DL="$(echo $VERSION | awk -F. '{print $1}')"
@@ -2812,11 +2825,8 @@ check_update() {
     if [ "$MAJOR_DL" -gt "$MAJOR_CURRENT" ] ||
        ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" -gt "$MINOR_CURRENT" ]) ||
        ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" = "$MINOR_CURRENT" ] && [ "$BUILD_DL" -gt "$BUILD_CURRENT" ]); then
-        exec 3>&1
-        $DIALOG --clear --backtitle "$TITLE_MAIN" --yesno "New update available. Install?" 0 40 2>&1 1>&3
-        RET_CODE=$?
-        exec 3>&-
-        if [ $RET_CODE = 0 ]; then
+        $DIALOG --clear --backtitle "$TITLE_MAIN" --yesno 'New update available. Install?' 0 40
+        if [ "$?" = 0 ]; then
             INFO_START=$(expr $(grep -n '# Changelog:' $TMP_UPDATE | head -1 | awk -F: '{print $1}') + 1)
             INFO_END=$(expr $(grep -n '###################################################################################################' $TMP_UPDATE | head -2 | tail -1 | awk -F: '{print $1}') - 2)
             INFO_TEXT="$(sed -n "$INFO_START,"$INFO_END"p" $TMP_UPDATE | sed 's/^#//g' | sed 's/^ //g')"
@@ -2853,15 +2863,15 @@ DIALOG_APPLY='Apply configuration'
 while true; do
     ARRAY_MAIN=()
     if check_installed_seg; then
-        ARRAY_MAIN+=("$DIALOG_INSTALL" "")
-        ARRAY_MAIN+=("$DIALOG_FEATURE_POSTFIX" "")
-        ARRAY_MAIN+=("$DIALOG_POSTFIX" "")
-        ARRAY_MAIN+=("$DIALOG_CLEARSWIFT" "")
-        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_FEATURE_RSPAMD" "")
-        ARRAY_MAIN+=("$DIALOG_CONFIG_RSPAMD" "")
-        ARRAY_MAIN+=("$DIALOG_OTHER" "")
-        ARRAY_MAIN+=("$DIALOG_SHOW" "")
-        [ $APPLY_NEEDED = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" "")
+        ARRAY_MAIN+=("$DIALOG_INSTALL" '')
+        ARRAY_MAIN+=("$DIALOG_FEATURE_POSTFIX" '')
+        ARRAY_MAIN+=("$DIALOG_POSTFIX" '')
+        ARRAY_MAIN+=("$DIALOG_CLEARSWIFT" '')
+        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_FEATURE_RSPAMD" '')
+        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_CONFIG_RSPAMD" '')
+        ARRAY_MAIN+=("$DIALOG_OTHER" '')
+        ARRAY_MAIN+=("$DIALOG_SHOW" '')
+        [ $APPLY_NEEDED = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" '')
     else
         ARRAY_MAIN+=("$DIALOG_SEG" "")
     fi
