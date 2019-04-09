@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.21.0 for Clearswift SEG >= 4.8
+# menu.sh V1.22.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,8 +56,9 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - changed rspamd features 'Greylisting' and 'Rejecting' to 'Disable greylisting' and 'Disable rejecting'
-# - added confirmation dialog for deleting bayes spam database
+# - added Pyzor and Razor plugins for Rspamd
+# - added automatic update option for Rspamd
+# - updated rspamd sender whitelist management script
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -113,6 +114,7 @@ SCRIPT_ANOMALY='/root/check_anomaly.sh'
 CRON_CLEANUP='/etc/cron.daily/cleanup_mqueue.sh'
 CRON_SENDER='/etc/cron.daily/sender_whitelist.sh'
 CRON_BACKUP='/etc/cron.daily/email_backup.sh'
+CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
 APPLY_NEEDED=0
 ###################################################################################################
 TITLE_MAIN='NetCon Clearswift Configuration'
@@ -197,7 +199,23 @@ install_seg() {
 # return values:
 # none
 install_rspamd() {
-    PACKED_SCRIPT="
+    clear
+    install_epel
+    curl https://rspamd.com/rpm-stable/centos-6/rspamd.repo > /etc/yum.repos.d/rspamd.repo
+    rpm --import https://rspamd.com/rpm-stable/gpg.key
+    yum update -y
+    yum install -y redis rspamd
+    rspamadm configwizard
+    CONFIG_MULTIMAP='/etc/rspamd/local.d/multimap.conf'
+    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_IP\";"$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
+    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"$WHITELIST_DOMAIN\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo $'\n''SENDER_FROM_WHITELIST_USER {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"$WHITELIST_FROM\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo 'extended_spam_headers = true;' > "$CONFIG_HEADERS"
+    echo 'autolearn = true;' > "$CONFIG_BAYES"
+    echo 'reject = null;' > "$CONFIG_ACTIONS"
+    echo 'greylist = null;' >> "$CONFIG_ACTIONS"
+    echo 'enabled = false;' > "$CONFIG_GREYLISTING"
+    PACKED_SCRIPT='
     H4sIAAj0nVwAA41WbW/bNhD+PP2KqywEyQBZSYN0QwJ36BolM+rYhu1sGNrBkCXKFiKLDkmlDeL8
     9x1JUaJsI6g+yNLdc2/PHU/uvAsWWRHwldNxOsD4Jlon4INYZRx4zLKNAC4iJjhERYKPdMNRSQwy
     iciaFk6n04E/w9v+EPrD/gxvNyP0Nmb0KUsIv4T60maom5DHMmMk8afSu0J4DH0JMk85eAUR3yl7
@@ -218,28 +236,133 @@ install_rspamd() {
     rtWu9avOuYWYPzbhjQw+Bgl5CgqcSnj/8ehMJYSfFtwHZy5kRUNjMzD2gWw+Z0brNcNxdVW347C1
     2dxvWVdMbRsuTt5ES5rfjvbbG/aqWf6uF7uF+9VJ9wci7gKxgMQUgxvCr55/lhkzMb9YLn9tjNXY
     eu49j5b4n8k7hRcdSZK/1W63FpWHMtnqArc2Bxbtr83hVqm9dwiPYud/KV75gbULAAA=
-    "
-    clear
-    install_epel
-    curl https://rspamd.com/rpm-stable/centos-6/rspamd.repo > /etc/yum.repos.d/rspamd.repo
-    rpm --import https://rspamd.com/rpm-stable/gpg.key
-    yum update -y
-    yum install -y redis rspamd
-    rspamadm configwizard
-    CONFIG_MULTIMAP='/etc/rspamd/local.d/multimap.conf'
-    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_IP\";"$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
-    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"$WHITELIST_DOMAIN\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
-    echo $'\n''SENDER_FROM_WHITELIST_USER {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"$WHITELIST_FROM\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
-    echo 'extended_spam_headers = true;' > "$CONFIG_HEADERS"
-    echo 'autolearn = true;' > "$CONFIG_BAYES"
-    echo 'reject = null;' > "$CONFIG_ACTIONS"
-    echo 'greylist = null;' >> "$CONFIG_ACTIONS"
-    echo 'enabled = false;' > "$CONFIG_GREYLISTING"
+    '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     chkconfig rspamd on
     chkconfig redis on
-    [ -f /etc/init.d/redis ] && /etc/init.d/redis start || service redis start
-    [ -f /etc/init.d/rspamd ] && /etc/init.d/rspamd start || service rspamd start
+    yum install -y python34-setuptools python34-devel
+    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
+    pip3 install pyzor
+    PACKED_SCRIPT='
+    H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
+    95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
+    93eH37LB6MM2lsXKykh5+/nLzftaKXdGE6MjSqRY59kiA7PiRbFCZXA99rzzc3YFa14WhmkwJheZ
+    ruDJOlttpDbEO529CCP8m/od5U4qUs5fzp8Sz71/+9FfMH+GVhPmX8oU7DGK6Pjp7fmlLIUhUeT0
+    1Wn+lI4fNgp46s7Pps9JdJXzjAQ3b/yHOgTrUiQml4IlG0ju3MMDw/Xd2GP4GxrFASg1YSk33BnQ
+    L18zlDKzAdHIHJjSEaLul6VEFygbgCFAmVQLdqbRL/we93AKTKlaKhCpN6BMIS6zbXA9YY53RA4R
+    3QglGGKFYQ+sk5iRFktv2XGlbfFgQYXuEIwHNvLOeoVGzmBh/60q3uEFnTAIaRD8T5GwEbD8SIVP
+    1jspNPxHSAY+E0PrMFWljH9AYh49br/JDRS5NpCivZGi3MYYA8J/bavq+xCmgMrzGKYBDLOUi7Vs
+    3puQ1fJMs32xtG+sCSddjzok2Ejv+B20Ws0sB+OsyI0pgMW5Cfvmhxgo+ApGGs1i7D9M9Z4f0GWs
+    lD5ZLlDIE8s56dLEJd5hWAEcC9VscjTVTMst4LfI2hs7EWk+z7uPGaZoD3m2oQ6PvG7RNOCLJZtG
+    0ePqaXDTcN6WQKFhAJ7NT2JnJ8GnsdEp6JRxkfbrCt94gi8KZ8dLGYkro4tjBFRKixzbRJkV1h7O
+    2KA7sCcVeMJcg4ZrqbbcBHXtpbb20r/W3vjRyGmcq3vATa8lu29M/cvXry7ffBN+W0PWTepAXBEG
+    BLag0z3UXEdnmI/c6kDDwG2kqhVwX4XVvcF97wrqREI2wmq51HumVVSLpd4xrUJvSpPKvSAqVUKr
+    oNFWLU/oMmEUipgndHcSu0eNPRslTJ3dj03SKkFoveqlsrMIG4sm3F2o9fsRtHpNY9HPVH87K8go
+    t2rl6qQTQcG3gCy9+jn6zHYvTrwn5rAj1Kg2GKEsU7Kk0TvSeSY4zmnQoyY02C3dpLuR6OMY3Mq0
+    xBlGG8P5ijgqzWsXzz/X6mWbBAkAAA==
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
+    CONFIG_LOCAL='/etc/rspamd/rspamd.conf.local'
+    grep -q '^pyzor {$' "$CONFIG_LOCAL" || echo 'pyzor {'$'\n''}' >> "$CONFIG_LOCAL"
+    groupadd pyzorsocket
+    useradd -g pyzorsocket pyzorsocket
+    mkdir -p /opt/pyzorsocket/bin/
+    PACKED_SCRIPT='
+    H4sIAGtBq1wAA3VUTY/TMBC951eYcHFEcYW4VeoBuistQitVtDdAloknrVvHDnba3YL474w/mmZL
+    8SX2eN6b8byZvH41PXg3/aHMtDv1W2veF6rtrOuJcJtOOA/nM7RCaRZN7spmtapPZ5v1593OW1M0
+    zrbE23oPPQKP4Ei+XS+Wq2iYkPXWgZDKbB7V8yczIasez+0X+HkA3z8IIzWGPLN2p1/WsVorMP1L
+    m1Qb9C+KotbCe/IST2+RVrOiILgkNGQbTdSDbtBM8qpbSeYkGJlrlAYWMtXKAK2YhNpK3HydvX33
+    fUCoJoHmpFw83C8+lxeysCJVisXrLdR7Wg33oD3c8H5yqgceqkl/l+CcdeWMlAezN/bJkNq2LdKV
+    f6rrt2T+qxclBfFRY0HZx1MPfhn3NOk5H4vLVo/r5SXR1m+QIEPjh15KlPOIuURFgutIIHYnenEX
+    txgMqSp2FPoAl5qHtAdQUpot4gernh6VqEah/qnUfkaOpLGO7Ce4USbRMnRoPa3G1RqhAsuEyFG5
+    dphIuGLy0Haeyoq8IeU3U14Fjr0RieiOgUmNUQ29mDqdXjf6MAM5YIe+iAlJYfENzeYwipjGeSLZ
+    B7c5tFiNrJcEXzvV9cqaeXn/3FkPqXbEGiLy8JXVQMWElFxkDlriyZUTsgXdzeMBMOHeEq1QIIMc
+    /4eG4RugcRJv43zOPvVKIEAJkgAhIN7SYAvs+DtQSB2PgbHKft4d0S3XMfldzXJ0693poh1iWPzp
+    cOwDCMDk1CgjtL7l6HitsXwhuQIHmXMjWuA8TjPnQRPO80AngYq/7vjOR0EFAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
+    chown pyzorsocket:pyzorsocket /opt/pyzorsocket/bin/pyzorsocket.py
+    chmod 0700 /opt/pyzorsocket/bin/pyzorsocket.py
+    PACKED_SCRIPT='
+    H4sIAIFHp1wAA5VSYU/qMBT9bH/FdSwoL9nKNETFkBdj5ot5vGAGmqgxppTCGqDdazvfQ/G/uxU2
+    B+oHt0/33HPO7bltbRcPucBDomNUQzVIFs9SaUmnzNiaxlMqxZhP2uDBcQuCVgaOmKaKJ4ZL0d5U
+    QKIkZVoLMmebrazXl6miDMapoLkUZnyoiFr4yAfMDMVccOOPcNHXCEXh4Oas22miq6j3q7NX8dtD
+    3d7574vLbthx8BNReJbBWKdDvdDYzekOurq960X9jBYOHq/7YbRlgLQhyuw34AXB+mM0luAJcPp5
+    i4sJWKs2OCVlRNhcCv7MwEuz7tYIwDIxuDLGbrdS+8kCgoMjv5n9AbROWoel8zqs+7NE7sFdgeCx
+    v9CEB6jXwciUxuAW8TfOXhaKmVSJQo5e87Ay+SJrnBqbdST/iffAO1M+m+XXuYLAG4TRn0L83UOr
+    OXjj7x+aEs3AcQMHuLA0e2WNUmHLsjo9XXNkUqXI5CODmFQ3tmHFPthXtJ/O+tHY3Kdzrckke/mr
+    lb1YzTK3Wa5mLtczXt8fFPvPDQRVY6YJRRYuVvEGr04i2KYDAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
+    chmod +x /etc/init.d/pyzorsocket
+    chkconfig --add pyzorsocket
+    chkconfig pyzorsocket on
+    service pyzorsocket start
+    yum install -y perl-Razor-Agent
+    PACKED_SCRIPT='
+    H4sIAAdCq1wAA4VUTWvbQBA9R79iEQRLoJg4lxJDDiUtFAou5FgKYiWNPvBq191d0bih/70zu6uv
+    2KXywWLmzZuZNzMSquSCCdU0oNkT0/Bz6DSwWJsT76vcO+JIOJgtT1cwaI2jgDigP9b8t5pizLkv
+    lMidjZwvH79/exmd6mQNMXqiUsm6a/YN2JwLkaMzOaRRdHfHPkHNB2GZAWs72ZgQXtZN3ipjiXf3
+    8GF7j79dvHCelCbn4+7xYaywHmRpOyVZ2UJ59HUllptjGjF83oOKBLTOWMUt9wB6upqhldkW5GTz
+    waTWFn2vjjJDLVAswArRpvSe3Zo4o/d0FafBDnqmAllFMyXVo8GQ8hZ71dh/clGOB6AMpGR8WRlV
+    s++kAW1zxKKWyXIwGdtt79NrvVRQDE2fHDIWGnIJZigIA8v87dX0/yJrL7j+p+cgj1L9ki6hwn5Y
+    rVXPXBNGlUewQWPypxeK0v9izONwntjbBI2fv3x+/vpDxtlkcuLRVuKCWpA2Sb3vz8h1vTnk1mec
+    lq8O+3RovJZtyJu8rVLQgClyMobVHrd8doS1Hjd8dph2sBXJg1R6gCy6oU0JNwtLCmxfFLykpGUR
+    2kkjpw+O093lNMVg2Lp6VrNdHOCEmIRehrqKL0JDHxNiPaP1V0FD0xkLOvd7u9BO8h6QZbXP0Y09
+    n8i6GRvdoK3RaqA72piukRxvDszmuiTzt2HWZtzOMO9O1uo1iW8N61U1CGBSWeaLReIKd/DgBf0L
+    bFL70WMFAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
+    grep -q '^razor {$' "$CONFIG_LOCAL" || echo 'razor {'$'\n''}' >> "$CONFIG_LOCAL"
+    groupadd razorsocket
+    useradd -g razorsocket razorsocket
+    mkdir -p /opt/razorsocket/bin/
+    PACKED_SCRIPT='
+    H4sIAHhCq1wAA31UUW/TMBB+Jr/CmIc6oktBvKBJfYBpaAhNqlh5GpPlJZfWm2MH29lWEP+ds+Ok
+    WdXhl9iXu+/O932+N68XnbOLW6kX7c5vjf6QyaY11hNhN62wDoYzNEKqIprsgc0oWe4Gm3HD7s4Z
+    Pexdd9taU4JzWW1NQ5wp78Ej1ANYknzWZ6uraJiT9daCqKTeXMqnr3pOrjyem+/wqwPnL4SuFBaR
+    ZaUSzpHnZnbMNz/NMoKrgppso4k5UDWaSVplU5ElCcbC1lJBEQpQUgPLiwpKU+Hm+vTk/c0YIes+
+    aEno2cX52Te6BwsrQvW5eLmF8p7l439QDo54P1rpgYe2sT8UrDWWnhLa6XttHjUpTdMgHP2bH94l
+    4R/cqKcKLzVlrvi88+BWcc964pZTFoury/VqX2jjNgiQQuOH7VuU6girRi/TgmZ04Zt2sb5cWfEb
+    y58T+kj3cOmKDGEL4bjzFilm+dShVAaTTKAtuE75wM0ooaIUSrFrOko3JjuJXQgpn9dwk2evpqQN
+    gEvy7hkHPQWR+77K29AqNnOtaGZzMvux/nLycZb/h8WXELYHACN9E8JD7JxUE/7u8M7hV1F1TetY
+    lZO3hP7UNHsx3V0BuldqPj6O/kWxwwc1vrWUsEVfjAlFoRo0S+YwBLCMYRYUn+yma0D7JKAKXGll
+    66XRS3r+1CJ1JDadGE1EeuSJ/4BRiKriImEwiqcgkS2odhkPyC3xhijpPGjEeDk0DIwxNE6P43Eu
+    Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
+    aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
+    chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
+    chmod 0700 /opt/razorsocket/bin/razorsocket.py
+    PACKED_SCRIPT='
+    H4sIAJxIq1wAA5VSXU/CMBR9tr/iOhYVk63MxKgYYoyZxojBDPRBY0wphTVAO9tORfG/uxU2B+qD
+    29M993z03ra2iftc4D7RMaqhGijyLpWWdMyMrWk8plIM+agJHhzuQ7CfgQOmqeKJ4VI0VxWQKEmZ
+    1oJM2Wor63VlqiiDYSpoLoUJ7yuiZj7yATNDMRfc+ANc9DVCUdi7O223Gugm6ly0tit+26jdObs6
+    v2yHLQe/EIUnGYx12tczjd2c7qDo9L4TdTNa2Hu67YbRmgHShiizU4cPBMuP0ViCJ8Dp5i0uRmCt
+    muCUlAFhUyn4OwMvBXc9ArBMDK7E2O1Waj+ZQbB34DeyP4Cj4GivdF4O656UyEMWYEHw2DM04BG2
+    tsDIlMbgFuOvnL0sFDOpEoUcfebDyuSPWePU2FkH8lV8D7wx5pNJfp0LCLxeGF0X4v8eWk3BG/7/
+    0JRoBo4bOMCFpdkrq5cKW5bV8fGSI5MqRSY/GcSkur4OK/bDvqL9NWu3vrpP51aTUfbyFyv7sJp5
+    bjNfZM6XGZ/fD4q9cQNB1ZhpQpGFi1V8AdB9kzCmAwAA
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
+    chmod +x /etc/init.d/razorsocket
+    chkconfig --add razorsocket
+    chkconfig razorsocket on
+    service razorsocket start
+    PACKED_SCRIPT='
+    H4sIAK1Pq1wAA7WOPQ7CMAyF957CygEYkJgQAyegygabG0xiNU1QbKgK6t0JKmJn4G3vR3qfTEOX
+    o8AOng1UmfZ4OljzcW+NxD5oHaxXm+03PZO4wlflnGplXCDXw0Ai6AmEfUK9FRJAj5xEQQNBOz1y
+    AZdjxC4XVL4TXDgqFU4eEumYS2+Wj3mhsfu/0Vj8hWZuXk2fo04qAQAA
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/signatures_group.conf
+    PACKED_SCRIPT='
+    H4sIAAlQq1wAA0svyi8tUFAqzkzPSywpLUotVlKo5lIAAr3MvOSc0pRUjZKiStuSotJUa4WCosz8
+    osySSltDa4WU0oKczOTEklTb3NSi9FRNBSUVH39nR594Z38/NxfPIP2c/OTEHL0UfYTJ8ekgu/SS
+    8/PSlAhbYYBpZH5ZalFRZkoqblNruQCAjCEi0AAAAA==
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/groups.conf
+    service redis start
+    service rspamd start
     get_keypress
 }
 # install ACME Tool
@@ -474,9 +597,9 @@ enable_rspamd() {
     if [ -f "$CLIENT_MAP" ]; then
         CLIENT_REJECT="$(postmulti -i postfix-inbound -x postconf -n | grep '^cp_client_' | grep 'REJECT' | awk '{print $1}')"
         if [ -z "$CLIENT_REJECT" ]; then
-            awk '{print $1}' $CLIENT_MAP >> $WHITELIST_IP
+            awk '{print $1}' $CLIENT_MAP | sort >> $WHITELIST_IP
         else
-            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $CLIENT_MAP >> $WHITELIST_IP
+            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $CLIENT_MAP | sort >> $WHITELIST_IP
         fi
     fi
     echo "# end managed by $TITLE_MAIN" >> $WHITELIST_IP
@@ -1915,6 +2038,18 @@ check_enabled_headers() {
         echo off
     fi
 }
+# check whether automatic spamd updates is enabled
+# parameters:
+# none
+# return values:
+# automatic spamd updates status
+check_enabled_update() {
+    if [ -f "$CRON_UPDATE" ]; then
+        echo on
+    else
+        echo off
+    fi
+}
 # enable master-slave cluster
 # parameters:
 # none
@@ -1981,29 +2116,30 @@ disable_cluster() {
 # return values:
 # none
 enable_sender() {
-    PACKED_SCRIPT="
-    H4sIAPLVpVwAA7VVXXPaOBR9jn7FrUNrO6lxYPZlG6Bh+GiYAZIhtH0AxmOwsDWxZVcWpWzT/76S
-    rYCh0HZ3Ws8wIF3dc849ur6cv7DnhNpzNw0QOocUUw8zZx0QjkOS8nIawIdK+a/yFToX4VacbBjx
-    Aw7GwoTqVeVvGGLeiim8pxwzioMI03SOmctX1Id30fz2NVDMFzG1xCddhZxQv7yIowyuueJBzN7A
-    wGULaBPMHgU/GFHZU79vjuaaCLV7I6fZbo/6vYdxXbd5lNjjwb3reQynqRSuI9RvPoyd1t2w23sn
-    jnx2mb1ILd/leO1ubA8nYbwRanlqh27Km0kSEuyJUpbEXwn9JKblL1EocD7e9sYdSeS07wbN3lCB
-    hWRuszRxI8/e2uUo/7w4cgnVC6nd0d3gFxKXLI4EpahlR6aKe8aUMYWmIirJx9yRDjjcnYcYDBO+
-    orMJWEvQSgUvNJjBq1ewcPnh/hP4DCdgxWDdg268rdWntWZuaV9oHEvYacMsXxhvRWRqH4np6FtB
-    iKxM6TgQp5Uqks9dP4LVBb2ApIP+dRkzMEi9cg2kVjeG3cuKaVev4fKSmJAwQjmUDHJRNb/t0Skm
-    2RZ1rWTgRRCf4PlvHCJ/seJgeTBtSDerhY2a3KiYWmb0P4JOskuHn55ACch2pM7o0SMMrETsFdtX
-    Q6ILhCUMux70e8PONXgxOiNLmMCLHFTuCtBr4AGm6Oxs2Bx0nKz1t2XmR7aVanyT4Lom6lS1VLI6
-    nqPUjXB9qhXi1SzOWVaVBEqxB3pqg+3Yvr5bOyVbrE0hYmv7M3njoDC7tNVZDlMuPFoS5MUUQw1q
-    xl6TiDeaRXmn7lpfUyvZ7BpC8sK2gECouJ8whT1GM7MOxCPcy4zZSdh29yfQJ+uPs0lwO5uQ3mzC
-    x7MJ7swmYT9fpw/Znq7cBvVkyfrFjX66yp3/N/vGNhr7he2DWp9/irsFyL2QqcpLhLJjD61R734s
-    215MciyvF0pXoi2Rev8PZ5gaAvJSLQKaLSY/dxmHyKWuLzbnG2VdDmy/FifEhDoZ97RjJN+zZ/r/
-    LLdql3Zz3HFa70ejzjDzxRODHy5fdqUp+TvzE14wVolM8kSPFbBMdRvfF5vGjB808ImTz/w/qOpk
-    7m8Wn7tVkJ7f0NFT/0e2ug2Ruabg5H97b9T30b48kixHA1sejs0fzIp/AfelrJzVCAAA
-    "
+    PACKED_SCRIPT='
+    H4sIAFh3rFwAA7VV73PaRhD9bP0VG5lGkh1xhpl+aAzEDD9iZgB7MGk+AKM50CFuLJ3U0xFK4/zv
+    vZPOICgkbafVDAPa1b63791quXyD5pShOU5XhnEJKWE+4d5mRQUJaSrK6Qp+rZR/Lt8YlzLdipMt
+    p8FKgL1woHpT+QWGRLRiBp+YIJyRVURYOiccizUL4GM0v38HjIhFzFz5SdehoCwoL+Iog2uuxSrm
+    72GA+QLalPBnyQ92VPb177uTtY5htHsjr9luj/q9p3HdQiJK0HjwiH2fkzRVjVuG0W8+jb3Ww7Db
+    +ygf+YI5WqRugAXZ4C3ySRLGW9mtSFGIU9FMkpASX0pZ0mAt+6cxK/8ehRLn831v3FFEXvth0OwN
+    NVhI54inCY58tLPL0/75cYQpswql3dHD4G8ULnkcSUqpZU+mxb1iqpxG0xldFBDhKQc8gechAduB
+    r8bFBNwlmKWCFybM4O1bWGBxHH+BgJME3BjcR7DsD7X6tNbMLe3LHscKdtpwylf2B5mZohM5y/hW
+    aEQp030cNWeWKooPb57B7YJVQLLA+rqMOdi0XrkFWqvbw+51xUHVW7i+pg4knDIBJZteVZ1vB3Sa
+    SY1F3SzZZLGKz/D8Mw5Zv1gLcH2YNpSb1UKgpgIVx8yM/kPSKXbl8MsL6AayiOozevYpBzeRseL4
+    moacAmkJJ9iHfm/YuQU/Ni7oEibwJgdVUQl6C2JFmHFxMWwOOl42+juZ+SM7pabYJqRuSp1aSyXT
+    8ZplOCL1qVnIV7O84JkqBZQSH6wUAfJQYO3vvRKS945sYmf7K3njSBgq7fosh6mQHi2p4ceMQA1q
+    9sGQyDeaR/mk7kff1Hdq2E3DUAe2AwTK5PmEKRwwOpl1IC/pXmbMvoXddP8G1mTzeTZZ3c8mtDeb
+    iPFsQjqzSdjP79OnLGZpt0FfWbF1dWedV7n3/+7Q2EbjUNghqPvlh7g7gNwLVaq9NIzssafWqPc4
+    VmMvNzlRxwulGzmWhn7/j3eYXgLqUF0KJpKbX2AuIMIMBzI432rrcmD0Tj4hN9TZvG+eIvkre9b/
+    /8utx6XdHHe81qfRqDPMfPHl4ofrn7rKlPyd+QEv2OtEFflyxgpYjj6Ns2KLA5wLjbk4ip9BeO3r
+    O2rP1v7HonIXC5KKJ7cXlEdP1v4bMfrsZOWGgZf/Sb7X3yen+ESxWiR8ebxkv7NZ/gQdxUpfAwkA
+    AA==
+    '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
     $CRON_SENDER
 }
-# enable sender whitelist management
+# disable sender whitelist management
 # parameters:
 # none
 # return values:
@@ -2081,6 +2217,36 @@ enable_headers() {
 disable_headers() {
     sed -i '/extended_spam_headers = true;/d' "$CONFIG_HEADERS"
 }
+# enable automatic spamd updates
+# parameters:
+# none
+# return values:
+# none
+enable_update() {
+    PACKED_SCRIPT='
+    H4sIADZwrFwAA3VTYW/aMBT8nl/x6iIC6pIA0j6sExuIshapUATdpIkyFJIHsYjtyHZa2Lr/PpME
+    UWhmOYqj3Ht3Pp8vL7wl5d7SV5FlXUKahL7GhVSJz0JXRfCj6TbchnVp/vVEspN0HWmoBXVoNZqf
+    YIS6Jzh85xolx4ghV0uUvk75Gm7Z8u4DcNSB4I55VBprytduIFjWrpvqSMhrGPoygBuKcqOQQ425
+    YbHulNbWLetx0h1Nxw+Tx8WwO27bnoF5iVB6RbeOSPVSpDz0tPS5SoTULvMT27L6w+7gfjHp9wbj
+    QX/02LbTF+ykSjCG0g3RIHYpgyDCYOPkLkDuAlS/eCE+ezyNY4uuYAak8pXARRsaMP8MOkJugRn7
+    8qLQ2ZXV7kHH+vPy/Rj2p9PubX+RaW2TSd5DpUGASq1Mj13BEIIW8IxSUeO+XantuWOq9IH2FdYS
+    k+OX/7IB+08iKddQaf216zbJSDFW+B92uy+lkDmfsb7oZWfoFc1eNw8GOXrjKanUMIiE2eCZ2ySX
+    4HwjHXIqJNdRoO+7P9t2TjEDZ2X6nBw1gTlUq2/BhjDbKPlVORcDBE6rS2yAgyywZ09PZs7ndpk8
+    I+a3EXMkLlUS0jVcKZNpDVdchFwpDIBt4b20V1B7lMOlWWqfxuA0y06JHDPzXsBZdnLjez7nQkOI
+    5kIyyhHYvrvE2N+RI3RLNTTfB6A4u5McEKMr6+EoILM8kcX9mMM51JmCYjppv1V63fpofkio1CJz
+    RbnPsN45rsEJ6yVxOaTMzH+87IwsoQQAAA==
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_UPDATE
+    chmod 700 $CRON_UPDATE
+}
+# disable automatic spamd updates
+# parameters:
+# none
+# return values:
+# none
+disable_update() {
+    rm -f $CRON_UPDATE
+}
 # reset Bayes spam database
 # parameters:
 # none
@@ -2100,18 +2266,20 @@ reset_bayes() {
 # return values:
 # none
 dialog_feature_rspamd() {
-    DIALOG_CLUSTER='Master-slave-cluster'
-    DIALOG_SENDER='Sender-whitelist-management'
+    DIALOG_CLUSTER='Enable master-slave cluster'
+    DIALOG_SENDER='Enable sender-whitelist cron'
     DIALOG_GREYLIST='Disable greylisting'
     DIALOG_REJECT='Disable rejecting'
-    DIALOG_BAYES='Bayes-learning'
-    DIALOG_HEADERS='Detailed-headers'
+    DIALOG_BAYES='Enable Bayes-learning'
+    DIALOG_HEADERS='Enable detailed headers'
+    DIALOG_UPDATE='Enable automatic updates'
     STATUS_CLUSTER="$(check_enabled_cluster)"
     STATUS_SENDER="$(check_enabled_sender)"
     STATUS_GREYLIST="$(check_enabled_greylist)"
     STATUS_REJECT="$(check_enabled_reject)"
     STATUS_BAYES="$(check_enabled_bayes)"
     STATUS_HEADERS="$(check_enabled_headers)"
+    STATUS_UPDATE="$(check_enabled_update)"
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
     ARRAY_RSPAMD=()
     [ "$NUM_PEERS" -gt 1 ] && ARRAY_RSPAMD+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
@@ -2120,6 +2288,7 @@ dialog_feature_rspamd() {
     ARRAY_RSPAMD+=("$DIALOG_REJECT" '' "$STATUS_REJECT")
     ARRAY_RSPAMD+=("$DIALOG_BAYES" '' "$STATUS_BAYES")
     ARRAY_RSPAMD+=("$DIALOG_HEADERS" '' "$STATUS_HEADERS")
+    ARRAY_RSPAMD+=("$DIALOG_UPDATE" '' "$STATUS_UPDATE")
     exec 3>&1
     DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
     RET_CODE=$?
@@ -2143,7 +2312,7 @@ dialog_feature_rspamd() {
         fi
         if echo "$DIALOG_RET" | grep -q "$DIALOG_SENDER"; then
             [ "$STATUS_SENDER" = 'off' ] && enable_sender
-            LIST_ENABLED+=$'\n''Sender whitelist management'
+            LIST_ENABLED+=$'\n''Sender-whitelist cron'
         else
             [ "$STATUS_SENDER" = 'on' ] && disable_sender
         fi
@@ -2152,7 +2321,7 @@ dialog_feature_rspamd() {
                 enable_greylist
                 RSPAMD_RESTART=1
             fi
-            LIST_ENABLED+=$'\n''Greylisting'
+            LIST_ENABLED+=$'\n''Disable greylisting'
         else
             if [ "$STATUS_GREYLIST" = 'on' ]; then
                 disable_greylist
@@ -2164,7 +2333,7 @@ dialog_feature_rspamd() {
                 enable_reject
                 RSPAMD_RESTART=1
             fi
-            LIST_ENABLED+=$'\n''Rejecting'
+            LIST_ENABLED+=$'\n''Disable rejecting'
         else
             if [ "$STATUS_REJECT" = 'on' ]; then
                 disable_reject
@@ -2194,6 +2363,12 @@ dialog_feature_rspamd() {
                 disable_headers
                 RSPAMD_RESTART=1
             fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_UPDATE"; then
+            [ "$STATUS_UPDATE" = 'off' ] && enable_update
+            LIST_ENABLED+=$'\n''Automatic updates'
+        else
+            [ "$STATUS_UPDATE" = 'on' ] && disable_update
         fi
         [ "$RSPAMD_RESTART" = 1 ] && service rspamd restart &>/dev/null
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED+=$'\n''None'

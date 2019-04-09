@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sender_whitelist.sh V1.4.0
+# sender_whitelist.sh V1.5.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -54,11 +54,11 @@ NAME_SCRIPT="$(basename $0)"
 DATE_CURRENT="$(date +%F)"
 
 echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_DOMAIN"
-sort "$TMP_DOMAIN" >> "$WHITELIST_DOMAIN"
+[ -f "$TMP_DOMAIN" ] && sort "$TMP_DOMAIN" >> "$WHITELIST_DOMAIN"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_DOMAIN"
 
 echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_FROM"
-sort "$TMP_FROM" >> "$WHITELIST_FROM"
+[ -f "$TMP_FROM" ] && sort "$TMP_FROM" >> "$WHITELIST_FROM"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_FROM"
 
 chown _rspamd:_rspamd "$WHITELIST_DOMAIN" "$WHITELIST_FROM"
