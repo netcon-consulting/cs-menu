@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.22.0 for Clearswift SEG >= 4.8
+# menu.sh V1.23.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,9 +56,13 @@
 # - dnssec seems to be disabled in Postfix compile code
 #
 # Changelog:
-# - added Pyzor and Razor plugins for Rspamd
-# - added automatic update option for Rspamd
-# - updated rspamd sender whitelist management script
+# - added rspamd feature detailed history
+# - added rspamd feature Spamassassin rules
+# - added rspamd feature Pyzor
+# - added rspamd feature Razor
+# - updated sender whitelist management and rspamd update scripts
+# - moved Pyzor and Razor plugin install to 'Rspamd configs' submenu
+# - added postfix feature for Office365 IP range whitelisting
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -77,12 +81,18 @@ CONFIG_ACTIONS='/etc/rspamd/override.d/actions.conf'
 CONFIG_HEADERS='/etc/rspamd/override.d/milter_headers.conf'
 CONFIG_BAYES='/etc/rspamd/override.d/classifier-bayes.conf'
 CONFIG_GREYLISTING='/etc/rspamd/local.d/greylisting.conf'
+CONFIG_LOCAL='/etc/rspamd/rspamd.conf.local'
+CONFIG_HISTORY='/etc/rspamd/local.d/history_redis.conf'
+CONFIG_RSPAMD_REDIS='/etc/rspamd/local.d/redis.conf'
+CONFIG_SPAMASSASSIN='/etc/rspamd/local.d/spamassassin.conf'
+FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
 DIR_CERT='/var/lib/acme/live/$(hostname)'
 DIR_COMMANDS='/opt/cs-gateway/scripts/netcon'
 DIR_MAPS='/etc/postfix/maps'
 DIR_ADDRLIST='/tmp/TMPaddresslist'
+DIR_RULES='/tmp/TMPrules'
 ESMTP_ACCESS="$DIR_MAPS/esmtp_access"
 HELO_ACCESS="$DIR_MAPS/check_helo_access"
 RECIPIENT_ACCESS="$DIR_MAPS/check_recipient_access"
@@ -91,10 +101,12 @@ SENDER_REWRITE="$DIR_MAPS/sender_canonical_maps"
 WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
-WHITELIST_IP='/var/lib/rspamd/ip_whitelist'
+WHITELIST_IP='/var/lib/rspamd/whitelist_sender_ip'
 WHITELIST_DOMAIN='/var/lib/rspamd/whitelist_sender_domain'
 WHITELIST_FROM='/var/lib/rspamd/whitelist_sender_from'
-CLIENT_MAP='/etc/postfix-inbound/client.map'
+MAP_CLIENT='/etc/postfix-inbound/client.map'
+MAP_OFFICE365='/etc/postfix-inbound/office365.map'
+LIST_OFFICE365='40.92.0.0/15 40.107.0.0/16 52.100.0.0/14 104.47.0.0/17'
 LOG_FILES='/var/log/cs-gateway/mail.'
 LAST_CONFIG='/var/cs-gateway/deployments/lastAppliedConfiguration.xml'
 PASSWORD_KEYSTORE='changeit'
@@ -114,6 +126,7 @@ SCRIPT_ANOMALY='/root/check_anomaly.sh'
 CRON_CLEANUP='/etc/cron.daily/cleanup_mqueue.sh'
 CRON_SENDER='/etc/cron.daily/sender_whitelist.sh'
 CRON_BACKUP='/etc/cron.daily/email_backup.sh'
+CRON_RULES='/etc/cron.daily/update_rules.sh'
 CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
 APPLY_NEEDED=0
 ###################################################################################################
@@ -215,140 +228,30 @@ install_rspamd() {
     echo 'reject = null;' > "$CONFIG_ACTIONS"
     echo 'greylist = null;' >> "$CONFIG_ACTIONS"
     echo 'enabled = false;' > "$CONFIG_GREYLISTING"
+    echo 'servers = 127.0.0.1:6379;' > "$CONFIG_HISTORY"
+    echo "ruleset = \"$FILE_RULES\";"$'\n''alpha = 0.1;' > "$CONFIG_SPAMASSASSIN"
+    VERSION_RULES="$(dig txt 2.4.3.spamassassin.heinlein-support.de +short | tr -d '"')"
+    if [ -z "$VERSION_RULES" ]; then
+        echo 'Cannot determine SA rules version'
+    else
+        FILE_DOWNLOAD="$DIR_RULES/$VERSION_RULES.tgz"
+        mkdir -p "$DIR_RULES"
+        rm -f $DIR_RULES/*
+        curl --silent "http://www.spamassassin.heinlein-support.de/$VERSION_RULES.tar.gz" --output "$FILE_DOWNLOAD"
+
+        if ! [ -f "$FILE_DOWNLOAD" ]; then
+            echo 'Cannot download SA rules'
+        else
+            tar -C "$DIR_RULES" -xzf "$FILE_DOWNLOAD"
+            cat $DIR_RULES/*.cf > "$FILE_RULES"
+        fi
+    fi
     PACKED_SCRIPT='
-    H4sIAAj0nVwAA41WbW/bNhD+PP2KqywEyQBZSYN0QwJ36BolM+rYhu1sGNrBkCXKFiKLDkmlDeL8
-    9x1JUaJsI6g+yNLdc2/PHU/uvAsWWRHwldNxOsD4Jlon4INYZRx4zLKNAC4iJjhERYKPdMNRSQwy
-    iciaFk6n04E/w9v+EPrD/gxvNyP0Nmb0KUsIv4T60maom5DHMmMk8afSu0J4DH0JMk85eAUR3yl7
-    aAPpRnsyWssCgdckjcpcWA7hoiVGc3yfrigT/jXRxWW0uIRJuxZoKfVVQeQd0iwXhGXFsrKADaMx
-    4VyxEA6vbQ7QW7x6iGmRZkvpy4ffL+BM5pW0glR0IunRbhD+zAVZo0UVpojW5LIhsvGNV0BEHGhV
-    9dOV+oMw9KuFQe1rkyUYl2hU8BSxgJXFjj/EOJJGWrKYQFoWsSwB8mzBIvbcdbpVEnE3CbIiE/hj
-    QNwyrFooC9RZlCySmNpBk56ZBTT+vCLxA85fJGwHyFq56TpfwfWG4eyf0eRLf3jrQg/cgrrwHxwd
-    AfmRCTh1HF1Ezw1KztTga4GrFVGy3lWhyHWQ+WXPO15EnEj2ce6U1YnjTKbjT3fX88+j4c38pj8I
-    0fxwC1wDvZ+Gk547N3Er6e1kdD+2xFiMnx7uky5oj6WqiU5O4wfZxJ7qn3wLeLlAXI1Q5/n4BF4c
-    2WYM9MMUhK63W83VhVGmRtkUacE+KBiJVxT8AjxXHT7ZE09ydgmu0lfnxETxY/B2iQO/rIWSIvCX
-    9bsiRzliRDxFec/7ow5bpelpDfjkEU41Q4KW8Qo8w4exL1lh0M6rJINuai7sOuhms1fHQ5bn8hRq
-    KfizcHJ3IK8s3c/oSm7NwjF7UEFcD8ufjgbh7N9x6MI7HFiOZz7K3T18nRwpwP327fT8/OvZh1u3
-    1qdZ/Tidjcaz/l04up/1zk9r8fcVkiDzsvRIstDJJdQOBWw1xykRJZ8/ylYvGIkeWgCeE7KBs5Ys
-    J6IV3Hux3l79BpzQgrSZaCd1kLGKAHeWrQktBRDGKAMaxyXDrwMI9izbJaj6RlX7ugs3FJdNWub5
-    s5arTxdZR7iZEF1tVMK7rhVnt8tf+oOBpcYVpopPKSNPhEGU4qKGaf9W4mBB1M4mhYBj0l124X7Y
-    H85gOgjD8YnlRbfD4tnS7TTjENfNpLZSbzFrzQRbq4PcOguVuj5E+2eDkfaq0JtGoFQOhcHrmZfs
-    Vg9ooq1zGiU/ZdxUM1FGbxw8s0L+qjbCJJz9/WnQ2ggYO5Vtn+9kUJUj9U0yldYzy97O89CeUpWZ
-    rtWu9avOuYWYPzbhjQw+Bgl5CgqcSnj/8ehMJYSfFtwHZy5kRUNjMzD2gWw+Z0brNcNxdVW347C1
-    2dxvWVdMbRsuTt5ES5rfjvbbG/aqWf6uF7uF+9VJ9wci7gKxgMQUgxvCr55/lhkzMb9YLn9tjNXY
-    eu49j5b4n8k7hRcdSZK/1W63FpWHMtnqArc2Bxbtr83hVqm9dwiPYud/KV75gbULAAA=
+    H4sIAAlQq1wAA0svyi8tUFAqzkzPSywpLUotVlKo5lIAAr3MvOSc0pRUjZKiStuSotJUa4WCosz8
+    osySSltDa4WU0oKczOTEklTb3NSi9FRNBSUVH39nR594Z38/NxfPIP2c/OTEHL0UfYTJ8ekgu/SS
+    8/PSlAhbYYBpZH5ZalFRZkoqblNruQCAjCEi0AAAAA==
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
-    chkconfig rspamd on
-    chkconfig redis on
-    yum install -y python34-setuptools python34-devel
-    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
-    pip3 install pyzor
-    PACKED_SCRIPT='
-    H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
-    95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
-    93eH37LB6MM2lsXKykh5+/nLzftaKXdGE6MjSqRY59kiA7PiRbFCZXA99rzzc3YFa14WhmkwJheZ
-    ruDJOlttpDbEO529CCP8m/od5U4qUs5fzp8Sz71/+9FfMH+GVhPmX8oU7DGK6Pjp7fmlLIUhUeT0
-    1Wn+lI4fNgp46s7Pps9JdJXzjAQ3b/yHOgTrUiQml4IlG0ju3MMDw/Xd2GP4GxrFASg1YSk33BnQ
-    L18zlDKzAdHIHJjSEaLul6VEFygbgCFAmVQLdqbRL/we93AKTKlaKhCpN6BMIS6zbXA9YY53RA4R
-    3QglGGKFYQ+sk5iRFktv2XGlbfFgQYXuEIwHNvLOeoVGzmBh/60q3uEFnTAIaRD8T5GwEbD8SIVP
-    1jspNPxHSAY+E0PrMFWljH9AYh49br/JDRS5NpCivZGi3MYYA8J/bavq+xCmgMrzGKYBDLOUi7Vs
-    3puQ1fJMs32xtG+sCSddjzok2Ejv+B20Ws0sB+OsyI0pgMW5Cfvmhxgo+ApGGs1i7D9M9Z4f0GWs
-    lD5ZLlDIE8s56dLEJd5hWAEcC9VscjTVTMst4LfI2hs7EWk+z7uPGaZoD3m2oQ6PvG7RNOCLJZtG
-    0ePqaXDTcN6WQKFhAJ7NT2JnJ8GnsdEp6JRxkfbrCt94gi8KZ8dLGYkro4tjBFRKixzbRJkV1h7O
-    2KA7sCcVeMJcg4ZrqbbcBHXtpbb20r/W3vjRyGmcq3vATa8lu29M/cvXry7ffBN+W0PWTepAXBEG
-    BLag0z3UXEdnmI/c6kDDwG2kqhVwX4XVvcF97wrqREI2wmq51HumVVSLpd4xrUJvSpPKvSAqVUKr
-    oNFWLU/oMmEUipgndHcSu0eNPRslTJ3dj03SKkFoveqlsrMIG4sm3F2o9fsRtHpNY9HPVH87K8go
-    t2rl6qQTQcG3gCy9+jn6zHYvTrwn5rAj1Kg2GKEsU7Kk0TvSeSY4zmnQoyY02C3dpLuR6OMY3Mq0
-    xBlGG8P5ijgqzWsXzz/X6mWbBAkAAA==
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
-    CONFIG_LOCAL='/etc/rspamd/rspamd.conf.local'
-    grep -q '^pyzor {$' "$CONFIG_LOCAL" || echo 'pyzor {'$'\n''}' >> "$CONFIG_LOCAL"
-    groupadd pyzorsocket
-    useradd -g pyzorsocket pyzorsocket
-    mkdir -p /opt/pyzorsocket/bin/
-    PACKED_SCRIPT='
-    H4sIAGtBq1wAA3VUTY/TMBC951eYcHFEcYW4VeoBuistQitVtDdAloknrVvHDnba3YL474w/mmZL
-    8SX2eN6b8byZvH41PXg3/aHMtDv1W2veF6rtrOuJcJtOOA/nM7RCaRZN7spmtapPZ5v1593OW1M0
-    zrbE23oPPQKP4Ei+XS+Wq2iYkPXWgZDKbB7V8yczIasez+0X+HkA3z8IIzWGPLN2p1/WsVorMP1L
-    m1Qb9C+KotbCe/IST2+RVrOiILgkNGQbTdSDbtBM8qpbSeYkGJlrlAYWMtXKAK2YhNpK3HydvX33
-    fUCoJoHmpFw83C8+lxeysCJVisXrLdR7Wg33oD3c8H5yqgceqkl/l+CcdeWMlAezN/bJkNq2LdKV
-    f6rrt2T+qxclBfFRY0HZx1MPfhn3NOk5H4vLVo/r5SXR1m+QIEPjh15KlPOIuURFgutIIHYnenEX
-    txgMqSp2FPoAl5qHtAdQUpot4gernh6VqEah/qnUfkaOpLGO7Ce4USbRMnRoPa3G1RqhAsuEyFG5
-    dphIuGLy0Haeyoq8IeU3U14Fjr0RieiOgUmNUQ29mDqdXjf6MAM5YIe+iAlJYfENzeYwipjGeSLZ
-    B7c5tFiNrJcEXzvV9cqaeXn/3FkPqXbEGiLy8JXVQMWElFxkDlriyZUTsgXdzeMBMOHeEq1QIIMc
-    /4eG4RugcRJv43zOPvVKIEAJkgAhIN7SYAvs+DtQSB2PgbHKft4d0S3XMfldzXJ0693poh1iWPzp
-    cOwDCMDk1CgjtL7l6HitsXwhuQIHmXMjWuA8TjPnQRPO80AngYq/7vjOR0EFAAA=
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
-    chown pyzorsocket:pyzorsocket /opt/pyzorsocket/bin/pyzorsocket.py
-    chmod 0700 /opt/pyzorsocket/bin/pyzorsocket.py
-    PACKED_SCRIPT='
-    H4sIAIFHp1wAA5VSYU/qMBT9bH/FdSwoL9nKNETFkBdj5ot5vGAGmqgxppTCGqDdazvfQ/G/uxU2
-    B+oHt0/33HPO7bltbRcPucBDomNUQzVIFs9SaUmnzNiaxlMqxZhP2uDBcQuCVgaOmKaKJ4ZL0d5U
-    QKIkZVoLMmebrazXl6miDMapoLkUZnyoiFr4yAfMDMVccOOPcNHXCEXh4Oas22miq6j3q7NX8dtD
-    3d7574vLbthx8BNReJbBWKdDvdDYzekOurq960X9jBYOHq/7YbRlgLQhyuw34AXB+mM0luAJcPp5
-    i4sJWKs2OCVlRNhcCv7MwEuz7tYIwDIxuDLGbrdS+8kCgoMjv5n9AbROWoel8zqs+7NE7sFdgeCx
-    v9CEB6jXwciUxuAW8TfOXhaKmVSJQo5e87Ay+SJrnBqbdST/iffAO1M+m+XXuYLAG4TRn0L83UOr
-    OXjj7x+aEs3AcQMHuLA0e2WNUmHLsjo9XXNkUqXI5CODmFQ3tmHFPthXtJ/O+tHY3Kdzrckke/mr
-    lb1YzTK3Wa5mLtczXt8fFPvPDQRVY6YJRRYuVvEGr04i2KYDAAA=
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
-    chmod +x /etc/init.d/pyzorsocket
-    chkconfig --add pyzorsocket
-    chkconfig pyzorsocket on
-    service pyzorsocket start
-    yum install -y perl-Razor-Agent
-    PACKED_SCRIPT='
-    H4sIAAdCq1wAA4VUTWvbQBA9R79iEQRLoJg4lxJDDiUtFAou5FgKYiWNPvBq191d0bih/70zu6uv
-    2KXywWLmzZuZNzMSquSCCdU0oNkT0/Bz6DSwWJsT76vcO+JIOJgtT1cwaI2jgDigP9b8t5pizLkv
-    lMidjZwvH79/exmd6mQNMXqiUsm6a/YN2JwLkaMzOaRRdHfHPkHNB2GZAWs72ZgQXtZN3ipjiXf3
-    8GF7j79dvHCelCbn4+7xYaywHmRpOyVZ2UJ59HUllptjGjF83oOKBLTOWMUt9wB6upqhldkW5GTz
-    waTWFn2vjjJDLVAswArRpvSe3Zo4o/d0FafBDnqmAllFMyXVo8GQ8hZ71dh/clGOB6AMpGR8WRlV
-    s++kAW1zxKKWyXIwGdtt79NrvVRQDE2fHDIWGnIJZigIA8v87dX0/yJrL7j+p+cgj1L9ki6hwn5Y
-    rVXPXBNGlUewQWPypxeK0v9izONwntjbBI2fv3x+/vpDxtlkcuLRVuKCWpA2Sb3vz8h1vTnk1mec
-    lq8O+3RovJZtyJu8rVLQgClyMobVHrd8doS1Hjd8dph2sBXJg1R6gCy6oU0JNwtLCmxfFLykpGUR
-    2kkjpw+O093lNMVg2Lp6VrNdHOCEmIRehrqKL0JDHxNiPaP1V0FD0xkLOvd7u9BO8h6QZbXP0Y09
-    n8i6GRvdoK3RaqA72piukRxvDszmuiTzt2HWZtzOMO9O1uo1iW8N61U1CGBSWeaLReIKd/DgBf0L
-    bFL70WMFAAA=
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
-    grep -q '^razor {$' "$CONFIG_LOCAL" || echo 'razor {'$'\n''}' >> "$CONFIG_LOCAL"
-    groupadd razorsocket
-    useradd -g razorsocket razorsocket
-    mkdir -p /opt/razorsocket/bin/
-    PACKED_SCRIPT='
-    H4sIAHhCq1wAA31UUW/TMBB+Jr/CmIc6oktBvKBJfYBpaAhNqlh5GpPlJZfWm2MH29lWEP+ds+Ok
-    WdXhl9iXu+/O932+N68XnbOLW6kX7c5vjf6QyaY11hNhN62wDoYzNEKqIprsgc0oWe4Gm3HD7s4Z
-    Pexdd9taU4JzWW1NQ5wp78Ej1ANYknzWZ6uraJiT9daCqKTeXMqnr3pOrjyem+/wqwPnL4SuFBaR
-    ZaUSzpHnZnbMNz/NMoKrgppso4k5UDWaSVplU5ElCcbC1lJBEQpQUgPLiwpKU+Hm+vTk/c0YIes+
-    aEno2cX52Te6BwsrQvW5eLmF8p7l439QDo54P1rpgYe2sT8UrDWWnhLa6XttHjUpTdMgHP2bH94l
-    4R/cqKcKLzVlrvi88+BWcc964pZTFoury/VqX2jjNgiQQuOH7VuU6girRi/TgmZ04Zt2sb5cWfEb
-    y58T+kj3cOmKDGEL4bjzFilm+dShVAaTTKAtuE75wM0ooaIUSrFrOko3JjuJXQgpn9dwk2evpqQN
-    gEvy7hkHPQWR+77K29AqNnOtaGZzMvux/nLycZb/h8WXELYHACN9E8JD7JxUE/7u8M7hV1F1TetY
-    lZO3hP7UNHsx3V0BuldqPj6O/kWxwwc1vrWUsEVfjAlFoRo0S+YwBLCMYRYUn+yma0D7JKAKXGll
-    66XRS3r+1CJ1JDadGE1EeuSJ/4BRiKriImEwiqcgkS2odhkPyC3xhijpPGjEeDk0DIwxNE6P43Eu
-    Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
-    aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
-    chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
-    chmod 0700 /opt/razorsocket/bin/razorsocket.py
-    PACKED_SCRIPT='
-    H4sIAJxIq1wAA5VSXU/CMBR9tr/iOhYVk63MxKgYYoyZxojBDPRBY0wphTVAO9tORfG/uxU2B+qD
-    29M993z03ra2iftc4D7RMaqhGijyLpWWdMyMrWk8plIM+agJHhzuQ7CfgQOmqeKJ4VI0VxWQKEmZ
-    1oJM2Wor63VlqiiDYSpoLoUJ7yuiZj7yATNDMRfc+ANc9DVCUdi7O223Gugm6ly0tit+26jdObs6
-    v2yHLQe/EIUnGYx12tczjd2c7qDo9L4TdTNa2Hu67YbRmgHShiizU4cPBMuP0ViCJ8Dp5i0uRmCt
-    muCUlAFhUyn4OwMvBXc9ArBMDK7E2O1Waj+ZQbB34DeyP4Cj4GivdF4O656UyEMWYEHw2DM04BG2
-    tsDIlMbgFuOvnL0sFDOpEoUcfebDyuSPWePU2FkH8lV8D7wx5pNJfp0LCLxeGF0X4v8eWk3BG/7/
-    0JRoBo4bOMCFpdkrq5cKW5bV8fGSI5MqRSY/GcSkur4OK/bDvqL9NWu3vrpP51aTUfbyFyv7sJp5
-    bjNfZM6XGZ/fD4q9cQNB1ZhpQpGFi1V8AdB9kzCmAwAA
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
-    chmod +x /etc/init.d/razorsocket
-    chkconfig --add razorsocket
-    chkconfig razorsocket on
-    service razorsocket start
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/groups.conf
     PACKED_SCRIPT='
     H4sIAK1Pq1wAA7WOPQ7CMAyF957CygEYkJgQAyegygabG0xiNU1QbKgK6t0JKmJn4G3vR3qfTEOX
     o8AOng1UmfZ4OljzcW+NxD5oHaxXm+03PZO4wlflnGplXCDXw0Ai6AmEfUK9FRJAj5xEQQNBOz1y
@@ -356,11 +259,30 @@ install_rspamd() {
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/signatures_group.conf
     PACKED_SCRIPT='
-    H4sIAAlQq1wAA0svyi8tUFAqzkzPSywpLUotVlKo5lIAAr3MvOSc0pRUjZKiStuSotJUa4WCosz8
-    osySSltDa4WU0oKczOTEklTb3NSi9FRNBSUVH39nR594Z38/NxfPIP2c/OTEHL0UfYTJ8ekgu/SS
-    8/PSlAhbYYBpZH5ZalFRZkoqblNruQCAjCEi0AAAAA==
+    H4sIAGNGr1wAA41WbW/aSBD+fP4VU2NFyUnGSav0Tqnoqdc4OVQCCMidTu0JGXsNFsZLdtdpo5D/
+    frO7XnsNKKo/GHvmmbdnZsd03gSLrAj4yuk4HWB8G20S8EGsMg48ZtlWABcRExyiIsFHuuWoJAaZ
+    RGRDC6fT6cCf4W1/CP1hf4a3mxF6GzP6mCWEX0F9aTPUTchDmTGS+FPpXSE8hr4EmaccvIKI75St
+    20C61Z6M1rJA4DVJozIXlkO4bInRHN+nK8qEf010cRktrmDSrgVaSn1VEHmHNMsFYVmxrCxgy2hM
+    OFcshMNrmwP0Fq/WMS3SbCl9+fD7JVzIvJJWkIpOJD3aD8KfuCAbtKjCFNGGXDVENr7xCoiIA62q
+    frpSfxSGfrUwqH1tswTjEo0KHiMWsLLY84cYR9JISxYTSMsiliVAni1YxJ66TrdKIu4mQVZkAn8M
+    iFuGVQtlgTqLkkUSUzto0jOzgMafVyRe4/xFwnaArJXbrvMVXG8Yzv4ZTb70h7cu9MAtqAv/wckJ
+    kB+ZgHPH0UX03KDkTA2+FrhaESWbfRWKXAeZX/a800XEiWQf505ZnTnOZDr+dHc9/zwa3sxv+oMQ
+    zY+3wDXQ+2k46blzE7eS3k5G92NLjMX46fE+6YIOWKqa6OQ0Xssm9lT/5FvAywXiaoQ6z6dn8OzI
+    NmOgH6YgdL3baa4ujTI1yqZIC/ZewUi8ouAX4Lnq8MmeeJKzK3CVvjonJoofg7dPHPhlLZQUgb+s
+    3xU5yhEj4jHKe94fddgqTU9rwCcPcK4ZErSMV+AZPox9yQqDdl4kGXRbc2HXQbfbgzrWWZ7LU6il
+    4M/Cyd2RvLL0MKMPcmsWjtmDCuJ6WP50NAhn/45DF97gwHI881HuHuDr5EgB7rdv5+/efb14f+vW
+    +jSrH6ez0XjWvwtH97PeZS39vkIOZFqWGjkWOreE2pGAreY4JKLk8wfZ6QUj0boF4DkhW7hoyXIi
+    WrG9Z+vtxW/ACS1Im4h2UkcJq+p3Z9mG0FIAYYwyoHFcMvw4gGBPsluCqk9Uta67cENx16Rlnj9p
+    ufpykU2EiwnR1UIlvOtacfab/KU/GFhq3GCq+JQy8kgYRCnuaZj2byUOFkStbFIIOCXdZRfuh/3h
+    DKaDMByfWV50OyyeLd1eM45x3QxqK/UWs9ZIsI06x62jUKnrM3R4NBhpbwq9aARK5VAYvB55yW71
+    gCbaOqdR8lPGTTUTZfTKuTMb5K9qIUzC2d+fBq2FgLFT2fb5XgZVOVLfJFNpPbPr7TyPrSlVmela
+    7Vq/6pxbiPlDE97I4GOQkMegwKmEtx9PLlRC+GXBdXDhQlY0NDYDYx/I5mtmtF4zHB8+1O04bm0W
+    92vWFVO7houzV9GS5tej/faKvWqWv+/FbuFhddL9kYj7QCwgMcXghvCr559lxkzML5bLXxtjNbae
+    e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/groups.conf
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
+    chkconfig rspamd on
+    chkconfig redis on
     service redis start
     service rspamd start
     get_keypress
@@ -540,11 +462,11 @@ dialog_install() {
         DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE"
         DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS"
         DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
-        check_installed_rspamd && DIALOG_RSPAMD_INSTALLED="$DIALOG_RSPAMD_INSTALLED (installed)"
-        check_installed_letsencrypt && DIALOG_LETSENCRYPT_INSTALLED="$DIALOG_LETSENCRYPT_INSTALLED (installed)"
-        check_installed_auto_update && DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE_INSTALLED (installed)"
-        check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS_INSTALLED (installed)"
-        check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS_INSTALLED (installed)"
+        check_installed_rspamd && DIALOG_RSPAMD_INSTALLED+=' (installed)'
+        check_installed_letsencrypt && DIALOG_LETSENCRYPT_INSTALLED+=' (installed)'
+        check_installed_auto_update && DIALOG_AUTO_UPDATE_INSTALLED+=' (installed)'
+        check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED+=' (installed)'
+        check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED+=' (installed)'
         exec 3>&1
             DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"             \
                 --cancel-label "Back" --ok-label "Apply"                        \
@@ -576,7 +498,7 @@ dialog_install() {
     done
 }
 ###################################################################################################
-# enable features in Postfix custom config
+# enable/disable features in Postfix custom config
 ###################################################################################################
 # enable Rspamd
 # parameters:
@@ -584,25 +506,52 @@ dialog_install() {
 # return values:
 # none
 enable_rspamd() {
-    # Clearswift integration as milter
-    echo '# Rspamd' >> $PF_IN
-    echo 'smtpd_milters=inet:127.0.0.1:11332, inet:127.0.0.1:19127' >> $PF_IN
-    echo "mydestination=$(hostname)" >> $PF_IN
-    if ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
-        grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || echo 'learnspam: "| rspamc learn_spam"' >> $MAP_ALIASES
-        grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES || echo 'learnham: "| rspamc learn_ham"' >> $MAP_ALIASES
-        newaliases
+    for OPTION in                                                  \
+        'smtpd_milters=inet:127.0.0.1:11332, inet:127.0.0.1:19127' \
+        "mydestination=$(hostname)"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+    NEW_ALIASES=''
+    if ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES; then
+        echo 'learnspam: "| rspamc learn_spam"' >> $MAP_ALIASES
+        NEW_ALIASES=1
     fi
+    if ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
+        echo 'learnham: "| rspamc learn_ham"' >> $MAP_ALIASES
+        NEW_ALIASES=1
+    fi
+    [ "$NEW_ALIASES" = 1 ] && newaliases
     echo "# start managed by $TITLE_MAIN" >> $WHITELIST_IP
-    if [ -f "$CLIENT_MAP" ]; then
+    if [ -f "$MAP_CLIENT" ]; then
         CLIENT_REJECT="$(postmulti -i postfix-inbound -x postconf -n | grep '^cp_client_' | grep 'REJECT' | awk '{print $1}')"
         if [ -z "$CLIENT_REJECT" ]; then
-            awk '{print $1}' $CLIENT_MAP | sort >> $WHITELIST_IP
+            awk '{print $1}' $MAP_CLIENT | sort -u >> $WHITELIST_IP
         else
-            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $CLIENT_MAP | sort >> $WHITELIST_IP
+            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $MAP_CLIENT | sort -u >> $WHITELIST_IP
         fi
     fi
     echo "# end managed by $TITLE_MAIN" >> $WHITELIST_IP
+}
+# disable Rspamd
+# parameters:
+# none
+# return values:
+# none
+disable_rspamd() {
+    for OPTION in                                                  \
+        'smtpd_milters=inet:127.0.0.1:11332, inet:127.0.0.1:19127' \
+        "mydestination=$(hostname)"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+    if grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
+        sed -i '/^learnspam: "| rspamc learn_spam"$/d' $MAP_ALIASES
+        sed -i '/^learnham: "| rspamc learn_ham"$/d' $MAP_ALIASES
+        newaliases
+    fi
+    [ -f "$WHITELIST_IP" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_IP
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -611,16 +560,42 @@ enable_rspamd() {
 # none
 enable_letsencrypt() {
     if [ -f $DIR_CERT/privkey ] && [ -f $DIR_CERT/fullchain ]; then
-        # use Letsencrypt certificates
-        echo "# Let's Encrypt cert" >> $PF_IN
-        echo "smtpd_tls_key_file=$DIR_CERT/privkey" >> $PF_IN
-        echo "smtpd_tls_cert_file=$DIR_CERT/fullchain" >> $PF_IN
-        echo "# Let's Encrypt cert" >> $PF_OUT
-        echo "smtp_tls_key_file=$DIR_CERT/privkey" >> $PF_OUT
-        echo "smtp_tls_cert_file=$DIR_CERT/fullchain" >> $PF_OUT
+        for OPTION in                                       \
+            "smtpd_tls_key_file=$DIR_CERT/privkey"          \
+            "smtpd_tls_cert_file=$DIR_CERT/fullchain"; do
+            if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+                echo "$OPTION" >> "$PF_IN"
+            fi
+            postmulti -i postfix-inbound -x postconf "$OPTION"
+        done
+        for OPTION in                                       \
+            "smtp_tls_key_file=$DIR_CERT/privkey"          \
+            "smtp_tls_cert_file=$DIR_CERT/fullchain"; do
+            if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
+                echo "$OPTION" >> "$PF_OUT"
+            fi
+            postmulti -i postfix-outbound -x postconf "$OPTION"
+        done
     else
         $DIALOG --clear --backtitle "Enable features" --msgbox "Let's Encrypt certificates are missing." 0 0
     fi
+}
+# disable Let's Encrypt cert
+# parameters:
+# none
+# return values:
+# none
+disable_letsencrypt() {
+    for OPTION in                                       \
+        "smtpd_tls_key_file=$DIR_CERT/privkey"          \
+        "smtpd_tls_cert_file=$DIR_CERT/fullchain";do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+    for OPTION in                                       \
+        "smtp_tls_key_file=$DIR_CERT/privkey"          \
+        "smtp_tls_cert_file=$DIR_CERT/fullchain"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
+    done    
 }
 # enable verbose TLS
 # parameters:
@@ -628,13 +603,40 @@ enable_letsencrypt() {
 # return values:
 # none
 enable_tls() {
-    echo '# Verbose TLS' >> $PF_IN
-    echo 'smtpd_tls_loglevel=1' >> $PF_IN
     [ -f /etc/postfix/dh1024.pem ] || openssl dhparam -out /etc/postfix/dh1024.pem 1024 &>/dev/null
-    echo 'smtpd_tls_dh1024_param_file=/etc/postfix/dh1024.pem' >> $PF_IN
-    echo '# Verbose TLS' >> $PF_OUT
-    echo 'smtp_tls_note_starttls_offer=yes' >> $PF_OUT
-    echo 'smtp_tls_loglevel=1' >> $PF_OUT
+    for OPTION in                                                  \
+        'smtpd_tls_loglevel=1'                                     \
+        'smtpd_tls_dh1024_param_file=/etc/postfix/dh1024.pem'; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+    for OPTION in                                                   \
+        'smtp_tls_note_starttls_offer=yes'                          \
+        'smtp_tls_loglevel=1'; do
+        if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
+            echo "$OPTION" >> "$PF_OUT"
+        fi        
+        postmulti -i postfix-outbound -x postconf "$OPTION"
+    done
+}
+# disable verbose TLS
+# parameters:
+# none
+# return values:
+# none
+disable_tls() {
+    for OPTION in                                                  \
+        'smtpd_tls_loglevel=1'                                     \
+        'smtpd_tls_dh1024_param_file=/etc/postfix/dh1024.pem'; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+    for OPTION in                                                   \
+        'smtp_tls_note_starttls_offer=yes'                          \
+        'smtp_tls_loglevel=1'; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
+    done
 }
 # enable ESMTP filter
 # parameters:
@@ -642,9 +644,26 @@ enable_tls() {
 # return values:
 # none
 enable_esmtp_filter() {
-    echo '# ESMTP filter' >> $PF_IN
-    echo "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access" >> $PF_IN
-    echo 'smtpd_discard_ehlo_keywords=' >> $PF_IN
+    for OPTION in                                                               \
+        "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access"   \
+        'smtpd_discard_ehlo_keywords='; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable ESMTP filter
+# parameters:
+# none
+# return values:
+# none
+disable_esmtp_filter() {
+    for OPTION in                                                               \
+        "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access"   \
+        'smtpd_discard_ehlo_keywords='; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
 }
 # enable DANE
 # parameters:
@@ -652,9 +671,26 @@ enable_esmtp_filter() {
 # return values:
 # none
 enable_dane() {
-    echo '# DANE' >> $PF_OUT
-    echo 'smtp_tls_security_level=dane' >> $PF_OUT
-    echo 'smtp_dns_support_level=dnssec' >> $PF_OUT
+    for OPTION in                                                  \
+        'smtp_tls_security_level=dane'                             \
+        'smtp_dns_support_level=dnssec'; do
+        if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
+            echo "$OPTION" >> "$PF_OUT"
+        fi
+        postmulti -i postfix-outbound -x postconf "$OPTION"
+    done
+}
+# disable DANE
+# parameters:
+# none
+# return values:
+# none
+disable_dane() {
+    for OPTION in                                                  \
+        'smtp_tls_security_level=dane'                             \
+        'smtp_dns_support_level=dnssec'; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
+    done
 }
 # enable sender rewrite
 # parameters:
@@ -662,21 +698,37 @@ enable_dane() {
 # return values:
 # none
 enable_sender_rewrite() {
-    echo '# Sender rewrite' >> $PF_IN
-    echo "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps" >> $PF_IN
+    for OPTION in                                                             \
+        "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable sender rewrite
+# parameters:
+# none
+# return values:
+# none
+disable_sender_rewrite() {
+    for OPTION in                                                             \
+        "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
 }
 # enable inbound bounce notification
 # parameters:
 # $1 - notification email address
 # return values:
-# none
+# error code - 0 for enabled, 1 for cancelled
 enable_bounce_in() {
+    local DIALOG_RET RET_CODE EMAIL_BOUNCE OPTION
+
     if [ -z "$1" ]; then
         exec 3>&1
-        DIALOG_RET="$(dialog --clear --backtitle "Enable features"                      \
-            --title "Inbound bounce notifications"                                      \
-            --inputbox "Enter email for inbound bounce notifications" 0 50              \
-            $EMAIL_DEFAULT 2>&1 1>&3)"
+        DIALOG_RET="$(dialog --clear --backtitle 'Enable features' --title 'Inbound bounce notifications'   \
+            --inputbox 'Enter email for inbound bounce notifications' 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -687,26 +739,45 @@ enable_bounce_in() {
     else
         EMAIL_BOUNCE="$1"
     fi
-    echo '# Inbound bounce notifications' >> $PF_IN
-    echo 'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce' >> $PF_IN
-    echo "2bounce_notice_recipient=$EMAIL_BOUNCE" >> $PF_IN
-    echo "bounce_notice_recipient=$EMAIL_BOUNCE" >> $PF_IN
-    echo "delay_notice_recipient=$EMAIL_BOUNCE" >> $PF_IN
-    echo "error_notice_recipient=$EMAIL_BOUNCE" >> $PF_IN
-    return 0
+    for OPTION in                                                                           \
+        'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce'       \
+        "2bounce_notice_recipient=$EMAIL_BOUNCE"                                            \
+        "bounce_notice_recipient=$EMAIL_BOUNCE"                                             \
+        "delay_notice_recipient=$EMAIL_BOUNCE"                                              \
+        "error_notice_recipient=$EMAIL_BOUNCE"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable inbound bounce notification
+# parameters:
+# $1 - notification email address
+# return values:
+# none
+disable_bounce_in() {
+    for OPTION in                                                                           \
+        'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce'       \
+        "2bounce_notice_recipient=$EMAIL_BOUNCE"                                            \
+        "bounce_notice_recipient=$EMAIL_BOUNCE"                                             \
+        "delay_notice_recipient=$EMAIL_BOUNCE"                                              \
+        "error_notice_recipient=$EMAIL_BOUNCE"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
 }
 # enable outbound bounce notification
 # parameters:
 # $1 - notification email address
 # return values:
-# none
+# error code - 0 for enabled, 1 for cancelled
 enable_bounce_out() {
+    local DIALOG_RET RET_CODE EMAIL_BOUNCE OPTION
+
     if [ -z "$1" ]; then
         exec 3>&1
-        DIALOG_RET="$(dialog --clear --backtitle "Enable features"                      \
-            --title "Outbound bounce notifications"                                     \
-            --inputbox "Enter email for outbound bounce notifications" 0 50             \
-            $EMAIL_DEFAULT 2>&1 1>&3)"
+        DIALOG_RET="$(dialog --clear --backtitle 'Enable features' --title 'Outbound bounce notifications'  \
+            --inputbox 'Enter email for outbound bounce notifications' 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -717,13 +788,63 @@ enable_bounce_out() {
     else
         EMAIL_BOUNCE="$1"
     fi
-    echo '# Outbound bounce notifications' >> $PF_OUT
-    echo 'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce' >> $PF_OUT
-    echo "2bounce_notice_recipient=$EMAIL_BOUNCE" >> $PF_OUT
-    echo "bounce_notice_recipient=$EMAIL_BOUNCE" >> $PF_OUT
-    echo "delay_notice_recipient=$EMAIL_BOUNCE" >> $PF_OUT
-    echo "error_notice_recipient=$EMAIL_BOUNCE" >> $PF_OUT
-    return 0
+    for OPTION in                                                                       \
+        'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce'   \
+        "2bounce_notice_recipient=$EMAIL_BOUNCE"                                        \
+        "bounce_notice_recipient=$EMAIL_BOUNCE"                                         \
+        "delay_notice_recipient=$EMAIL_BOUNCE"                                          \
+        "error_notice_recipient=$EMAIL_BOUNCE"; do
+        if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
+            echo "$OPTION" >> "$PF_OUT"
+        fi
+        postmulti -i postfix-outbound -x postconf "$OPTION"
+    done
+}
+# disable outbound bounce notification
+# parameters:
+# $1 - notification email address
+# return values:
+# none
+disable_bounce_out() {
+    for OPTION in                                                                       \
+        'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce'   \
+        "2bounce_notice_recipient=$EMAIL_BOUNCE"                                        \
+        "bounce_notice_recipient=$EMAIL_BOUNCE"                                         \
+        "delay_notice_recipient=$EMAIL_BOUNCE"                                          \
+        "error_notice_recipient=$EMAIL_BOUNCE"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
+    done
+}
+# enable Office365 IP range whitelisting
+# parameters:
+# none
+# return values:
+# none
+enable_office365() {
+    rm -f "$MAP_OFFICE365"
+    for IP_ADDR in $LIST_OFFICE365; do
+        echo "$IP_ADDR PERMIT" >> "$MAP_OFFICE365"
+    done
+
+    RELAY_RESTRICTIONS="$(postmulti -i postfix-inbound -x postconf smtpd_relay_restrictions | awk -F ' = ' '{print $2}')"
+    for OPTION in                                                                                       \
+        "smtpd_relay_restrictions=check_client_access cidr:$MAP_OFFICE365, $RELAY_RESTRICTIONS"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable Office365 IP range whitelisting
+# parameters:
+# none
+# return values:
+# none
+disable_office365() {
+    for OPTION in                                                                   \
+        "smtpd_relay_restrictions=check_client_access cidr:$MAP_OFFICE365, "; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
 }
 # enable Postscreen
 # parameters:
@@ -731,23 +852,49 @@ enable_bounce_out() {
 # return values:
 # none
 enable_postscreen() {
-    # Postscreen Master.cf settings
-    echo '# Postscreen' >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -M# '25/inet'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -Me '25/inet=25  inet n - n - 1 postscreen'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -Me 'smtpd/pass=smtpd      pass  -       -       n       -       -       smtpd'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -Me 'dnsblog/unix=dnsblog    unix  -       -       n       -       0       dnsblog'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -Me 'tlsproxy/unix=tlsproxy   unix  -       -       n       -       0       tlsproxy'" >> $CONFIG_PF
-    # Postscreen main.cf settings
-    echo "postconf -c $PF_INBOUND -e 'postscreen_access_list=permit_mynetworks cidr:$WHITELIST_POSTSCREEN'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_blacklist_action=enforce'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_command_time_limit=\${stress?10}\${stress:300}s'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_action=enforce'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_sites=$BLACKLISTS'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_threshold=3'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_ttl=1h'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_greet_action=enforce'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_greet_wait=\${stress?4}\${stress:15}s'" >> $CONFIG_PF
+    for OPTION in                                                                                                           \
+        "postconf -c $PF_INBOUND -M# '25/inet'"                                                                             \
+        "postconf -c $PF_INBOUND -Me '25/inet=25  inet n - n - 1 postscreen'"                                               \
+        "postconf -c $PF_INBOUND -Me 'smtpd/pass=smtpd      pass  -       -       n       -       -       smtpd'"           \
+        "postconf -c $PF_INBOUND -Me 'dnsblog/unix=dnsblog    unix  -       -       n       -       0       dnsblog'"       \
+        "postconf -c $PF_INBOUND -Me 'tlsproxy/unix=tlsproxy   unix  -       -       n       -       0       tlsproxy'"     \
+        "postconf -c $PF_INBOUND -e 'postscreen_access_list=permit_mynetworks cidr:$WHITELIST_POSTSCREEN'"                  \
+        "postconf -c $PF_INBOUND -e 'postscreen_blacklist_action=enforce'"                                                  \
+        "postconf -c $PF_INBOUND -e 'postscreen_command_time_limit=\${stress?10}\${stress:300}s'"                           \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_action=enforce'"                                                      \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_sites=$BLACKLISTS'"                                                   \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_threshold=3'"                                                         \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_ttl=1h'"                                                              \
+        "postconf -c $PF_INBOUND -e 'postscreen_greet_action=enforce'"                                                      \
+        "postconf -c $PF_INBOUND -e 'postscreen_greet_wait=\${stress?4}\${stress:15}s'"; do
+        if ! [ -f "$CONFIG_PF" ] || ! grep -q "$OPTION" "$CONFIG_PF"; then
+            echo "$OPTION" >> "$CONFIG_PF"
+        fi
+    done
+}
+# disable Postscreen
+# parameters:
+# none
+# return values:
+# none
+disable_postscreen() {
+    for OPTION in                                                                                                                               \
+        "postconf -c $PF_INBOUND -M# '25/inet'"                                                                                                 \
+        "postconf -c $PF_INBOUND -Me '25/inet=25  inet n - n - 1 postscreen'"                                                                   \
+        "postconf -c $PF_INBOUND -Me 'smtpd/pass=smtpd      pass  -       -       n       -       -       smtpd'"                               \
+        "postconf -c $PF_INBOUND -Me 'dnsblog/unix=dnsblog    unix  -       -       n       -       0       dnsblog'"                           \
+        "postconf -c $PF_INBOUND -Me 'tlsproxy/unix=tlsproxy   unix  -       -       n       -       0       tlsproxy'"                         \
+        "postconf -c $PF_INBOUND -e 'postscreen_access_list=permit_mynetworks cidr:$WHITELIST_POSTSCREEN'"                                      \
+        "postconf -c $PF_INBOUND -e 'postscreen_blacklist_action=enforce'"                                                                      \
+        "postconf -c $PF_INBOUND -e 'postscreen_command_time_limit=\${stress?10}\${stress:300}s'"                                               \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_action=enforce'"                                                                          \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_sites=$(echo $BLACKLISTS | sed 's/\[/\\\[/g' | sed 's/\]/\\\]/g' | sed 's/\*/\\\*/g')'"   \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_threshold=3'"                                                                             \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_ttl=1h'"                                                                                  \
+        "postconf -c $PF_INBOUND -e 'postscreen_greet_action=enforce'"                                                                          \
+        "postconf -c $PF_INBOUND -e 'postscreen_greet_wait=\${stress?4}\${stress:15}s'"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$CONFIG_PF"
+    done
 }
 # enable Postscreen Deep inspection
 # parameters:
@@ -755,14 +902,35 @@ enable_postscreen() {
 # return values:
 # none
 enable_postscreen_deep() {
-# Deep inspection test (might cause delays)
-    echo '# Deep Postscreen' >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_enable=yes'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_action=enforce'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_action=enforce'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_enable=yes'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_pipelining_enable=yes'" >> $CONFIG_PF
-    echo "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_whitelist_threshold=-1'" >> $CONFIG_PF
+    for OPTION in                                                                   \
+        "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_enable=yes'"           \
+        "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_action=enforce'"       \
+        "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_action=enforce'"   \
+        "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_enable=yes'"       \
+        "postconf -c $PF_INBOUND -e 'postscreen_pipelining_enable=yes'"             \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_whitelist_threshold=-1'"; do
+        if ! [ -f "$CONFIG_PF" ] || ! grep -q "$OPTION" "$CONFIG_PF"; then
+            echo "$OPTION" >> "$CONFIG_PF"
+        fi
+    done
+
+}
+# disable Postscreen Deep inspection
+# parameters:
+# none
+# return values:
+# none
+disable_postscreen_deep() {
+    for OPTION in                                                                   \
+        "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_enable=yes'"           \
+        "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_action=enforce'"       \
+        "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_action=enforce'"   \
+        "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_enable=yes'"       \
+        "postconf -c $PF_INBOUND -e 'postscreen_pipelining_enable=yes'"             \
+        "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_whitelist_threshold=-1'"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$CONFIG_PF"
+    done
+
 }
 ###################################################################################################
 # check whether feature is already enabled
@@ -773,10 +941,14 @@ enable_postscreen_deep() {
 # return values:
 # Rspamd status
 check_enabled_rspamd() {
-    if [ ! -f $PF_IN ] || ! grep -q '# Rspamd' $PF_IN || ! grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || ! grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
-        echo off
-    else
+    if [ -f "$PF_IN" ]                                                                  \
+        && grep -q 'smtpd_milters=inet:127.0.0.1:11332, inet:127.0.0.1:19127' "$PF_IN"  \
+        && grep -q "mydestination=$(hostname)" "$PF_IN"                                 \
+        && grep -q 'learnspam: "| rspamc learn_spam"' "$MAP_ALIASES"                    \
+        && grep -q 'learnham: "| rspamc learn_ham"' "$MAP_ALIASES"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether Let's Encrypt cert is enabled
@@ -785,10 +957,15 @@ check_enabled_rspamd() {
 # return values:
 # Let's Encrypt cert status
 check_enabled_letsencrypt() {
-    if [ ! -f $PF_IN ] || ! grep -q "# Let's Encrypt cert" $PF_IN || [ ! -f $PF_OUT ] || ! grep -q "# Let's Encrypt cert" $PF_OUT ; then
-        echo off
-    else
+    if [ -f "$PF_IN" ]                                                          \
+        && grep -q "smtpd_tls_key_file=$DIR_CERT/privkey" "$PF_IN"              \
+        && grep -q "smtpd_tls_cert_file=$DIR_CERT/fullchain" "$PF_IN"           \
+        && [ -f "$PF_out" ]                                                     \
+        && grep -q "smtp_tls_key_file=$DIR_CERT/privkey" "$PF_OUT"              \
+        && grep -q "smtp_tls_cert_file=$DIR_CERT/fullchain" "$PF_OUT"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether verbose TLS is enabled
@@ -797,10 +974,15 @@ check_enabled_letsencrypt() {
 # return values:
 # verbose TLS status
 check_enabled_tls() {
-    if [ ! -f $PF_IN ] || ! grep -q '# Verbose TLS' $PF_IN || [ ! -f $PF_OUT ] || ! grep -q '# Verbose TLS' $PF_OUT; then
-        echo off
-    else
+    if [ -f "$PF_IN" ]                                                              \
+        && grep -q 'smtpd_tls_loglevel=1' "$PF_IN"                                  \
+        && grep -q 'smtpd_tls_dh1024_param_file=/etc/postfix/dh1024.pem' "$PF_IN"   \
+        && [ -f "$PF_OUT" ]                                                         \
+        && grep -q 'smtp_tls_note_starttls_offer=yes' "$PF_OUT"                     \
+        && grep -q 'smtp_tls_loglevel=1' "$PF_OUT"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether ESMTP filter is enabled
@@ -809,10 +991,12 @@ check_enabled_tls() {
 # return values:
 # ESMTP filter status
 check_enabled_esmtp_filter() {
-    if [ ! -f $PF_IN ] || ! grep -q '# ESMTP filter' $PF_IN; then
-        echo off
-    else
+    if [ -f "$PF_IN" ]                                                                              \
+        && grep -q "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access" "$PF_IN"   \
+        && grep -q 'smtpd_discard_ehlo_keywords=' "$PF_IN"; then 
         echo on
+    else
+        echo off
     fi
 }
 # check whether DANE is enabled
@@ -821,10 +1005,12 @@ check_enabled_esmtp_filter() {
 # return values:
 # DANE status
 check_enabled_dane() {
-    if [ ! -f $PF_OUT ] || ! grep -q '# DANE' $PF_OUT; then
-        echo off
-    else
+    if [ -f "$PF_OUT" ]                                             \
+        && grep -q 'smtp_tls_security_level=dane' "$PF_OUT"         \
+        && grep -q 'smtp_dns_support_level=dnssec' "$PF_OUT"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether sender rewrite is enabled
@@ -833,10 +1019,11 @@ check_enabled_dane() {
 # return values:
 # sender rewrite status
 check_enabled_sender_rewrite() {
-    if [ ! -f $PF_IN ] || ! grep -q '# Sender rewrite' $PF_IN; then
-        echo off
-    else
+    if [ -f "$PF_IN" ]                                                                              \
+        && grep -q "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps" "$PF_IN"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether inbound bounce notification is enabled
@@ -845,10 +1032,15 @@ check_enabled_sender_rewrite() {
 # return values:
 # inbound bounce notification status
 check_enabled_bounce_in() {
-    if [ ! -f $PF_IN ] || ! grep -q '# Inbound bounce notifications' $PF_IN; then
-        echo off
-    else
+    if [ -f "$PF_IN" ]                                                                                      \
+        && grep -q 'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce' "$PF_IN"   \
+        && grep -q "2bounce_notice_recipient=$EMAIL_BOUNCE" "$PF_IN"                                        \
+        && grep -q "bounce_notice_recipient=$EMAIL_BOUNCE" "$PF_IN"                                         \
+        && grep -q "delay_notice_recipient=$EMAIL_BOUNCE" "$PF_IN"                                          \
+        && grep -q "error_notice_recipient=$EMAIL_BOUNCE" "$PF_IN"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether outbound bounce notification is enabled
@@ -857,10 +1049,28 @@ check_enabled_bounce_in() {
 # return values:
 # outbound bounce notification status
 check_enabled_bounce_out() {
-    if [ ! -f $PF_OUT ] || ! grep -q '# Outbound bounce notifications' $PF_OUT; then
-        echo off
-    else
+    if [ -f "$PF_OUT" ]                                                                                     \
+        && grep -q 'notify_classes=bounce, delay, policy, protocol, resource, software, 2bounce' "$PF_OUT"  \
+        && grep -q "2bounce_notice_recipient=$EMAIL_BOUNCE" "$PF_OUT"                                       \
+        && grep -q "bounce_notice_recipient=$EMAIL_BOUNCE" "$PF_OUT"                                        \
+        && grep -q "delay_notice_recipient=$EMAIL_BOUNCE" "$PF_OUT"                                         \
+        && grep -q "error_notice_recipient=$EMAIL_BOUNCE" "$PF_OUT"; then
         echo on
+    else
+        echo off
+    fi
+}
+# check whether Office365 IP range whitelisting is enabled
+# parameters:
+# none
+# return values:
+# Office365 IP range whitelisting status
+check_enabled_office365() {
+    if [ -f "$PF_IN" ]                                                                              \
+        && grep -q "smtpd_relay_restrictions=check_client_access cidr:$MAP_OFFICE365, " "$PF_IN"; then
+        echo on
+    else
+        echo off
     fi
 }
 # check whether Postscreen is enabled
@@ -869,10 +1079,24 @@ check_enabled_bounce_out() {
 # return values:
 # Postscreen status
 check_enabled_postscreen() {
-    if [ ! -f $CONFIG_PF ] || ! grep -q '# Postscreen' $CONFIG_PF; then
-        echo off
-    else
+    if [ -f "$CONFIG_PF" ]                                                                                                                                              \
+        && grep -q "postconf -c $PF_INBOUND -M# '25/inet'" "$CONFIG_PF"                                                                                                 \
+        && grep -q "postconf -c $PF_INBOUND -Me '25/inet=25  inet n - n - 1 postscreen'" "$CONFIG_PF"                                                                   \
+        && grep -q "postconf -c $PF_INBOUND -Me 'smtpd/pass=smtpd      pass  -       -       n       -       -       smtpd'" "$CONFIG_PF"                               \
+        && grep -q "postconf -c $PF_INBOUND -Me 'dnsblog/unix=dnsblog    unix  -       -       n       -       0       dnsblog'" "$CONFIG_PF"                           \
+        && grep -q "postconf -c $PF_INBOUND -Me 'tlsproxy/unix=tlsproxy   unix  -       -       n       -       0       tlsproxy'" "$CONFIG_PF"                         \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_access_list=permit_mynetworks cidr:$WHITELIST_POSTSCREEN'" "$CONFIG_PF"                                      \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_blacklist_action=enforce'" "$CONFIG_PF"                                                                      \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_command_time_limit=\${stress?10}\${stress:300}s'" "$CONFIG_PF"                                               \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_action=enforce'" "$CONFIG_PF"                                                                          \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_sites=$(echo $BLACKLISTS | sed 's/\[/\\\[/g' | sed 's/\]/\\\]/g' | sed 's/\*/\\\*/g')'" "$CONFIG_PF"   \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_threshold=3'" "$CONFIG_PF"                                                                             \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_ttl=1h'" "$CONFIG_PF"                                                                                  \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_greet_action=enforce'" "$CONFIG_PF"                                                                          \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_greet_wait=\${stress?4}\${stress:15}s'" "$CONFIG_PF"; then
         echo on
+    else
+        echo off
     fi
 }
 # check whether Postscreen Deep inspection is enabled
@@ -881,44 +1105,17 @@ check_enabled_postscreen() {
 # return values:
 # Postscreen Deep inspection status
 check_enabled_postscreen_deep() {
-    if [ ! -f $CONFIG_PF ] || ! grep -q '# Deep Postscreen' $CONFIG_PF; then
-        echo off
-    else
+    if [ -f $CONFIG_PF ]                                                                                        \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_enable=yes'" "$CONFIG_PF"               \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_bare_newline_action=enforce'" "$CONFIG_PF"           \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_action=enforce'" "$CONFIG_PF"       \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_non_smtp_command_enable=yes'" "$CONFIG_PF"           \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_pipelining_enable=yes'" "$CONFIG_PF"                 \
+        && grep -q "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_whitelist_threshold=-1'" "$CONFIG_PF"; then
         echo on
+    else
+        echo off
     fi
-}
-# get list of features status
-# parameters:
-# none
-# return values:
-# list of features status
-check_features_enabled() {
-    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite bounce_in bounce_out postscreen postscreen_deep; do
-        check_enabled_$FEATURE
-    done
-}
-# apply selected postfix switches
-# parameters:
-# none
-# return values:
-# none
-activate_config() {
-    if [ -f $PF_IN ]; then
-        while read LINE; do
-            if echo "$LINE" | grep -q -v '^#'; then
-                postmulti -i postfix-inbound -x postconf -e "$LINE"
-            fi
-        done < $PF_IN
-    fi
-    if [ -f $PF_OUT ]; then
-        while read LINE; do
-            if echo "$LINE" | grep -q -v '^#'; then
-                postmulti -i postfix-outbound -x postconf -e "$LINE"
-            fi
-        done < $PF_OUT
-    fi
-    postfix stop &>/dev/null
-    postfix start &>/dev/null
 }
 ###################################################################################################
 # select features to enable in dialog checkbox
@@ -927,115 +1124,186 @@ activate_config() {
 # return values:
 # none
 dialog_feature_postfix() {
-    DIALOG_RSPAMD="Rspamd"
-    DIALOG_LETSENCRYPT="Let's-Encrypt-Cert"
-    DIALOG_TLS="Verbose-TLS"
-    DIALOG_ESMTP_FILTER="ESMTP-filter"
-    DIALOG_DANE="DANE"
-    DIALOG_SENDER_REWRITE="Sender-rewrite"
-    DIALOG_BOUNCE_IN="Inbound-Bounce"
-    DIALOG_BOUNCE_OUT="Outbound-Bounce"
-    DIALOG_POSTSCREEN="Postscreen"
-    DIALOG_POSTSCREEN_DEEP="Postscreen-Deep"
-    SETTINGS_START="############# CUSTOM SETTINGS FROM MENU.SH (DO NOT MANUALLY EDIT THIS BLOCK) ##############"
-    SETTINGS_END="########## END OF CUSTOM SETTINGS FROM MENU.SH (DO NOT MANUALLY EDIT THIS BLOCK) ##########"
-    FEATURES_ENABLED="$(check_features_enabled)"
-    EMAIL_BOUNCE_IN=""
-    EMAIL_BOUNCE_OUT=""
-    [ $(echo $FEATURES_ENABLED | awk '{print $7}') = "on" ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')"
-    [ $(echo $FEATURES_ENABLED | awk '{print $8}') = "on" ] && EMAIL_BOUNCE_OUT="$(grep '^bounce_notice_recipient=' $PF_OUT | awk -F\= '{print $2}' | tr -d \')"
+    DIALOG_RSPAMD='Rspamd'
+    DIALOG_LETSENCRYPT="Let's Encrypt Cert"
+    DIALOG_TLS='Verbose TLS'
+    DIALOG_ESMTP_FILTER='ESMTP-filter'
+    DIALOG_DANE='DANE'
+    DIALOG_SENDER_REWRITE='Sender rewrite'
+    DIALOG_BOUNCE_IN='Inbound-Bounce'
+    DIALOG_BOUNCE_OUT='Outbound-Bounce'
+    DIALOG_OFFICE365='Office365 IP-range whitelisting'
+    DIALOG_POSTSCREEN='Postscreen'
+    DIALOG_POSTSCREEN_DEEP='PS Deep'
+    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite bounce_in bounce_out office365 postscreen postscreen_deep; do
+        declare -x STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
+    done
+    [ "$STATUS_BOUNCE_IN" = 'on' ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_IN=''
+    [ "$STATUS_BOUNCE_OUT" = 'on' ] && EMAIL_BOUNCE_OUT="$(grep '^bounce_notice_recipient=' $PF_OUT | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_OUT=''
     ARRAY_ENABLE=()
-    check_installed_rspamd && ARRAY_ENABLE+=("$DIALOG_RSPAMD" "" $(echo $FEATURES_ENABLED | awk '{print $1}'))
-    check_installed_letsencrypt && ARRAY_ENABLE+=("$DIALOG_LETSENCRYPT" "" $(echo $FEATURES_ENABLED | awk '{print $2}'))
-    ARRAY_ENABLE+=("$DIALOG_TLS" "" $(echo $FEATURES_ENABLED | awk '{print $3}'))
-    ARRAY_ENABLE+=("$DIALOG_ESMTP_FILTER" "" $(echo $FEATURES_ENABLED | awk '{print $4}'))
-    check_installed_local_dns && ARRAY_ENABLE+=("$DIALOG_DANE" "" $(echo $FEATURES_ENABLED | awk '{print $5}'))
-    ARRAY_ENABLE+=("$DIALOG_SENDER_REWRITE" "" $(echo $FEATURES_ENABLED | awk '{print $6}'))
-    ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" "" $(echo $FEATURES_ENABLED | awk '{print $7}'))
-    ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" "" $(echo $FEATURES_ENABLED | awk '{print $8}'))
-    ARRAY_ENABLE+=("$DIALOG_POSTSCREEN" "" $(echo $FEATURES_ENABLED | awk '{print $9}'))
-    ARRAY_ENABLE+=("$DIALOG_POSTSCREEN_DEEP" "" $(echo $FEATURES_ENABLED | awk '{print $10}'))
+    check_installed_rspamd && ARRAY_ENABLE+=("$DIALOG_RSPAMD" '' "$STATUS_RSPAMD")
+    check_installed_letsencrypt && ARRAY_ENABLE+=("$DIALOG_LETSENCRYPT" '' "$STATUS_LETSENCRYPT")
+    ARRAY_ENABLE+=("$DIALOG_TLS" '' "$STATUS_TLS")
+    ARRAY_ENABLE+=("$DIALOG_ESMTP_FILTER" '' "$STATUS_ESMTP_FILTER")
+    check_installed_local_dns && ARRAY_ENABLE+=("$DIALOG_DANE" '' "$STATUS_DANE")
+    ARRAY_ENABLE+=("$DIALOG_SENDER_REWRITE" '' "$STATUS_SENDER_REWRITE")
+    ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" '' "$STATUS_BOUNCE_IN")
+    ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" '' "$STATUS_BOUNCE_OUT")
+    ARRAY_ENABLE+=("$DIALOG_OFFICE365" '' "$STATUS_OFFICE365")
+    ARRAY_ENABLE+=("$DIALOG_POSTSCREEN" '' "$STATUS_POSTSCREEN")
+    ARRAY_ENABLE+=("$DIALOG_POSTSCREEN_DEEP" '' "$STATUS_POSTSCREEN_DEEP")
     exec 3>&1
-    DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label "Back" --ok-label "Apply" --checklist "Choose Postfix features to enable" 0 0 0 "${ARRAY_ENABLE[@]}" 2>&1 1>&3)"
+    DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose Postfix features to enable' 0 0 0 "${ARRAY_ENABLE[@]}" 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
-        SETTINGS_IN=""
-        SETTINGS_OUT=""
-        [ -f $PF_IN ] && SETTINGS_IN="$(sed "/^$SETTINGS_START/,/^$SETTINGS_END/d;/^$SETTINGS_END/q" $PF_IN)"
-        [ -f $PF_OUT ] && SETTINGS_OUT="$(sed "/^$SETTINGS_START/,/^$SETTINGS_END/d;/^$SETTINGS_END/q" $PF_OUT)"
-        rm -f $PF_IN $PF_OUT
-        echo "$SETTINGS_START" >> $PF_IN
-        echo "$SETTINGS_START" >> $PF_OUT
-        echo '#!/bin/bash' > $CONFIG_PF
-        LIST_ENABLED=""
-        for FEATURE in $DIALOG_RET; do
-            case "$FEATURE" in
-                \"$DIALOG_RSPAMD\")
+        LIST_ENABLED=''
+        APPLY_NEEDED=''
+        POSTFIX_RESTART=''
+        if check_installed_rspamd; then
+            if echo "$DIALOG_RET" | grep -q "$DIALOG_RSPAMD"; then
+                if [ "$STATUS_RSPAMD" = 'off' ]; then
                     enable_rspamd
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"Rspamd";;
-                \"$DIALOG_LETSENCRYPT\")
-                    enable_letsencrypt
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"Let's Encrypt cert";;
-                \"$DIALOG_TLS\")
-                    enable_tls
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"Verbose TLS";;
-                \"$DIALOG_ESMTP_FILTER\")
-                    enable_esmtp_filter
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"ESMTP filter";;
-                \"$DIALOG_DANE\")
-                    enable_dane
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"DANE";;
-                \"$DIALOG_SENDER_REWRITE\")
-                    enable_sender_rewrite
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"Sender rewrite";;
-                \"$DIALOG_BOUNCE_IN\")
-                    enable_bounce_in "$EMAIL_BOUNCE_IN" && LIST_ENABLED="$LIST_ENABLED"$'\n'"Inbound-Bounce";;
-                \"$DIALOG_BOUNCE_OUT\")
-                    enable_bounce_out "$EMAIL_BOUNCE_OUT" && LIST_ENABLED="$LIST_ENABLED"$'\n'"Outbound-Bounce";;
-                \"$DIALOG_POSTSCREEN\")
-                    enable_postscreen
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"Postscreen";;
-                \"$DIALOG_POSTSCREEN_DEEP\")
-                    enable_postscreen_deep
-                    LIST_ENABLED="$LIST_ENABLED"$'\n'"Postscreen Deep";;
-            esac
-        done
-        if ! [[ $DIALOG_RET = *\"$DIALOG_RSPAMD\"* ]]; then
-            if grep -q 'learnspam: "| rspamc learn_spam"' $MAP_ALIASES || grep -q 'learnham: "| rspamc learn_ham"' $MAP_ALIASES; then
-                sed -i '/^learnspam: "| rspamc learn_spam"$/d' $MAP_ALIASES
-                sed -i '/^learnham: "| rspamc learn_ham"$/d' $MAP_ALIASES
-                newaliases
+                    POSTFIX_RESTART=1
+                fi
+                LIST_ENABLED+=$'\n''Rspamd'
+            else
+                if [ "$STATUS_RSPAMD" = 'on' ]; then
+                    disable_rspamd
+                    APPLY_NEEDED=1
+                fi
             fi
-            postmulti -i postfix-inbound -x postconf mydestination | grep -q "$(hostname)" && postmulti -i postfix-inbound -x postconf -e mydestination=
-            [ -f "$WHITELIST_IP" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_IP
+        fi
+        if check_installed_letsencrypt; then
+            if echo "$DIALOG_RET" | grep -q "$DIALOG_LETSENCRYPT"; then
+                if [ "$STATUS_LETSENCRYPT" = 'off' ]; then
+                    enable_letsencrypt
+                    POSTFIX_RESTART=1
+                fi
+                LIST_ENABLED+=$'\n'"Let's Encrypt cert"
+            else
+                if [ "$STATUS_LETSENCRYPT" = 'on' ]; then
+                    disable_letsencrypt
+                    APPLY_NEEDED=1
+                fi
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_TLS"; then
+            if [ "$STATUS_TLS" = 'off' ]; then
+                enable_tls
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Verbose TLS'
+        else
+            if [ "$STATUS_TLS" = 'on' ]; then
+                disable_tls
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_ESMTP_FILTER"; then
+            if [ "$STATUS_ESMTP_FILTER" = 'off' ]; then
+                enable_esmtp_filter
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''ESMTP-filter'
+        else
+            if [ "$STATUS_ESMTP_FILTER" = 'on' ]; then
+                disable_esmtp_filter
+                APPLY_NEEDED=1
+            fi
+        fi
+        if check_installed_local_dns; then
+            if echo "$DIALOG_RET" | grep -q "$DIALOG_DANE"; then
+                if [ "$STATUS_DANE" = 'off' ]; then
+                    enable_dane
+                    POSTFIX_RESTART=1
+                fi
+                LIST_ENABLED+=$'\n''DANE'
+            else
+                if [ "$STATUS_DANE" = 'on' ]; then
+                    disable_dane
+                    APPLY_NEEDED=1
+                fi
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_SENDER_REWRITE"; then
+            if [ "$STATUS_SENDER_REWRITE" = 'off' ]; then
+                enable_sender_rewrite
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Sender rewrite'
+        else
+            if [ "$STATUS_SENDER_REWRITE" = 'on' ]; then
+                disable_sender_rewrite
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_BOUNCE_IN"; then
+            if [ "$STATUS_BOUNCE_IN" = 'off' ]; then
+                enable_bounce_in "$EMAIL_BOUNCE_IN" && LIST_ENABLED="$LIST_ENABLED"$'\n''Inbound-Bounce' && POSTFIX_RESTART=1
+            fi
+        else
+            if [ "$STATUS_BOUNCE_IN" = 'on' ]; then
+                disable_bounce_in "$EMAIL_BOUNCE_IN"
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_BOUNCE_OUT"; then
+            if [ "$STATUS_BOUNCE_OUT" = 'off' ]; then
+                enable_bounce_out "$EMAIL_BOUNCE_OUT" && LIST_ENABLED="$LIST_ENABLED"$'\n''Outbound-Bounce' && POSTFIX_RESTART=1
+            fi
+        else
+            if [ "$STATUS_BOUNCE_OUT" = 'on' ]; then
+                disable_bounce_out "$EMAIL_BOUNCE_OUT"
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_OFFICE365"; then
+            if [ "$STATUS_OFFICE365" = 'off' ]; then
+                enable_office365
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Office365 IP-range whitelisting'
+        else
+            if [ "$STATUS_OFFICE365" = 'on' ]; then
+                disable_office365
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_POSTSCREEN"; then
+            if [ "$STATUS_POSTSCREEN" = 'off' ]; then
+                enable_postscreen
+                APPLY_NEEDED=1
+            fi
+            LIST_ENABLED+=$'\n''Postscreen'
+        else
+            if [ "$STATUS_POSTSCREEN" = 'on' ]; then
+                disable_postscreen
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_POSTSCREEN_DEEP"; then
+            if [ "$STATUS_POSTSCREEN_DEEP" = 'off' ]; then
+                enable_postscreen_deep
+                APPLY_NEEDED=1
+            fi
+            LIST_ENABLED+=$'\n''Postscreen-Deep'
+        else
+            if [ "$STATUS_POSTSCREEN_DEEP" = 'on' ]; then
+                disable_postscreen_deep
+                APPLY_NEEDED=1
+            fi
         fi
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED="$LIST_ENABLED"$'\n'"None"
-        echo "$SETTINGS_END" >> $PF_IN
-        [ -z "$SETTINGS_IN" ] || echo "$SETTINGS_IN" >> $PF_IN
-        echo "$SETTINGS_END" >> $PF_OUT
-        [ -z "$SETTINGS_OUT" ] || echo "$SETTINGS_OUT" >> $PF_OUT
         chown -R cs-admin:cs-adm /opt/cs-gateway/custom
-        FEATURES_ENABLED_NEW="$(check_features_enabled)"
-        for COUNTER in $(seq 1 8); do
-            if [ "$(echo $FEATURES_ENABLED | awk "{print $"$COUNTER"}")" = "on" ] &&
-                [ "$(echo $FEATURES_ENABLED_NEW | awk "{print $"$COUNTER"}")" = "off" ]; then
-                APPLY_NEEDED=1
-                break
-            fi
-        done
-        for COUNTER in $(seq 9 10); do
-            if ! [ "$(echo $FEATURES_ENABLED | awk "{print $"$COUNTER"}")" = "$(echo $FEATURES_ENABLED_NEW | awk "{print $"$COUNTER"}")" ]; then
-                APPLY_NEEDED=1
-                break
-            fi
-        done
-        if [ $APPLY_NEEDED = 1 ]; then
+        if [ "$APPLY_NEEDED" = 1 ]; then
             LIST_ENABLED="$LIST_ENABLED"$'\n\n'"IMPORTANT: Apply configuration in main menu to activate."
         else
-            LIST_ENABLED="$LIST_ENABLED"$'\n'" "
-            show_wait "$TITLE_MAIN"
-            activate_config
+            if [ "$POSTFIX_RESTART" = 1 ]; then
+                postfix stop &>/dev/null
+                postfix start &>/dev/null
+            fi
+            LIST_ENABLED="$LIST_ENABLED"$'\n\n'
         fi
         $DIALOG --backtitle "$TITLE_MAIN" --title "Enabled features" --clear --msgbox "$LIST_ENABLED" 0 0
     fi
@@ -1243,7 +1511,7 @@ export_address_list() {
     LIST_EXPORTED='Address lists exported:'$'\n'
     while read LINE; do
         if [ ! -z "$LINE" ]; then
-            NAME_LIST=$(echo "$LINE" | awk -F "type=" '{print $1}' | awk -F "name=\"" '{print $2}' | tr -d \" | sed 's/ /_/g' | sed 's/_$//g')
+            NAME_LIST=$(echo "$LINE" | awk 'match($0, /name="([^"]+)"/, a) {print a[1]}' | sed 's/ /_/g')
             get_addr "$LINE" > "$DIR_ADDRLIST/$NAME_LIST".lst
             LIST_EXPORTED+=$'\n'"$NAME_LIST.lst"
         fi
@@ -2038,6 +2306,55 @@ check_enabled_headers() {
         echo off
     fi
 }
+# check whether detailed history is enabled
+# parameters:
+# none
+# return values:
+# detailed history status
+check_enabled_history() {
+    if [ -f "$CONFIG_HISTORY" ] && grep -q 'servers = 127.0.0.1:6379;' "$CONFIG_HISTORY"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether Spamassassin rules is enabled
+# parameters:
+# none
+# return values:
+# Spamassassin rules status
+check_enabled_spamassassin() {
+    if [ -f "$CONFIG_SPAMASSASSIN" ] && grep -q "ruleset = \"$FILE_RULES\";" "$CONFIG_SPAMASSASSIN"     \
+        && grep -q 'alpha = 0.1;' "$CONFIG_SPAMASSASSIN" && [ -f "$CRON_RULES" ]  ; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether Pyzor is enabled
+# parameters:
+# none
+# return values:
+# Pyzor status
+check_enabled_pyzor() {
+    if [ -f "$CONFIG_LOCAL" ] && grep -q 'pyzor { }' "$CONFIG_LOCAL"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether Razor is enabled
+# parameters:
+# none
+# return values:
+# Razor status
+check_enabled_razor() {
+    if [ -f "$CONFIG_LOCAL" ] && grep -q 'razor { }' "$CONFIG_LOCAL"; then
+        echo on
+    else
+        echo off
+    fi
+}
 # check whether automatic spamd updates is enabled
 # parameters:
 # none
@@ -2063,15 +2380,14 @@ enable_cluster() {
     IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
     HOSTNAME_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$2}")"
     CONFIG_REDIS='/etc/redis.conf'
-    CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
     sed -i 's/^bind 127.0.0.1/#bind 127.0.0.1/' "$CONFIG_REDIS"
     sed -i 's/^protected-mode yes/protected-mode no/' "$CONFIG_REDIS"
     if [ "$HOST_NAME" == "$(echo $LIST_PEER | awk '{print $1}' | awk -F, '{print $2}')" ]; then
-        echo 'write_servers = "127.0.0.1";' > "$CONFIG_LOCAL"
+        echo 'write_servers = "127.0.0.1";' > "$CONFIG_RSPAMD_REDIS"
     else
-        echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_LOCAL"
+        echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_RSPAMD_REDIS"
     fi
-    echo 'read_servers = "127.0.0.1";' >> "$CONFIG_LOCAL"
+    echo 'read_servers = "127.0.0.1";' >> "$CONFIG_RSPAMD_REDIS"
     echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
     echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
     echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
@@ -2099,10 +2415,10 @@ disable_cluster() {
     HOST_NAME="$(hostname -f)"
     IP_OTHER="$(echo $LIST_PEER | xargs -n 1 | awk -F, "\$2 != \"$HOST_NAME\" {print \$1}")"
     CONFIG_REDIS='/etc/redis.conf'
-    CONFIG_LOCAL='/etc/rspamd/local.d/redis.conf'
+    CONFIG_RSPAMD_REDIS='/etc/rspamd/local.d/redis.conf'
     sed -i 's/^#bind 127.0.0.1/bind 127.0.0.1/' "$CONFIG_REDIS"
     sed -i 's/^protected-mode no/protected-mode yes/' "$CONFIG_REDIS"
-    rm -f "$CONFIG_LOCAL" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
+    rm -f "$CONFIG_RSPAMD_REDIS" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
     sed -i '/bind_socket = "\*:11334";/d' /etc/rspamd/local.d/worker-controller.inc
     sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
     iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
@@ -2117,23 +2433,23 @@ disable_cluster() {
 # none
 enable_sender() {
     PACKED_SCRIPT='
-    H4sIAFh3rFwAA7VV73PaRhD9bP0VG5lGkh1xhpl+aAzEDD9iZgB7MGk+AKM50CFuLJ3U0xFK4/zv
-    vZPOICgkbafVDAPa1b63791quXyD5pShOU5XhnEJKWE+4d5mRQUJaSrK6Qp+rZR/Lt8YlzLdipMt
-    p8FKgL1woHpT+QWGRLRiBp+YIJyRVURYOiccizUL4GM0v38HjIhFzFz5SdehoCwoL+Iog2uuxSrm
-    72GA+QLalPBnyQ92VPb177uTtY5htHsjr9luj/q9p3HdQiJK0HjwiH2fkzRVjVuG0W8+jb3Ww7Db
-    +ygf+YI5WqRugAXZ4C3ySRLGW9mtSFGIU9FMkpASX0pZ0mAt+6cxK/8ehRLn831v3FFEXvth0OwN
-    NVhI54inCY58tLPL0/75cYQpswql3dHD4G8ULnkcSUqpZU+mxb1iqpxG0xldFBDhKQc8gechAduB
-    r8bFBNwlmKWCFybM4O1bWGBxHH+BgJME3BjcR7DsD7X6tNbMLe3LHscKdtpwylf2B5mZohM5y/hW
-    aEQp030cNWeWKooPb57B7YJVQLLA+rqMOdi0XrkFWqvbw+51xUHVW7i+pg4knDIBJZteVZ1vB3Sa
-    SY1F3SzZZLGKz/D8Mw5Zv1gLcH2YNpSb1UKgpgIVx8yM/kPSKXbl8MsL6AayiOozevYpBzeRseL4
-    moacAmkJJ9iHfm/YuQU/Ni7oEibwJgdVUQl6C2JFmHFxMWwOOl42+juZ+SM7pabYJqRuSp1aSyXT
-    8ZplOCL1qVnIV7O84JkqBZQSH6wUAfJQYO3vvRKS945sYmf7K3njSBgq7fosh6mQHi2p4ceMQA1q
-    9sGQyDeaR/mk7kff1Hdq2E3DUAe2AwTK5PmEKRwwOpl1IC/pXmbMvoXddP8G1mTzeTZZ3c8mtDeb
-    iPFsQjqzSdjP79OnLGZpt0FfWbF1dWedV7n3/+7Q2EbjUNghqPvlh7g7gNwLVaq9NIzssafWqPc4
-    VmMvNzlRxwulGzmWhn7/j3eYXgLqUF0KJpKbX2AuIMIMBzI432rrcmD0Tj4hN9TZvG+eIvkre9b/
-    /8utx6XdHHe81qfRqDPMfPHl4ofrn7rKlPyd+QEv2OtEFflyxgpYjj6Ns2KLA5wLjbk4ip9BeO3r
-    O2rP1v7HonIXC5KKJ7cXlEdP1v4bMfrsZOWGgZf/Sb7X3yen+ESxWiR8ebxkv7NZ/gQdxUpfAwkA
-    AA==
+    H4sIADUMr1wAA7VVXXPiNhR9jn/FXYeu7SRGgYfOdANsGD42zADJELb74FCPwAJrYsteWSxNN/vf
+    K9kKMRR2207rGQYs6Z5zz9GROH2D5pShOc5CwziFjLCAcH8TUkEimolqFsKvterP1UvjVE53kvSJ
+    01UowF44UL+s/QJjIjoJg49MEM5IGBOWzQnHYs1W8CGe31wAI2KRMFd+snUkKFtVF0mcw7XXIkz4
+    OxhhvoAuJfxR8oMdVwP9+/pgrWMY3cHEb3e7k+Hgftq0kIhTNB3d4SDgJMtU45ZhDNv3U79zO+4P
+    PsglXzBHi8xdYUE2+AkFJI2SJ9mtyFCEM9FO04iSQEpZ0tVa9k8TVv09jiTOp5vBtKeI/O7tqD0Y
+    a7CIzhHPUhwHaGuXr/0LkhhTZpVK+5Pb0d8oXPIklpRSyyuZFveCqeY0mp7RRSsifOWAL/A8ImA7
+    8NU48cBdglkpeWHCDN6+hQUW++PPsOIkBTcB9w4s+32j+dBoF5YOZY9TBfvQcqpn9ns584AOzFnG
+    t1IjSpnuY685s1JTfHjzCG4frBKSBdbXZcLBps3aFdBG0x73z2sOql/B+Tl1IOWUCajY9KzufNuh
+    00wqFk2zYpNFmBzh+Wccsn6xFuAG8NBSbtZLAw01UHPM3Og/JJ1iVw4/P4NuIB9RfcaPAeXgpnKs
+    HF/TkCmQlnCCAxgOxr0rCBLjhC7BgzcFqBqVoFcgQsKMk5Nxe9Tz8+hvZRZLCqVWjMUitCuXF4AY
+    jknTtL3fzNm5Y6ILwNKkQh/2arNcXUYCsDIEyEcry5H4W0dfcFt7PaPKtoVqlAkpf0mNIGEEGtCw
+    d/ZfHlYeFyF8TbWp31SOTcNQe7EFBMqk9VEGO4xO7grIRxqTa35tYRvcz2B5m08zL7yZeXQw88R0
+    5pHezIuGxXt2n49Z2kjQT15snV1bx1W+huhaZkfnoy7da7V2he2Cul9+iLsFKLxQpdpLw8iX3Xcm
+    g7upSrS8pInaT6hcysQZ+mjvX0/6fKtNdSmYSF7qAnMBMWZ4JQfnT9q6AhhdyBXy8jk6H5iHSP7K
+    nvf//3LruHTb057f+TiZ9Ma5L4G80+H8p74ypTgOP+AFe52qokBmrITl6N04KrYc4EJoIknc9d7U
+    EZCX1r4j+Gjtf6yrMLKkqrx5O5qKiYPl/0aP3kFZuWHgF/+C7/T3wSwfKFbXCV/u36LfuV/+BNba
+    ePbkCAAA
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
@@ -2217,6 +2533,87 @@ enable_headers() {
 disable_headers() {
     sed -i '/extended_spam_headers = true;/d' "$CONFIG_HEADERS"
 }
+# enable detailed history
+# parameters:
+# none
+# return values:
+# none
+enable_history() {
+    echo 'servers = 127.0.0.1:6379;' >> "$CONFIG_HISTORY"
+}
+# disable detailed history
+# parameters:
+# none
+# return values:
+# none
+disable_history() {
+    sed -i '/servers = 127.0.0.1:6379;/d' "$CONFIG_HISTORY"
+}
+# enable Spamassassin rules
+# parameters:
+# none
+# return values:
+# none
+enable_spamassassin() {
+    echo "ruleset = \"$FILE_RULES\";" >> "$CONFIG_SPAMASSASSIN"
+    echo 'alpha = 0.1;' >> "$CONFIG_SPAMASSASSIN"
+    PACKED_SCRIPT='
+    H4sIAH1Hr1wAA42SYY/SQBCGv++vmCsXC2p3OfSLZ7xIAJWEAwPe+cGYS+kOdHPtbrM7BST+eLcF
+    8RpMtOmm3c68M+883daFWCotlrFLGWtBWciY8MGWGTruUri/4l3eZS0fGpjih1XrlKCddKDXvXoD
+    U6SB0XCnCa3GNEftlmhjKvUaPubLTy9BIyVGR365MiOl1zwxeV2uX1Jq7DXcxjaBoUL76FBDO+fy
+    +P7+r9oOY8Px/GF+Nxkt3oWC8kJ8uf1c+w3Zh/FkdAp5tbCuiHMpMpPEGZei2sXO+VtpftSw+9F8
+    MZ5Nj7rgsi3VGmhH0OOv+Sve0KSodOZX5MqiMJa4RHjh/BwEP4EsRBLCIOwEjKkVfINoD8Flo34A
+    398CpagZ+AuT1EA4iLU2BBI9xVxphEUfanOwQeuU0eEheacIrthKscOcw9nX6WTWH3rLJyKi2Y3T
+    en/wclG5WXk3DWnTTf4olR+hgCcFgzpi80r8pM3z+nNS2gyiyKkMNUGQEhXXQmy3239CO/MZW+6t
+    +mKmpKKkM6Osbvifg5yjNVudmVieyIZ/8iqqvXpbka2e3gxEgwYFiHb786YHCDE1yPBkBTe/U48M
+    60SHdqMShMOZBIvONyJ4diMkboQus6z6t78AcxrqB5ADAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_RULES
+    chmod 700 $CRON_RULES
+    $CRON_RULES
+}
+# disable Spamassassin rules
+# parameters:
+# none
+# return values:
+# none
+disable_spamassassin() {
+    sed -i "/$(echo "$FILE_RULES" | sed 's/\//\\\//g')/d" "$CONFIG_SPAMASSASSIN"
+    sed -i '/alpha = 0.1;/d' "$CONFIG_SPAMASSASSIN"
+    rm -f $CRON_RULES
+}
+# enable Pyzor
+# parameters:
+# none
+# return values:
+# none
+enable_pyzor() {
+    echo 'pyzor { }' >> "$CONFIG_LOCAL"
+}
+# disable Pyzor
+# parameters:
+# none
+# return values:
+# none
+disable_pyzor() {
+    sed -i '/pyzor { }/d' "$CONFIG_LOCAL"
+}
+# enable Razor
+# parameters:
+# none
+# return values:
+# none
+enable_razor() {
+    echo 'razor { }' >> "$CONFIG_LOCAL"
+}
+# disable Razor
+# parameters:
+# none
+# return values:
+# none
+disable_razor() {
+    sed -i '/razor { }/d' "$CONFIG_LOCAL"
+}
 # enable automatic spamd updates
 # parameters:
 # none
@@ -2224,17 +2621,40 @@ disable_headers() {
 # none
 enable_update() {
     PACKED_SCRIPT='
-    H4sIADZwrFwAA3VTYW/aMBT8nl/x6iIC6pIA0j6sExuIshapUATdpIkyFJIHsYjtyHZa2Lr/PpME
-    UWhmOYqj3Ht3Pp8vL7wl5d7SV5FlXUKahL7GhVSJz0JXRfCj6TbchnVp/vVEspN0HWmoBXVoNZqf
-    YIS6Jzh85xolx4ghV0uUvk75Gm7Z8u4DcNSB4I55VBprytduIFjWrpvqSMhrGPoygBuKcqOQQ425
-    YbHulNbWLetx0h1Nxw+Tx8WwO27bnoF5iVB6RbeOSPVSpDz0tPS5SoTULvMT27L6w+7gfjHp9wbj
-    QX/02LbTF+ykSjCG0g3RIHYpgyDCYOPkLkDuAlS/eCE+ezyNY4uuYAak8pXARRsaMP8MOkJugRn7
-    8qLQ2ZXV7kHH+vPy/Rj2p9PubX+RaW2TSd5DpUGASq1Mj13BEIIW8IxSUeO+XantuWOq9IH2FdYS
-    k+OX/7IB+08iKddQaf216zbJSDFW+B92uy+lkDmfsb7oZWfoFc1eNw8GOXrjKanUMIiE2eCZ2ySX
-    4HwjHXIqJNdRoO+7P9t2TjEDZ2X6nBw1gTlUq2/BhjDbKPlVORcDBE6rS2yAgyywZ09PZs7ndpk8
-    I+a3EXMkLlUS0jVcKZNpDVdchFwpDIBt4b20V1B7lMOlWWqfxuA0y06JHDPzXsBZdnLjez7nQkOI
-    5kIyyhHYvrvE2N+RI3RLNTTfB6A4u5McEKMr6+EoILM8kcX9mMM51JmCYjppv1V63fpofkio1CJz
-    RbnPsN45rsEJ6yVxOaTMzH+87IwsoQQAAA==
+    H4sIAKtGr1wAA3VWaZOiWBb9nr/itZ3TWRVMJqCA0hPZU8gmIoKySnVNBTvIJpuK3fPfh8rMMmvJ
+    ITDiIfeee7jvvjjn119gNylg12nim5tfQXfwnTb4XDcHJ/cfmhgY6AP6gNz8Oryjy0NfJ1Hcgnfe
+    ezBGUBKsg5YuC6AXbVAXQZwHReMGtdN2RQT43F38ExRB65XF/fBruqxNiujBK/MnOKpr47L+HUhO
+    7QEmCeq0CQrwLn/wX9Yf3sx9f3Ojbam1qshb7bNEKY938BAGH8qmDZPzfdm1btkVPtzWTtEcyrp9
+    yJ3D3c0NK1HC6vOWpQVFYNfa4113Cj50TZnnQf3gB0NE3+XAiwMvvX/uAnjuAvjtD9gPjnDRZdlN
+    EoKPYHT77xH45REg4NO/QBsHxQ0Yri/pL4n3/Vu5X4Je839M/3IpFC2yzGeV3grKwPD6/wJrBIpf
+    8zV6oigMNV0TdtQ5A4UKZujjNdfrBa86R0SrirLyPUw2NjQtJb7WIUveatZcY6/81j+UOANfQcNa
+    nlpFsxbFEuYXxzx3/cJufGQSqaua2mN9l2ILcz7jx4g6Y/lGirCZ3WYmNfe27LlPhIZbdJ1ZLinH
+    voJu+S1DE6FGeHSImShMK2gcYs4kP3MEf1GInDZZC+FIR1N0zYuZXONViFMOlsrO4hpjc8fzjoIo
+    THG1vYKOEZpAbUJC6yWFMcayvAhWlsqYKxTbxRoqxFnFhgiKeNu0rXNGrSPDUQvUYBf5Yi013M7I
+    zzV9jvpxLF1BZc5rYmld5ycF4SrYlNSJ6tIZCYXMdGlchONyaabCQV4yE4eZiWFHU24r7mluzfMW
+    Y7Drenqmy0SgiHH1TU8PanhW+bDWT9UCbZuTtmdLRFwkktmsVrsZ5u225FJQzztNlZokSwyqSNDd
+    eUkQWu2LQoflG8NOqWL2yjThOt7YtFmkVas01VX90pbIXr5EkhMa/TbA4DN3KhyqXlpufZQMi5/t
+    LkfM1twpEk+9jpSotqKO8MlLl1fQdA7Z0UJZILqFTEQm1agxxNWxw6qmG25N0aIC24KdGYJYbGJu
+    QhzB7UIrZJupIX/hkfDl5Eya8xEqpc0V9LKDJifG2kDjFCPc7MJOA3WS4jw5Xq/2koURIQsRO0E2
+    xcoh5A1iNU1OZhqMc0eqP1mJU26IC+EXM/kiXEHXuRwtiF3kryau42DdXhPQvrIFGraDk57Myo6y
+    sFVRzaQ8CJbiRZzQxnFfFsuyDKOpryyUOFvZGz1yoeYKOjnreB+ze2y/EAMSC30/qjSdrE+0p3gi
+    ZrO1KhkQZSvlmew3FeNnWMpbW9cbL6yNG7rRpTZNe7rSiSS7gmISTPf+eHtcrRBJlBQvb8x9mzN0
+    tyRMBUfWVFzAGM5w5DQ6LYTZDF10i46pcTaaT2v/iENwELooFkJH8woK7dV6QQQXxNqbx1O7IKdK
+    YKsT8pgKss1VJr9PTbkO2PGBp+pghy3FVTo7hTax0feIW3IYk8bmNC57S0iuoGbNkzZ0bM8mTNEq
+    KuRYPNZTb1lBh4lN5jzCCdRud+rLBedJxxMW8XOlyTq6Skm9dYipx67PKLHNij15uIJ24aFP9TGb
+    nIotqgvZUW4dL3RcWNRhnourCU9X0HLTz9Jot6WLzrH3Y7fXZS5VW5cTBJm2fHsbdjE8ia+gjOgw
+    0rwPTQNH5L4PVj4aSBh+nmzOlQjrZkPaQiMgxJkY73WxqKXJFlvP44N7qkiH2oq4Qe2OcxzvzSl6
+    BY1o15ErfzvLFF7TdM0ONbHTJBcXyUrQL/TYh8J5NeaiFaeNQxe3ItuQjVW45NYHxVXqqdYrtZoZ
+    eZA5V9CpUcHE4ewmSsaw5FTAeHmTSkF0EnO2PZPKKtvSEG/NfYuJN9kOWTM7ZneGBTxv85bDLov5
+    DEJlBHNz5HX3yfHR5Ax52L/uYpC8irfBHg4d8WhW5hGCObfjYt9fkeluP93Qp0jyrCg+0jWOk9k5
+    vUgr3F1Z53a/dp3gChrMoP0yxLNZM41NPVBxGULGOMrhLif5dU0V3ni+DduVN40NJ5/5p0rZQVuY
+    71ah01INRVGPj1ewV5U61EnRhmD0j2YEbr+TMvA3GAxGQGDg3h/WUVdckgP4Azwpd1Ik7YMPPwvm
+    zRVNYlWV4tnPT7r9ONo+62nTeV7QNOGgp/2L2vqgLcExqJtkcCJ3t+++6HCWNO1XCR7q1cHh9ck5
+    peDuryey4Hb837v3d6OnokHWBP+n+h1b12X9XG+wIS9Yz18ePp8qRh4i19/4i9Htu8CLy0Hsf3Ae
+    o2cK99zow+h7Is88XqJX1O7x7rnER3A/tPX2O9szAp/Ab799GzwUfPrQ0X9ufyQDhg35LvuNNoCv
+    tMDdxz//HO5Pn+7eojeQuQxkXgu/ycRPIgA1g79rAVSUftE0gQfyM/iZ2t+g+RJ1X9TDsnWSDNyj
+    b+3S6NU//UzgBx/13HjaKYqyBX4wmNM8KQKQf0GvhzPbj15Dz0kL0J8H4GXvvpuD0cDrCeO+AaOP
+    zxP54hU/gR9D71XQ5O3h8Vumv4/x4UUNbt/Fg10tnDx4/+F1PRyO92+My9cpG+7/AcPs6XetCwAA
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_UPDATE
     chmod 700 $CRON_UPDATE
@@ -2246,6 +2666,162 @@ enable_update() {
 # none
 disable_update() {
     rm -f $CRON_UPDATE
+}
+# check whether Pyzor is installed
+# parameters:
+# none
+# return values:
+# error code - 0 for installed, 1 for not installed
+check_installed_pyzor() {
+    which pyzor &>/dev/null
+    echo $?
+}
+# install Pyzor plugin
+# parameters:
+# none
+# return values:
+# none
+install_pyzor() {
+    if check_installed_pyzor; then
+        confirm_reinstall 'Pyzor' || return
+    fi
+
+    clear
+    yum install -y python34-setuptools python34-devel
+    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
+    pip3 install pyzor
+    PACKED_SCRIPT='
+    H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
+    95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
+    93eH37LB6MM2lsXKykh5+/nLzftaKXdGE6MjSqRY59kiA7PiRbFCZXA99rzzc3YFa14WhmkwJheZ
+    ruDJOlttpDbEO529CCP8m/od5U4qUs5fzp8Sz71/+9FfMH+GVhPmX8oU7DGK6Pjp7fmlLIUhUeT0
+    1Wn+lI4fNgp46s7Pps9JdJXzjAQ3b/yHOgTrUiQml4IlG0ju3MMDw/Xd2GP4GxrFASg1YSk33BnQ
+    L18zlDKzAdHIHJjSEaLul6VEFygbgCFAmVQLdqbRL/we93AKTKlaKhCpN6BMIS6zbXA9YY53RA4R
+    3QglGGKFYQ+sk5iRFktv2XGlbfFgQYXuEIwHNvLOeoVGzmBh/60q3uEFnTAIaRD8T5GwEbD8SIVP
+    1jspNPxHSAY+E0PrMFWljH9AYh49br/JDRS5NpCivZGi3MYYA8J/bavq+xCmgMrzGKYBDLOUi7Vs
+    3puQ1fJMs32xtG+sCSddjzok2Ejv+B20Ws0sB+OsyI0pgMW5Cfvmhxgo+ApGGs1i7D9M9Z4f0GWs
+    lD5ZLlDIE8s56dLEJd5hWAEcC9VscjTVTMst4LfI2hs7EWk+z7uPGaZoD3m2oQ6PvG7RNOCLJZtG
+    0ePqaXDTcN6WQKFhAJ7NT2JnJ8GnsdEp6JRxkfbrCt94gi8KZ8dLGYkro4tjBFRKixzbRJkV1h7O
+    2KA7sCcVeMJcg4ZrqbbcBHXtpbb20r/W3vjRyGmcq3vATa8lu29M/cvXry7ffBN+W0PWTepAXBEG
+    BLag0z3UXEdnmI/c6kDDwG2kqhVwX4XVvcF97wrqREI2wmq51HumVVSLpd4xrUJvSpPKvSAqVUKr
+    oNFWLU/oMmEUipgndHcSu0eNPRslTJ3dj03SKkFoveqlsrMIG4sm3F2o9fsRtHpNY9HPVH87K8go
+    t2rl6qQTQcG3gCy9+jn6zHYvTrwn5rAj1Kg2GKEsU7Kk0TvSeSY4zmnQoyY02C3dpLuR6OMY3Mq0
+    xBlGG8P5ijgqzWsXzz/X6mWbBAkAAA==
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
+    if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^pyzor { }$' "$CONFIG_LOCAL"; then
+        echo 'pyzor { }' >> "$CONFIG_LOCAL"
+    fi
+    groupadd pyzorsocket
+    useradd -g pyzorsocket pyzorsocket
+    mkdir -p /opt/pyzorsocket/bin/
+    PACKED_SCRIPT='
+    H4sIAGtBq1wAA3VUTY/TMBC951eYcHFEcYW4VeoBuistQitVtDdAloknrVvHDnba3YL474w/mmZL
+    8SX2eN6b8byZvH41PXg3/aHMtDv1W2veF6rtrOuJcJtOOA/nM7RCaRZN7spmtapPZ5v1593OW1M0
+    zrbE23oPPQKP4Ei+XS+Wq2iYkPXWgZDKbB7V8yczIasez+0X+HkA3z8IIzWGPLN2p1/WsVorMP1L
+    m1Qb9C+KotbCe/IST2+RVrOiILgkNGQbTdSDbtBM8qpbSeYkGJlrlAYWMtXKAK2YhNpK3HydvX33
+    fUCoJoHmpFw83C8+lxeysCJVisXrLdR7Wg33oD3c8H5yqgceqkl/l+CcdeWMlAezN/bJkNq2LdKV
+    f6rrt2T+qxclBfFRY0HZx1MPfhn3NOk5H4vLVo/r5SXR1m+QIEPjh15KlPOIuURFgutIIHYnenEX
+    txgMqSp2FPoAl5qHtAdQUpot4gernh6VqEah/qnUfkaOpLGO7Ce4USbRMnRoPa3G1RqhAsuEyFG5
+    dphIuGLy0Haeyoq8IeU3U14Fjr0RieiOgUmNUQ29mDqdXjf6MAM5YIe+iAlJYfENzeYwipjGeSLZ
+    B7c5tFiNrJcEXzvV9cqaeXn/3FkPqXbEGiLy8JXVQMWElFxkDlriyZUTsgXdzeMBMOHeEq1QIIMc
+    /4eG4RugcRJv43zOPvVKIEAJkgAhIN7SYAvs+DtQSB2PgbHKft4d0S3XMfldzXJ0693poh1iWPzp
+    cOwDCMDk1CgjtL7l6HitsXwhuQIHmXMjWuA8TjPnQRPO80AngYq/7vjOR0EFAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
+    chown pyzorsocket:pyzorsocket /opt/pyzorsocket/bin/pyzorsocket.py
+    chmod 0700 /opt/pyzorsocket/bin/pyzorsocket.py
+    PACKED_SCRIPT='
+    H4sIAIFHp1wAA5VSYU/qMBT9bH/FdSwoL9nKNETFkBdj5ot5vGAGmqgxppTCGqDdazvfQ/G/uxU2
+    B+oHt0/33HPO7bltbRcPucBDomNUQzVIFs9SaUmnzNiaxlMqxZhP2uDBcQuCVgaOmKaKJ4ZL0d5U
+    QKIkZVoLMmebrazXl6miDMapoLkUZnyoiFr4yAfMDMVccOOPcNHXCEXh4Oas22miq6j3q7NX8dtD
+    3d7574vLbthx8BNReJbBWKdDvdDYzekOurq960X9jBYOHq/7YbRlgLQhyuw34AXB+mM0luAJcPp5
+    i4sJWKs2OCVlRNhcCv7MwEuz7tYIwDIxuDLGbrdS+8kCgoMjv5n9AbROWoel8zqs+7NE7sFdgeCx
+    v9CEB6jXwciUxuAW8TfOXhaKmVSJQo5e87Ay+SJrnBqbdST/iffAO1M+m+XXuYLAG4TRn0L83UOr
+    OXjj7x+aEs3AcQMHuLA0e2WNUmHLsjo9XXNkUqXI5CODmFQ3tmHFPthXtJ/O+tHY3Kdzrckke/mr
+    lb1YzTK3Wa5mLtczXt8fFPvPDQRVY6YJRRYuVvEGr04i2KYDAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
+    chmod +x /etc/init.d/pyzorsocket
+    chkconfig --add pyzorsocket
+    chkconfig pyzorsocket on
+    service pyzorsocket start
+    get_keypress
+}
+# check whether Razor is installed
+# parameters:
+# none
+# return values:
+# error code - 0 for installed, 1 for not installed
+check_installed_razor() {
+    which razor-check &>/dev/null
+    echo $?
+}
+# install Razor plugin
+# parameters:
+# none
+# return values:
+# none
+install_razor() {
+    if check_installed_razor; then
+        confirm_reinstall 'Razor' || return
+    fi
+
+    clear
+    yum install -y perl-Razor-Agent
+    PACKED_SCRIPT='
+    H4sIAAdCq1wAA4VUTWvbQBA9R79iEQRLoJg4lxJDDiUtFAou5FgKYiWNPvBq191d0bih/70zu6uv
+    2KXywWLmzZuZNzMSquSCCdU0oNkT0/Bz6DSwWJsT76vcO+JIOJgtT1cwaI2jgDigP9b8t5pizLkv
+    lMidjZwvH79/exmd6mQNMXqiUsm6a/YN2JwLkaMzOaRRdHfHPkHNB2GZAWs72ZgQXtZN3ipjiXf3
+    8GF7j79dvHCelCbn4+7xYaywHmRpOyVZ2UJ59HUllptjGjF83oOKBLTOWMUt9wB6upqhldkW5GTz
+    waTWFn2vjjJDLVAswArRpvSe3Zo4o/d0FafBDnqmAllFMyXVo8GQ8hZ71dh/clGOB6AMpGR8WRlV
+    s++kAW1zxKKWyXIwGdtt79NrvVRQDE2fHDIWGnIJZigIA8v87dX0/yJrL7j+p+cgj1L9ki6hwn5Y
+    rVXPXBNGlUewQWPypxeK0v9izONwntjbBI2fv3x+/vpDxtlkcuLRVuKCWpA2Sb3vz8h1vTnk1mec
+    lq8O+3RovJZtyJu8rVLQgClyMobVHrd8doS1Hjd8dph2sBXJg1R6gCy6oU0JNwtLCmxfFLykpGUR
+    2kkjpw+O093lNMVg2Lp6VrNdHOCEmIRehrqKL0JDHxNiPaP1V0FD0xkLOvd7u9BO8h6QZbXP0Y09
+    n8i6GRvdoK3RaqA72piukRxvDszmuiTzt2HWZtzOMO9O1uo1iW8N61U1CGBSWeaLReIKd/DgBf0L
+    bFL70WMFAAA=
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
+    if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^razor { }$' "$CONFIG_LOCAL"; then
+        echo 'razor { }' >> "$CONFIG_LOCAL"
+    fi
+    groupadd razorsocket
+    useradd -g razorsocket razorsocket
+    mkdir -p /opt/razorsocket/bin/
+    PACKED_SCRIPT='
+    H4sIAHhCq1wAA31UUW/TMBB+Jr/CmIc6oktBvKBJfYBpaAhNqlh5GpPlJZfWm2MH29lWEP+ds+Ok
+    WdXhl9iXu+/O932+N68XnbOLW6kX7c5vjf6QyaY11hNhN62wDoYzNEKqIprsgc0oWe4Gm3HD7s4Z
+    Pexdd9taU4JzWW1NQ5wp78Ej1ANYknzWZ6uraJiT9daCqKTeXMqnr3pOrjyem+/wqwPnL4SuFBaR
+    ZaUSzpHnZnbMNz/NMoKrgppso4k5UDWaSVplU5ElCcbC1lJBEQpQUgPLiwpKU+Hm+vTk/c0YIes+
+    aEno2cX52Te6BwsrQvW5eLmF8p7l439QDo54P1rpgYe2sT8UrDWWnhLa6XttHjUpTdMgHP2bH94l
+    4R/cqKcKLzVlrvi88+BWcc964pZTFoury/VqX2jjNgiQQuOH7VuU6girRi/TgmZ04Zt2sb5cWfEb
+    y58T+kj3cOmKDGEL4bjzFilm+dShVAaTTKAtuE75wM0ooaIUSrFrOko3JjuJXQgpn9dwk2evpqQN
+    gEvy7hkHPQWR+77K29AqNnOtaGZzMvux/nLycZb/h8WXELYHACN9E8JD7JxUE/7u8M7hV1F1TetY
+    lZO3hP7UNHsx3V0BuldqPj6O/kWxwwc1vrWUsEVfjAlFoRo0S+YwBLCMYRYUn+yma0D7JKAKXGll
+    66XRS3r+1CJ1JDadGE1EeuSJ/4BRiKriImEwiqcgkS2odhkPyC3xhijpPGjEeDk0DIwxNE6P43Eu
+    Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
+    aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
+    chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
+    chmod 0700 /opt/razorsocket/bin/razorsocket.py
+    PACKED_SCRIPT='
+    H4sIAJxIq1wAA5VSXU/CMBR9tr/iOhYVk63MxKgYYoyZxojBDPRBY0wphTVAO9tORfG/uxU2B+qD
+    29M993z03ra2iftc4D7RMaqhGijyLpWWdMyMrWk8plIM+agJHhzuQ7CfgQOmqeKJ4VI0VxWQKEmZ
+    1oJM2Wor63VlqiiDYSpoLoUJ7yuiZj7yATNDMRfc+ANc9DVCUdi7O223Gugm6ly0tit+26jdObs6
+    v2yHLQe/EIUnGYx12tczjd2c7qDo9L4TdTNa2Hu67YbRmgHShiizU4cPBMuP0ViCJ8Dp5i0uRmCt
+    muCUlAFhUyn4OwMvBXc9ArBMDK7E2O1Waj+ZQbB34DeyP4Cj4GivdF4O656UyEMWYEHw2DM04BG2
+    tsDIlMbgFuOvnL0sFDOpEoUcfebDyuSPWePU2FkH8lV8D7wx5pNJfp0LCLxeGF0X4v8eWk3BG/7/
+    0JRoBo4bOMCFpdkrq5cKW5bV8fGSI5MqRSY/GcSkur4OK/bDvqL9NWu3vrpP51aTUfbyFyv7sJp5
+    bjNfZM6XGZ/fD4q9cQNB1ZhpQpGFi1V8AdB9kzCmAwAA
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
+    chmod +x /etc/init.d/razorsocket
+    chkconfig --add razorsocket
+    chkconfig razorsocket on
+    service razorsocket start
+    get_keypress
 }
 # reset Bayes spam database
 # parameters:
@@ -2272,14 +2848,14 @@ dialog_feature_rspamd() {
     DIALOG_REJECT='Disable rejecting'
     DIALOG_BAYES='Enable Bayes-learning'
     DIALOG_HEADERS='Enable detailed headers'
+    DIALOG_HISTORY='Enable detailed history'
+    DIALOG_SPAMASSASSIN='Enable Spamassassin rules'
+    DIALOG_PYZOR='Enable Pyzor'
+    DIALOG_RAZOR='Enable Razor'
     DIALOG_UPDATE='Enable automatic updates'
-    STATUS_CLUSTER="$(check_enabled_cluster)"
-    STATUS_SENDER="$(check_enabled_sender)"
-    STATUS_GREYLIST="$(check_enabled_greylist)"
-    STATUS_REJECT="$(check_enabled_reject)"
-    STATUS_BAYES="$(check_enabled_bayes)"
-    STATUS_HEADERS="$(check_enabled_headers)"
-    STATUS_UPDATE="$(check_enabled_update)"
+    for FEATURE in cluster sender greylist reject bayes headers history spamassassin pyzor razor update; do
+        declare -x STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
+    done
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
     ARRAY_RSPAMD=()
     [ "$NUM_PEERS" -gt 1 ] && ARRAY_RSPAMD+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
@@ -2288,6 +2864,10 @@ dialog_feature_rspamd() {
     ARRAY_RSPAMD+=("$DIALOG_REJECT" '' "$STATUS_REJECT")
     ARRAY_RSPAMD+=("$DIALOG_BAYES" '' "$STATUS_BAYES")
     ARRAY_RSPAMD+=("$DIALOG_HEADERS" '' "$STATUS_HEADERS")
+    ARRAY_RSPAMD+=("$DIALOG_HISTORY" '' "$STATUS_HISTORY")
+    ARRAY_RSPAMD+=("$DIALOG_SPAMASSASSIN" '' "$STATUS_SPAMASSASSIN")
+    check_installed_pyzor && ARRAY_RSPAMD+=("$DIALOG_PYZOR" '' "$STATUS_PYZOR")
+    check_installed_razor && ARRAY_RSPAMD+=("$DIALOG_RAZOR" '' "$STATUS_RAZOR")
     ARRAY_RSPAMD+=("$DIALOG_UPDATE" '' "$STATUS_UPDATE")
     exec 3>&1
     DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
@@ -2364,6 +2944,54 @@ dialog_feature_rspamd() {
                 RSPAMD_RESTART=1
             fi
         fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_HISTORY"; then
+            if [ "$STATUS_HISTORY" = 'off' ]; then
+                enable_history
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Detailed history'
+        else
+            if [ "$STATUS_HISTORY" = 'on' ]; then
+                disable_history
+                RSPAMD_RESTART=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_SPAMASSASSIN"; then
+            if [ "$STATUS_SPAMASSASSIN" = 'off' ]; then
+                enable_spamassassin
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Spamassassin rules'
+        else
+            if [ "$STATUS_SPAMASSASSIN" = 'on' ]; then
+                disable_spamassassin
+                RSPAMD_RESTART=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_PYZOR"; then
+            if [ "$STATUS_PYZOR" = 'off' ]; then
+                enable_pyzor
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Pyzor'
+        else
+            if [ "$STATUS_PYZOR" = 'on' ]; then
+                disable_pyzor
+                RSPAMD_RESTART=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_RAZOR"; then
+            if [ "$STATUS_RAZOR" = 'off' ]; then
+                enable_razor
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Razor'
+        else
+            if [ "$STATUS_RAZOR" = 'on' ]; then
+                disable_razor
+                RSPAMD_RESTART=1
+            fi
+        fi
         if echo "$DIALOG_RET" | grep -q "$DIALOG_UPDATE"; then
             [ "$STATUS_UPDATE" = 'off' ] && enable_update
             LIST_ENABLED+=$'\n''Automatic updates'
@@ -2381,9 +3009,13 @@ dialog_feature_rspamd() {
 # return values:
 # none
 dialog_config_rspamd() {
-    DIALOG_IP='Whitelist IP'
+    DIALOG_IP='Whitelist sender IP'
     DIALOG_DOMAIN='Whitelist sender domain'
     DIALOG_FROM='Whitelist sender from'
+    DIALOG_PYZOR='Install Pyzor plugin'
+    check_installed_pyzor && DIALOG_PYZOR+=' (installed)'
+    DIALOG_RAZOR='Install Razor plugin'
+    check_installed_razor && DIALOG_RAZOR+=' (installed)'
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_STATS='Rspamd stats'
     while true; do
@@ -2393,6 +3025,8 @@ dialog_config_rspamd() {
             "$DIALOG_IP" ''                                                                        \
             "$DIALOG_DOMAIN" ''                                                                    \
             "$DIALOG_FROM" ''                                                                      \
+            "$DIALOG_PYZOR" ''                                                                     \
+            "$DIALOG_RAZOR" ''                                                                     \
             "$DIALOG_BAYES" ''                                                                     \
             "$DIALOG_STATS" ''                                                                     \
             2>&1 1>&3)"
@@ -2406,6 +3040,10 @@ dialog_config_rspamd() {
                     "$TXT_EDITOR" "$WHITELIST_DOMAIN";;
                 "$DIALOG_FROM")
                     "$TXT_EDITOR" "$WHITELIST_FROM";;
+                "$DIALOG_PYZOR")
+                    install_pyzor;;
+                "$DIALOG_RAZOR")
+                    install_razor;;
                 "$DIALOG_BAYES")
                     reset_bayes;;
                 "$DIALOG_STATS")
@@ -2808,8 +3446,8 @@ apply_config() {
     if [ -f "$FILE_PASSWORD" ]; then
         SESSION_ID="$(curl -k -i -d "pass=$(cat $FILE_PASSWORD)&submitted=true&userid=admin" -X POST "$DOMAIN/Appliance/index.jsp" --silent | grep 'Set-Cookie: JSESSIONID=' | awk '{print $2}')"
         if [ ! -z "$SESSION_ID" ]; then
-            curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='applied by NetCon CS Config'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
-        	    --header "Cookie: $SESSION_ID" -X POST "$DOMAIN/Appliance/Deployer/StartDeployment.jsp"
+            curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='applied by $TITLE_MAIN'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
+        	    --header "Cookie: $SESSION_ID" -X POST "$DOMAIN/Appliance/Deployer/StartDeployment.jsp" &>/dev/null
             APPLY_NEEDED=0
         fi
     fi

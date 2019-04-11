@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sender_whitelist.sh V1.5.0
+# sender_whitelist.sh V1.6.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -32,7 +32,7 @@ get_addr () {
 mkdir -p "$DIR_ADDRLIST"
 while read LINE; do
 	if [ ! -z "$LINE" ]; then
-		NAME_LIST=$(echo "$LINE" | awk -F "type=" '{print $1}' | awk -F "name=\"" '{print $2}' | tr -d \" | sed 's/ /_/g' | sed 's/_$//g')
+		NAME_LIST=$(echo "$LINE" | awk 'match($0, /name="([^"]+)"/, a) {print a[1]}' | sed 's/ /_/g')
 		get_addr "$LINE" > "$DIR_ADDRLIST/$NAME_LIST.lst"
 	fi
 done < <(get_addr_list)
@@ -54,11 +54,11 @@ NAME_SCRIPT="$(basename $0)"
 DATE_CURRENT="$(date +%F)"
 
 echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_DOMAIN"
-[ -f "$TMP_DOMAIN" ] && sort "$TMP_DOMAIN" >> "$WHITELIST_DOMAIN"
+[ -f "$TMP_DOMAIN" ] && sort -u "$TMP_DOMAIN" >> "$WHITELIST_DOMAIN"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_DOMAIN"
 
 echo "# start managed by $NAME_SCRIPT (updated $DATE_CURRENT)" >> "$WHITELIST_FROM"
-[ -f "$TMP_FROM" ] && sort "$TMP_FROM" >> "$WHITELIST_FROM"
+[ -f "$TMP_FROM" ] && sort -u "$TMP_FROM" >> "$WHITELIST_FROM"
 echo "# end managed by $NAME_SCRIPT" >> "$WHITELIST_FROM"
 
 chown _rspamd:_rspamd "$WHITELIST_DOMAIN" "$WHITELIST_FROM"
