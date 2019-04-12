@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.23.0 for Clearswift SEG >= 4.8
+# menu.sh V1.24.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -8,16 +8,14 @@
 # Uwe Sommer (u.sommer@netcon-consulting.com)
 # Dr. Marc Dierksen (m.dierksen@netcon-consulting.com)
 ###################################################################################################
-# Config tool for missing features on Clearswift Secure E-Mail Gateway
+# Config tool for missing features on Clearswift Secure E-Mail Gateway.
 # These settings will ease many advanced configuration tasks and highly improve spam detection.
-# everything is in this single dialog file, which should be run as root!
+# Everything is in this single dialog file, which should be run as root.
 #
-# Features (26):
-#
-# Clearswift (13)
-# - Letsencrypt certificates via ACME installation and integration to SEG
-# - install latest vmware Tools from vmware Repo
-# - custom LDAP schedule for Clearswift SEG
+# Clearswift
+# - Letsencrypt certificates via ACME installation and integration
+# - install latest VMware Tools from VMware repo
+# - custom LDAP schedule
 # - easy extraction of address lists from last clearswift policy
 # - custom firewall rules for SSH access with CIDR support
 # - change Tomcat SSL certificate for web administration
@@ -25,44 +23,40 @@
 # - removed triple authentication for cs-admin when becoming root
 # - reconfigure local DNS Resolver without forwarders and DNSSec support
 # - editable DNS A record for mail.intern (mutiple IP destinations)
-# - apply configuration in bash to get all customisations work
+# - apply configuration in bash to activate customisations
 # - aliases for quick log access and menu config (pflogs, menu)
-# - sample custom command for "run external command" content rule
+# - sample custom commands for "run external command" content rule
+# - automatic mail queue cleanup
+# - automatic daily CS config backup via mail
+# - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
 #
-# Postfix settings (12)
-# - Postscreen weighted blacklists and Bot detection for Postfix
+# Postfix settings
+# - Postscreen weighted blacklists and bot detection for Postfix
 # - Postscreen deep protocol inspection (optional)
-# - postfix verbose TLS logging
+# - Postfix verbose TLS logging
 # - Postfix recipient verification via next transport hop
 # - DANE support for Postfix (outbound)
 # - outbound header rewriting (anonymising)
 # - Loadbalancing for Postfix transport rules (multi destination transport)
 # - custom individual outbound settings (override general main.cf options)
-# - postfix notifications for rejected, bounced or error mails
+# - Postfix notifications for rejected, bounced or error mails
 # - custom Postfix ESMTP settings (disable auth and DSN silently)
 # - advanced smtpd recipient restrictions and whitelists
-# - smtpd delay reject to identify senders of rejected messages
+# - smtpd late reject to identify senders of rejected messages
+# - Office365 IP-range whitelisting
 #
-# Addons (1)
-# - rspamd installation and milter integration
-# - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
-#
-# Todo:
-# - report based anomaly detection
-# - custom reports (via shell and cron)
-# - load (useful) Clearswift base policy
-#
-# Issues:
-# - dnssec seems to be disabled in Postfix compile code
+# Rspamd
+# - Rspamd installation and integration as milter
+# - Master-slave cluster setup
+# - feature toggles for greylisting, rejecting, Bayes-learning, detailed spam headers and detailed Rspamd history
+# - integration of Heinlein Spamassassin rules with automatic daily updates
+# - integration of Pyzor and Razor
+# - automatic Rspamd updates
 #
 # Changelog:
-# - added rspamd feature detailed history
-# - added rspamd feature Spamassassin rules
-# - added rspamd feature Pyzor
-# - added rspamd feature Razor
-# - updated sender whitelist management and rspamd update scripts
-# - moved Pyzor and Razor plugin install to 'Rspamd configs' submenu
-# - added postfix feature for Office365 IP range whitelisting
+# - for the spamassassin rules update script add 'Versicherung Spam'
+# - install Pyzor from repo instead of pip
+# - bugfixes
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2558,15 +2552,22 @@ enable_spamassassin() {
     echo "ruleset = \"$FILE_RULES\";" >> "$CONFIG_SPAMASSASSIN"
     echo 'alpha = 0.1;' >> "$CONFIG_SPAMASSASSIN"
     PACKED_SCRIPT='
-    H4sIAH1Hr1wAA42SYY/SQBCGv++vmCsXC2p3OfSLZ7xIAJWEAwPe+cGYS+kOdHPtbrM7BST+eLcF
-    8RpMtOmm3c68M+883daFWCotlrFLGWtBWciY8MGWGTruUri/4l3eZS0fGpjih1XrlKCddKDXvXoD
-    U6SB0XCnCa3GNEftlmhjKvUaPubLTy9BIyVGR365MiOl1zwxeV2uX1Jq7DXcxjaBoUL76FBDO+fy
-    +P7+r9oOY8Px/GF+Nxkt3oWC8kJ8uf1c+w3Zh/FkdAp5tbCuiHMpMpPEGZei2sXO+VtpftSw+9F8
-    MZ5Nj7rgsi3VGmhH0OOv+Sve0KSodOZX5MqiMJa4RHjh/BwEP4EsRBLCIOwEjKkVfINoD8Flo34A
-    398CpagZ+AuT1EA4iLU2BBI9xVxphEUfanOwQeuU0eEheacIrthKscOcw9nX6WTWH3rLJyKi2Y3T
-    en/wclG5WXk3DWnTTf4olR+hgCcFgzpi80r8pM3z+nNS2gyiyKkMNUGQEhXXQmy3239CO/MZW+6t
-    +mKmpKKkM6Osbvifg5yjNVudmVieyIZ/8iqqvXpbka2e3gxEgwYFiHb786YHCDE1yPBkBTe/U48M
-    60SHdqMShMOZBIvONyJ4diMkboQus6z6t78AcxrqB5ADAAA=
+    H4sIAFyJsFwAA41Ua5OiOBT9zq/I2L1r97oCvnW2pmsQUVF8NL7d2upCCJAWQiRBlJofv4g9PWP1
+    VO1SpCDJPeeee/K4+yTsEBZ2BnU57g5ExDIYfAkjD1KeumBZ4ku8yN2lU3JAziFyXAYezEdQFkst
+    MIZMDjBYYAZDDF0fYrqDocEi7ICev+v/CTBkZoCLaaORxxB2eDPwMzopYm4QfgYjIzRBB8FwTyEG
+    Dz5vvf1//SX2keM6qv6iLzRl9iUvMJ8I89E005vnuqqmvE+laCGkxPAtwQtMw+Mt4dIzKE1fhPk3
+    DLdU9Jk6Gb/hcvcPFnIAOzFQ5qt8hb/BuBBhL21FGhEShIy3ICjQtA4GvgEWgqIF8rn8Y47jkA3+
+    BsUE5O5v+HPgn78AcyHmQPpA0w1AXjYwDhiwYOqijzAEMwlk4sARhhQFOH8NPiEGSpyNuGudnclq
+    rE2kTir53RHhNhvPnOSq5dNFjZ2quYHeqvH3FkpLIOAnwlw2E/oX8E9p/siGzSj0QLFIkQcxAzmX
+    MfJZEOI4/k/TPug0Qj6VmpIFESMR+yCUyxL+z0I+WhvE2AsM693Z/I+4i6vlrHtx9vJNxYCifOMC
+    KJ6Sj0mvJhjsxhnetMHT99A3D7PAqSQPlc7LTNbV6fzLVUG/SlVJGpRpN5akymomrg6dUXvWa1TK
+    w+dhT+w2a1ZjpcarQelVmxPDksVdV57rQdUoL9bDGdXXW7FwGrf8oZYRas8Ja43ag5jYTRWaQm9T
+    UdtofiaSTPRNdX+IXtvDQPZVZW+2m1F/pctHQRGbreagWjvUX/WWphxOJXm5IF5GmNTcntq37NOw
+    P66z6lZ0DK0+WewHdqe9gF22UbYNbSklc1nHI3kuCqNlorccaVIY1gKFaLSLtjbeKg02aGSEar0U
+    M/+E4LS0F0l515YXtZF8CsiB0J1I1jY8t7aLqHU+Gs9xSXldmvbERQVSVvvBaGyNequDLqzj9XTc
+    bGeEy8pCffbK5sQTtjobMbPhliRlPVgn670tJvVyosJW5QhjsbBaHzs9ZvjLONxvnVgICrPzxusP
+    NpuJ5tdZWM8I24YHnUYtkBxJygaua0VChFm6CX6jOXB/s5jp2U/vT1ivXs7/N+BEOEEEPP1yF1AY
+    HpEJwfVmAiGk6XZj4PcnwYJHAUeedznh/wLDFOADlgUAAA==
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_RULES
     chmod 700 $CRON_RULES
@@ -2674,7 +2675,7 @@ disable_update() {
 # error code - 0 for installed, 1 for not installed
 check_installed_pyzor() {
     which pyzor &>/dev/null
-    echo $?
+    return $?
 }
 # install Pyzor plugin
 # parameters:
@@ -2687,9 +2688,7 @@ install_pyzor() {
     fi
 
     clear
-    yum install -y python34-setuptools python34-devel
-    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
-    pip3 install pyzor
+    yum install -y pyzor
     PACKED_SCRIPT='
     H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
     95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
@@ -2755,7 +2754,7 @@ install_pyzor() {
 # error code - 0 for installed, 1 for not installed
 check_installed_razor() {
     which razor-check &>/dev/null
-    echo $?
+    return $?
 }
 # install Razor plugin
 # parameters:
@@ -3013,20 +3012,22 @@ dialog_config_rspamd() {
     DIALOG_DOMAIN='Whitelist sender domain'
     DIALOG_FROM='Whitelist sender from'
     DIALOG_PYZOR='Install Pyzor plugin'
-    check_installed_pyzor && DIALOG_PYZOR+=' (installed)'
     DIALOG_RAZOR='Install Razor plugin'
-    check_installed_razor && DIALOG_RAZOR+=' (installed)'
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_STATS='Rspamd stats'
     while true; do
+        DIALOG_PYZOR_INSTALLED="$DIALOG_PYZOR"
+        DIALOG_RAZOR_INSTALLED="$DIALOG_RAZOR"
+        check_installed_pyzor && DIALOG_PYZOR+=' (installed)'
+        check_installed_razor && DIALOG_RAZOR+=' (installed)'
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
             "$DIALOG_IP" ''                                                                        \
             "$DIALOG_DOMAIN" ''                                                                    \
             "$DIALOG_FROM" ''                                                                      \
-            "$DIALOG_PYZOR" ''                                                                     \
-            "$DIALOG_RAZOR" ''                                                                     \
+            "$DIALOG_PYZOR_INSTALLED" ''                                                           \
+            "$DIALOG_RAZOR_INSTALLED" ''                                                           \
             "$DIALOG_BAYES" ''                                                                     \
             "$DIALOG_STATS" ''                                                                     \
             2>&1 1>&3)"
@@ -3040,9 +3041,9 @@ dialog_config_rspamd() {
                     "$TXT_EDITOR" "$WHITELIST_DOMAIN";;
                 "$DIALOG_FROM")
                     "$TXT_EDITOR" "$WHITELIST_FROM";;
-                "$DIALOG_PYZOR")
+                "$DIALOG_PYZOR_INSTALLED")
                     install_pyzor;;
-                "$DIALOG_RAZOR")
+                "$DIALOG_RAZOR_INSTALLED")
                     install_razor;;
                 "$DIALOG_BAYES")
                     reset_bayes;;
@@ -3613,7 +3614,7 @@ print_info() {
     TMP_INFO="/tmp/TMPshowinfo"
     if [ ! -f $TMP_INFO ]; then
         INFO_START=$(expr $(grep -n '###################################################################################################' $0 | head -1 | awk -F: '{print $1}') + 1)
-        INFO_END=$(expr $(grep -n '# Todo:' $0 | head -1 | awk -F: '{print $1}') - 2)
+        INFO_END=$(expr $(grep -n '# Changelog:' $0 | head -1 | awk -F: '{print $1}') - 2)
         INFO_TEXT="$(sed -n "$INFO_START,"$INFO_END"p" $0 | sed 's/^#//g' | sed 's/^ //g')"
         $DIALOG --clear --backtitle "$TITLE_MAIN" --title 'Program info' --ok-label 'ESC to not show again / Enter to continue' --msgbox "$INFO_TEXT" 0 0
         [ "$?" != 0 ] && touch $TMP_INFO
