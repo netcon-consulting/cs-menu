@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.24.0 for Clearswift SEG >= 4.8
+# menu.sh V1.25.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -54,9 +54,7 @@
 # - automatic Rspamd updates
 #
 # Changelog:
-# - for the spamassassin rules update script add 'Versicherung Spam'
-# - install Pyzor from repo instead of pip
-# - bugfixes
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -74,7 +72,7 @@ CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
 CONFIG_ACTIONS='/etc/rspamd/override.d/actions.conf'
 CONFIG_HEADERS='/etc/rspamd/override.d/milter_headers.conf'
 CONFIG_BAYES='/etc/rspamd/override.d/classifier-bayes.conf'
-CONFIG_GREYLISTING='/etc/rspamd/local.d/greylisting.conf'
+CONFIG_GREYLISTING='/etc/rspamd/local.d/greylist.conf'
 CONFIG_LOCAL='/etc/rspamd/rspamd.conf.local'
 CONFIG_HISTORY='/etc/rspamd/local.d/history_redis.conf'
 CONFIG_RSPAMD_REDIS='/etc/rspamd/local.d/redis.conf'
