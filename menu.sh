@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.27.0 for Clearswift SEG >= 4.8
+# menu.sh V1.28.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -54,7 +54,7 @@
 # - automatic Rspamd updates
 #
 # Changelog:
-# - bugfix
+# - added 'Phishing detection' as Rspamd feature
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -79,6 +79,7 @@ CONFIG_RSPAMD_REDIS='/etc/rspamd/local.d/redis.conf'
 CONFIG_SPAMASSASSIN='/etc/rspamd/local.d/spamassassin.conf'
 CONFIG_CONTROLLER='/etc/rspamd/local.d/worker-controller.inc'
 CONFIG_REPUTATION='/etc/rspamd/local.d/url_reputation.conf'
+CONFIG_PHISHING='/etc/rspamd/local.d/phishing.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
@@ -225,6 +226,7 @@ install_rspamd() {
     echo 'servers = 127.0.0.1:6379;' > "$CONFIG_HISTORY"
     echo "ruleset = \"$FILE_RULES\";"$'\n''alpha = 0.1;' > "$CONFIG_SPAMASSASSIN"
     echo 'enabled = true;' > "$CONFIG_REPUTATION"
+    echo 'phishtank_enabled = true;'$'\n''phishtank_map = "https://rspamd.com/phishtank/online-valid.json.zst";' > "$CONFIG_PHISHING"
     VERSION_RULES="$(dig txt 2.4.3.spamassassin.heinlein-support.de +short | tr -d '"')"
     if [ -z "$VERSION_RULES" ]; then
         echo 'Cannot determine SA rules version'
@@ -1131,7 +1133,7 @@ dialog_feature_postfix() {
     DIALOG_POSTSCREEN='Postscreen'
     DIALOG_POSTSCREEN_DEEP='PS Deep'
     for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite bounce_in bounce_out office365 postscreen postscreen_deep; do
-        declare -x STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
+        declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     [ "$STATUS_BOUNCE_IN" = 'on' ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_IN=''
     [ "$STATUS_BOUNCE_OUT" = 'on' ] && EMAIL_BOUNCE_OUT="$(grep '^bounce_notice_recipient=' $PF_OUT | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_OUT=''
@@ -2302,6 +2304,19 @@ check_enabled_reputation() {
         echo off
     fi
 }
+# check whether phishing detection is enabled
+# parameters:
+# none
+# return values:
+# phishing detection status
+check_enabled_phishing() {
+    if [ -f "$CONFIG_PHISHING" ] && grep -q 'phishtank_enabled = true;' "$CONFIG_PHISHING"                              \
+        && grep -q 'phishtank_map = "https://rspamd.com/phishtank/online-valid.json.zst";' "$CONFIG_PHISHING"; then
+        echo on
+    else
+        echo off
+    fi
+}
 # check whether Pyzor is enabled
 # parameters:
 # none
@@ -2565,6 +2580,24 @@ enable_reputation() {
 # none
 disable_reputation() {
     sed -i '/enabled = true;/d' "$CONFIG_REPUTATION"
+}
+# enable phishing detection
+# parameters:
+# none
+# return values:
+# none
+enable_phishing() {
+    echo 'phishtank_enabled = true;' >> "$CONFIG_PHISHING"
+    echo 'phishtank_map = "https://rspamd.com/phishtank/online-valid.json.zst";' >> "$CONFIG_PHISHING"
+}
+# disable phishing detection
+# parameters:
+# none
+# return values:
+# none
+disable_phishing() {
+    sed -i '/phishtank_enabled = true;/d' "$CONFIG_PHISHING"
+    sed -i '/phishtank_map = "https:\/\/rspamd.com\/phishtank\/online-valid.json.zst";/d' "$CONFIG_PHISHING"
 }
 # enable Pyzor
 # parameters:
@@ -2916,12 +2949,13 @@ dialog_feature_rspamd() {
     DIALOG_HISTORY='Enable detailed history'
     DIALOG_REPUTATION='Enable URL reputation'
     DIALOG_SPAMASSASSIN='Enable Spamassassin rules'
+    DIALOG_PHISHING='Enable phishing detection'
     DIALOG_PYZOR='Enable Pyzor'
     DIALOG_RAZOR='Enable Razor'
     DIALOG_UPDATE='Enable automatic Rspamd updates'
     DIALOG_RULESUPDATE='Enable automatic Spamassassin rules updates'
-    for FEATURE in cluster sender greylist reject bayes headers history reputation spamassassin pyzor razor update rulesupdate; do
-        declare -x STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
+    for FEATURE in cluster sender greylist reject bayes headers history reputation spamassassin phishing pyzor razor update rulesupdate; do
+        declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
     ARRAY_RSPAMD=()
@@ -2934,6 +2968,7 @@ dialog_feature_rspamd() {
     ARRAY_RSPAMD+=("$DIALOG_HISTORY" '' "$STATUS_HISTORY")
     ARRAY_RSPAMD+=("$DIALOG_SPAMASSASSIN" '' "$STATUS_SPAMASSASSIN")
     ARRAY_RSPAMD+=("$DIALOG_REPUTATION" '' "$STATUS_REPUTATION")
+    ARRAY_RSPAMD+=("$DIALOG_PHISHING" '' "$STATUS_PHISHING")
     check_installed_pyzorrazor && ARRAY_RSPAMD+=("$DIALOG_PYZOR" '' "$STATUS_PYZOR")
     check_installed_pyzorrazor && ARRAY_RSPAMD+=("$DIALOG_RAZOR" '' "$STATUS_RAZOR")
     ARRAY_RSPAMD+=("$DIALOG_UPDATE" '' "$STATUS_UPDATE")
@@ -3046,6 +3081,18 @@ dialog_feature_rspamd() {
         else
             if [ "$STATUS_REPUTATION" = 'on' ]; then
                 disable_reputation
+                RSPAMD_RESTART=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_PHISHING"; then
+            if [ "$STATUS_PHISHING" = 'off' ]; then
+                enable_phishing
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Phishing detection'
+        else
+            if [ "$STATUS_PHISHING" = 'on' ]; then
+                disable_phishing
                 RSPAMD_RESTART=1
             fi
         fi
