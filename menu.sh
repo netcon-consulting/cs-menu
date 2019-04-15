@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.25.0 for Clearswift SEG >= 4.8
+# menu.sh V1.26.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -54,7 +54,11 @@
 # - automatic Rspamd updates
 #
 # Changelog:
-# - bugfix
+# - combined installation of Pyzor and Ryzor plugins
+# - added option to open Rspamd web UI port 11334 to 'Rspamd configs' submenu
+# - seperated Rspamd features for activating Spamassassin rules and updating the rules
+# - updated Spamassassin rules update script
+# - added 'URL reputation' as Rspamd feature
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -72,11 +76,13 @@ CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
 CONFIG_ACTIONS='/etc/rspamd/override.d/actions.conf'
 CONFIG_HEADERS='/etc/rspamd/override.d/milter_headers.conf'
 CONFIG_BAYES='/etc/rspamd/override.d/classifier-bayes.conf'
-CONFIG_GREYLISTING='/etc/rspamd/local.d/greylist.conf'
+CONFIG_GREYLIST='/etc/rspamd/local.d/greylist.conf'
 CONFIG_LOCAL='/etc/rspamd/rspamd.conf.local'
 CONFIG_HISTORY='/etc/rspamd/local.d/history_redis.conf'
 CONFIG_RSPAMD_REDIS='/etc/rspamd/local.d/redis.conf'
 CONFIG_SPAMASSASSIN='/etc/rspamd/local.d/spamassassin.conf'
+CONFIG_CONTROLLER='/etc/rspamd/local.d/worker-controller.inc'
+CONFIG_REPUTATION='/etc/rspamd/local.d/url_reputation.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
@@ -219,9 +225,10 @@ install_rspamd() {
     echo 'autolearn = true;' > "$CONFIG_BAYES"
     echo 'reject = null;' > "$CONFIG_ACTIONS"
     echo 'greylist = null;' >> "$CONFIG_ACTIONS"
-    echo 'enabled = false;' > "$CONFIG_GREYLISTING"
+    echo 'enabled = false;' > "$CONFIG_GREYLIST"
     echo 'servers = 127.0.0.1:6379;' > "$CONFIG_HISTORY"
     echo "ruleset = \"$FILE_RULES\";"$'\n''alpha = 0.1;' > "$CONFIG_SPAMASSASSIN"
+    echo 'enabled = true;' > "$CONFIG_REPUTATION"
     VERSION_RULES="$(dig txt 2.4.3.spamassassin.heinlein-support.de +short | tr -d '"')"
     if [ -z "$VERSION_RULES" ]; then
         echo 'Cannot determine SA rules version'
@@ -445,7 +452,7 @@ dialog_install() {
     DIALOG_AUTO_UPDATE="Auto update"
     DIALOG_VMWARE_TOOLS="VMware Tools"
     DIALOG_LOCAL_DNS="Local DNS resolver"
-    EXPLANATION_RSPAMD="Implemented as a milter on Port 11332.\nThe webinterface runs on Port 11334 on localhost.\nYou will need a SSH Tunnel to access the Webinterface.\nssh root@servername -L 11334:127.0.0.1:11334\n\nEnable corresponding feature in menu under 'Enable features->Rspamd'"
+    EXPLANATION_RSPAMD="Implemented as a milter on Port 11332.\nThe webinterface runs on Port 11334 on localhost.\nYou will need a SSH Tunnel to access the Web interface.\nssh root@servername -L 11334:127.0.0.1:11334\n\nEnable corresponding feature in menu under 'Enable features->Rspamd'"
     EXPLANATION_LETSENCRYPT="Easy acquisition of Let's Encrypt certificates for TLS. It will autorenew the certificates via cronjob.\n\nEnable corresponding feature in menu under 'Enable features->Let's-Encrypt-Cert'"
     EXPLANATION_LOCAL_DNS="DNS forwarding disabled and local DNSSec resolver enabled for DANE validation.\n\nEnable corresponding feature in menu under 'Enable features->DANE'"
     while true; do
@@ -1297,7 +1304,7 @@ dialog_feature_postfix() {
             fi
             LIST_ENABLED="$LIST_ENABLED"$'\n\n'
         fi
-        $DIALOG --backtitle "$TITLE_MAIN" --title "Enabled features" --clear --msgbox "$LIST_ENABLED" 0 0
+        $DIALOG --backtitle "$TITLE_MAIN" --title 'Enabled features' --clear --msgbox "$LIST_ENABLED" 0 0
     fi
 }
 ###################################################################################################
@@ -1309,8 +1316,8 @@ dialog_feature_postfix() {
 # return values:
 # none
 ldap_schedule() {
-    TMP_LDAP="/tmp/TMPldap"
-    TMP_LDAP_OLD="/tmp/TMPldap_old"
+    TMP_LDAP='/tmp/TMPldap'
+    TMP_LDAP_OLD='/tmp/TMPldap_old'
     if [ -f $CONFIG_LDAP ]; then
         cp -f $CONFIG_LDAP $TMP_LDAP
     else
@@ -1328,16 +1335,12 @@ ldap_schedule() {
 # error code - 0 for added, 1 for cancel
 add_ssh() {
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Manage SSH access"            \
-        --title "Add allowed IP/-range"                                     \
-        --inputbox "Enter allowed IP/-range for SSH access" 0 50 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage SSH access' --title 'Add allowed IP/-range' --inputbox 'Enter allowed IP/-range for SSH access' 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
         echo "-I INPUT 4 -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT" >> $CONFIG_FW
-        echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT" >> $CONFIG_FW
         iptables -I INPUT 4 -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT
-        iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT
         return 0
     else
         return 1
@@ -1350,20 +1353,18 @@ add_ssh() {
 # none
 ssh_access() {
     while true; do
-        LIST_IP=""
-        [ -f $CONFIG_FW ] && LIST_IP=$(grep "I INPUT 4 -i eth0 -p tcp --dport 22 -s " $CONFIG_FW | awk '{print $11}')
+        LIST_IP=''
+        [ -f $CONFIG_FW ] && LIST_IP=$(grep 'I INPUT 4 -i eth0 -p tcp --dport 22 -s ' $CONFIG_FW | awk '{print $11}')
         if [ -z "$LIST_IP" ]; then
             add_ssh || break
         else
             ARRAY_IP=()
             for IP_ADDRESS in $LIST_IP; do
-                ARRAY_IP+=($IP_ADDRESS "")
+                ARRAY_IP+=($IP_ADDRESS '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
-                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
-                    --menu "Add/remove IPs for SSH access" 0 0 0                                        \
-                    "${ARRAY_IP[@]}" 2>&1 1>&3)"
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove IPs for SSH access' 0 0 0 "${ARRAY_IP[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1372,9 +1373,7 @@ ssh_access() {
                 if [ $RET_CODE = 3 ]; then
                     IP_ADDRESS="$(echo "$DIALOG_RET" | sed 's/\//\\\//g')"
                     sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 22 -s $IP_ADDRESS -j ACCEPT/d" $CONFIG_FW
-                    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_ADDRESS -j ACCEPT/d" $CONFIG_FW
                     iptables -D INPUT -i eth0 -p tcp --dport 22 -s $DIALOG_RET -j ACCEPT
-                    iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT
                 else
                     break
                 fi
@@ -1389,9 +1388,7 @@ ssh_access() {
 # error code - 0 for added, 1 for cancel
 add_key() {
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Manage SSH key authentication"  \
-        --title "Add public SSH key"                                          \
-        --inputbox "Enter public key for SSH authentication for cs-admin" 0 50 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage SSH key authentication' --title 'Add public SSH key' --inputbox 'Enter public key for SSH authentication for cs-admin' 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1426,13 +1423,11 @@ key_auth() {
         else
             ARRAY_KEY=()
             for SSH_KEY in $LIST_KEY; do
-                ARRAY_KEY+=("$(echo $SSH_KEY | sed 's/,/ /g')" "")
+                ARRAY_KEY+=("$(echo $SSH_KEY | sed 's/,/ /g')" '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
-                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
-                    --menu "Add/remove public keys for SSH authentication for cs-admin" 0 0 0           \
-                    "${ARRAY_KEY[@]}" 2>&1 1>&3)"
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove public keys for SSH authentication for cs-admin' 0 0 0 "${ARRAY_KEY[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1453,9 +1448,9 @@ key_auth() {
 # return values:
 # none
 import_keystore() {
-    TMP_KEYSTORE="/tmp/TMPkeystore"
+    TMP_KEYSTORE='/tmp/TMPkeystore'
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Manage configuration" --title "Import PKCS12 keystore"                              \
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage configuration' --title 'Import PKCS12 keystore'                              \
         --inputbox "Enter filename of keystore to import [Note: keystore password must be '$PASSWORD_KEYSTORE']" 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
@@ -1511,8 +1506,8 @@ export_address_list() {
     FILE_ADDRLIST="/tmp/address_lists_$(date +%F).tgz"
     tar -C "$DIR_ADDRLIST" -czf "$FILE_ADDRLIST" .
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title "Export and email address lists"  \
-        --inputbox "Enter email recipient for address lists" 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'Export and email address lists'  \
+        --inputbox 'Enter email recipient for address lists' 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1521,11 +1516,11 @@ export_address_list() {
         [ -f "$MAP_TRANSPORT" ] && MAIL_RELAY="$(grep "^$DOMAIN_RECIPIENT " $MAP_TRANSPORT | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
         [ -z "$MAIL_RELAY" ] && MAIL_RELAY="$(dig +short +nodnssec mx $DOMAIN_RECIPIENT | sort -nr | tail -1 | awk '{print $2}')"
         if [ -z "$MAIL_RELAY" ]; then
-            $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox 'Cannot determine mail relay' 0 0
+            $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox 'Cannot determine mail relay' 0 0
         else
-            echo "[CS-addresslists] Exported addresslists" | mail -s "[CS-addresslists] Exported addresslists" -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) -a "$FILE_ADDRLIST" "$DIALOG_RET"
+            echo '[CS-addresslists] Exported addresslists' | mail -s '[CS-addresslists] Exported addresslists' -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) -a "$FILE_ADDRLIST" "$DIALOG_RET"
         fi
-        $DIALOG --backtitle "Clearswift Configuration" --title "Export address lists" --clear --msgbox "$LIST_EXPORTED" 0 0
+        $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox "$LIST_EXPORTED" 0 0
     fi
     rm -rf "$DIR_ADDRLIST" "$FILE_ADDRLIST"
 }
@@ -1535,21 +1530,20 @@ export_address_list() {
 # return values:
 # none
 toggle_password() {
-    if grep -q "cs-admin ALL=(ALL) NOPASSWD:ALL" /etc/sudoers && grep -q "^\s*sudo su -s" /opt/csrh/cli/climenu; then
-        STATUS_CURRENT="disabled"
-        STATUS_TOGGLE="Enable"
+    if grep -q 'cs-admin ALL=(ALL) NOPASSWD:ALL' /etc/sudoers && grep -q '^\s*sudo su -s' /opt/csrh/cli/climenu; then
+        STATUS_CURRENT='disabled'
+        STATUS_TOGGLE='Enable'
     else
-        STATUS_CURRENT="enabled"
-        STATUS_TOGGLE="Disable"
+        STATUS_CURRENT='enabled'
+        STATUS_TOGGLE='Disable'
     fi
-    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle CS admin password check"         \
-        --yesno "CS admin password check is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle CS admin password check' --yesno "CS admin password check is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
     if [ "$?" = 0 ]; then
-        if [ $STATUS_CURRENT = "disabled" ]; then
+        if [ $STATUS_CURRENT = 'disabled' ]; then
             sed -i '/cs-admin ALL=(ALL) NOPASSWD:ALL/d' /etc/sudoers
             sed -i '/^\s*sudo su -s/s/sudo su -s/su -s/g' /opt/csrh/cli/climenu
         else
-            grep -q "cs-admin ALL=(ALL) NOPASSWD:ALL" /etc/sudoers || echo "cs-admin ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+            grep -q 'cs-admin ALL=(ALL) NOPASSWD:ALL' /etc/sudoers || echo 'cs-admin ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
             sed -i '/^\s*su -s/s/su -s/sudo su -s/g' /opt/csrh/cli/climenu
         fi
     fi
@@ -1560,24 +1554,23 @@ toggle_password() {
 # return values:
 # none
 toggle_cleanup() {
-    PACKED_SCRIPT="
+    PACKED_SCRIPT='
     H4sIAL8b3FsAA22PS0vDQBSF9/MrrkkXLZpM2pUoBUMbasEICnElhMn0JhnM3KnzUIP43w0+cOPi
     wIHD98GJT3ijiDfC9YzFIAcUttbPAQOmroeHZZqlGYunaWOOo1Vd72EuF7DKludwi35jCCryaAl7
     jeQatMIH6mCnm+szIPTSUDLFhcEr6lJp9JcuD7439gJKYSVsFdonhwRznR5++tW/7IKx7f6+Lu+q
     oirWEX8RlkuXdMLjqxi5Fmrg7mjMwL9P1CZ4HrEy39/U+a5YrxhrFR0gmv1pIkj8eERoIdFeaYTT
     aPYLTBu+oQSrIWnh/QMeL9knhMlH1DQBAAA=
-    "
+    '
     if [ -f "$CRON_CLEANUP" ]; then
-        STATUS_CURRENT="enabled"
-        STATUS_TOGGLE="Disable"
+        STATUS_CURRENT='enabled'
+        STATUS_TOGGLE='Disable'
     else
-        STATUS_CURRENT="disabled"
-        STATUS_TOGGLE="Enable"
+        STATUS_CURRENT='disabled'
+        STATUS_TOGGLE='Enable'
     fi
-    $DIALOG --backtitle "Clearswift Configuration" --title "Toggle CS mqueue cleanup"         \
-        --yesno "CS mqueue cleanup is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle CS mqueue cleanup' --yesno "CS mqueue cleanup is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
     if [ "$?" = 0 ]; then
-        if [ $STATUS_CURRENT = "disabled" ]; then
+        if [ $STATUS_CURRENT = 'disabled' ]; then
             printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_CLEANUP
             chmod 700 $CRON_CLEANUP
         else
@@ -1612,13 +1605,11 @@ toggle_backup() {
         STATUS_CURRENT='disabled'
         STATUS_TOGGLE='Enable'
     fi
-    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle config email backup'       \
-        --yesno "CS config email backup $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 2>&1 1>&3
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle config email backup' --yesno "CS config email backup $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 2>&1 1>&3
     if [ "$?" = 0 ]; then
-        if [ $STATUS_CURRENT = "disabled" ]; then
+        if [ $STATUS_CURRENT = 'disabled' ]; then
             exec 3>&1
-            DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title "Config email backup"  \
-                --inputbox "Enter email for CS config backup" 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
+            DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'Config email backup' --inputbox 'Enter email for CS config backup' 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1638,9 +1629,7 @@ toggle_backup() {
 # error code - 0 for added, 1 for cancel
 add_mail() {
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Manage mail.intern access"    \
-        --title "Add mail server IP to mail.intern"                         \
-        --inputbox "Enter mail server IP for mail.intern" 0 50 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage mail.intern access' --title 'Add mail server IP to mail.intern' --inputbox 'Enter mail server IP for mail.intern' 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1674,20 +1663,18 @@ add_mail() {
 # none
 mail_intern() {
     while true; do
-        LIST_IP=""
-        [ -f $CONFIG_INTERN ] && LIST_IP=$(grep "^mail" $CONFIG_INTERN | awk '{print $5}')
+        LIST_IP=''
+        [ -f $CONFIG_INTERN ] && LIST_IP=$(grep '^mail' $CONFIG_INTERN | awk '{print $5}')
         if [ -z "$LIST_IP" ]; then
             add_mail || break
         else
             ARRAY_INTERN=()
             for IP_ADDRESS in $LIST_IP; do
-                ARRAY_INTERN+=($IP_ADDRESS "")
+                ARRAY_INTERN+=($IP_ADDRESS '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
-                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
-                    --menu "Add/remove IPs for mail.intern" 0 0 0                                       \
-                    "${ARRAY_INTERN[@]}" 2>&1 1>&3)"
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove IPs for mail.intern' 0 0 0 "${ARRAY_INTERN[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1710,17 +1697,13 @@ mail_intern() {
 # error code - 0 for added, 1 for cancel
 add_forward() {
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Internal DNS forwarding"      \
-        --title "Add zone for internal DNS forwarding"                      \
-        --inputbox "Enter zone name" 0 50 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Internal DNS forwarding' --title 'Add zone for internal DNS forwarding' --inputbox 'Enter zone name' 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
         ZONE_NAME="$DIALOG_RET"
         exec 3>&1
-        DIALOG_RET="$(dialog --clear --backtitle "Internal DNS forwarding"      \
-            --title "Add zone for internal DNS forwarding"                      \
-            --inputbox "Enter IP" 0 50 2>&1 1>&3)"
+        DIALOG_RET="$(dialog --clear --backtitle 'Internal DNS forwarding' --title 'Add zone for internal DNS forwarding' --inputbox 'Enter IP' 0 50 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1744,9 +1727,9 @@ add_forward() {
 # none
 internal_forwarding() {
     while true; do
-        LIST_FORWARD=""
+        LIST_FORWARD=''
         if [ -f $CONFIG_BIND ]; then
-            ZONE_NAME=""
+            ZONE_NAME=''
             while read LINE; do
                 if echo "$LINE" | grep -q '^zone ".*" {$'; then
                     ZONE_NAME="$(echo $LINE | awk 'match($0, /^zone "(.*)" {$/, a) {print a[1]}')"
@@ -1754,7 +1737,7 @@ internal_forwarding() {
                 fi
                 if ! [ -z "$ZONE_NAME" ] && echo "$LINE" | grep -q '^\s*forwarders { \S*; };$'; then
                     LIST_FORWARD+=" $ZONE_NAME($(echo $LINE | awk 'match($0, /forwarders { (.*); };$/, a) {print a[1]}'))"
-                    ZONE_NAME=""
+                    ZONE_NAME=''
                 fi
             done < <(sed -n '/^zone ".*" {$/,/^}$/p' $CONFIG_BIND)
         fi
@@ -1763,13 +1746,11 @@ internal_forwarding() {
         else
             ARRAY_ZONE=()
             for ZONE_FORWARD in $LIST_FORWARD; do
-                ARRAY_ZONE+=($ZONE_FORWARD "")
+                ARRAY_ZONE+=($ZONE_FORWARD '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Manage configuration"                 \
-                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
-                    --menu "Add/remove zones for internal DNS forwarding" 0 0 0                         \
-                    "${ARRAY_ZONE[@]}" 2>&1 1>&3)"
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove zones for internal DNS forwarding' 0 0 0 "${ARRAY_ZONE[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1792,9 +1773,7 @@ internal_forwarding() {
 # error code - 0 for added, 1 for cancel
 add_report() {
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Monthly email stats reports"      \
-        --title "Add recipient email for report"                                \
-        --inputbox "Enter recipient email for monthly reports" 0 50 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Monthly email stats reports' --title 'Add recipient email for report' --inputbox 'Enter recipient email for monthly reports' 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1818,13 +1797,11 @@ monthly_report() {
         else
             ARRAY_EMAIL=()
             for EMAIL_ADDRESS in $LIST_EMAIL; do
-                ARRAY_EMAIL+=("$EMAIL_ADDRESS" "")
+                ARRAY_EMAIL+=("$EMAIL_ADDRESS" '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Email recipients"                     \
-                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
-                    --menu "Add/remove emails for monthly email stats reports" 0 0 0                    \
-                    "${ARRAY_EMAIL[@]}" 2>&1 1>&3)"
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Email recipients' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove emails for monthly email stats reports' 0 0 0 "${ARRAY_EMAIL[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1846,9 +1823,8 @@ monthly_report() {
 # error code - 0 for added, 1 for cancel
 add_alert() {
     exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle "Sender anomaly detection"         \
-        --title "Add recipient email for anomaly alert"                         \
-        --inputbox "Enter recipient email for anomaly alert" 0 50 2>&1 1>&3)"
+    DIALOG_RET="$(dialog --clear --backtitle 'Sender anomaly detection' --title 'Add recipient email for anomaly alert'  \
+        --inputbox 'Enter recipient email for anomaly alert' 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
@@ -1872,13 +1848,11 @@ anomaly_detect() {
         else
             ARRAY_ADDR=()
             for EMAIL_ADDRESS in $LIST_EMAIL; do
-                ARRAY_ADDR+=("$EMAIL_ADDRESS" "")
+                ARRAY_ADDR+=("$EMAIL_ADDRESS" '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle "" --title "Email recipients"                     \
-                    --cancel-label "Back" --ok-label "Add" --extra-button --extra-label "Remove"        \
-                    --menu "Add/remove emails for monthly email stats reports" 0 0 0                    \
-                    "${ARRAY_ADDR[@]}" 2>&1 1>&3)"
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Email recipients' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove emails for monthly email stats reports' 0 0 0 "${ARRAY_ADDR[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ]; then
@@ -1899,7 +1873,7 @@ anomaly_detect() {
 # return values:
 # list of recipient validation status
 check_validation_enabled() {
-    LINE_VALIDATION=""
+    LINE_VALIDATION=''
     [ -f $PF_IN ] && LINE_VALIDATION="$(grep 'smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access' $PF_IN)"
     for VALIDATION in unknown_client invalid_hostname non_fqdn_hostname unknown_reverse_client_hostname non_fqdn_helo_hostname   \
         invalid_helo_hostname unknown_helo_hostname non_fqdn_sender unknown_sender_domain unknown_recipient_domain               \
@@ -1918,37 +1892,36 @@ check_validation_enabled() {
 # return values:
 # none
 recipient_validation() {
-    DIALOG_UNKNOWN_CLIENT="unknown_client"
-    DIALOG_INVALID_HOSTNAME="invalid_hostname"
-    DIALOG_NON_FQDN_HOSTNAME="non_fqdn_hostname"
-    DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME="unknown_reverse_client_hostname"
-    DIALOG_NON_FQDN_HELO_HOSTNAME="non_fqdn_helo_hostname"
-    DIALOG_INVALID_HELO_HOSTNAME="invalid_helo_hostname"
-    DIALOG_UNKNOWN_HELO_HOSTNAME="unknown_helo_hostname"
-    DIALOG_NON_FQDN_SENDER="non_fqdn_sender"
-    DIALOG_UNKNOWN_SENDER_DOMAIN="unknown_sender_domain"
-    DIALOG_UNKNOWN_RECIPIENT_DOMAIN="unknown_recipient_domain"
-    DIALOG_NON_FQDN_RECIPIENT="non_fqdn_recipient"
-    DIALOG_UNAUTH_PIPELINING="unauth_pipelining"
-    DIALOG_UNVERIFIED_RECIPIENT="unverified_recipient"
+    DIALOG_UNKNOWN_CLIENT='unknown_client'
+    DIALOG_INVALID_HOSTNAME='invalid_hostname'
+    DIALOG_NON_FQDN_HOSTNAME='non_fqdn_hostname'
+    DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME='unknown_reverse_client_hostname'
+    DIALOG_NON_FQDN_HELO_HOSTNAME='non_fqdn_helo_hostname'
+    DIALOG_INVALID_HELO_HOSTNAME='invalid_helo_hostname'
+    DIALOG_UNKNOWN_HELO_HOSTNAME='unknown_helo_hostname'
+    DIALOG_NON_FQDN_SENDER='non_fqdn_sender'
+    DIALOG_UNKNOWN_SENDER_DOMAIN='unknown_sender_domain'
+    DIALOG_UNKNOWN_RECIPIENT_DOMAIN='unknown_recipient_domain'
+    DIALOG_NON_FQDN_RECIPIENT='non_fqdn_recipient'
+    DIALOG_UNAUTH_PIPELINING='unauth_pipelining'
+    DIALOG_UNVERIFIED_RECIPIENT='unverified_recipient'
     VALIDATION_ENABLED="$(check_validation_enabled)"
     exec 3>&1
-    DIALOG_RET="$($DIALOG --clear --backtitle "Clearswift configuration"                               \
-        --cancel-label "Back" --ok-label "Apply"                                                       \
-        --checklist "Choose recipient rejection criteria" 0 0 0                                        \
-        "$DIALOG_UNKNOWN_CLIENT" ""                   $(echo $VALIDATION_ENABLED | awk '{print $1}')   \
-        "$DIALOG_INVALID_HOSTNAME" ""                 $(echo $VALIDATION_ENABLED | awk '{print $2}')   \
-        "$DIALOG_NON_FQDN_HOSTNAME" ""                $(echo $VALIDATION_ENABLED | awk '{print $3}')   \
-        "$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME" ""  $(echo $VALIDATION_ENABLED | awk '{print $4}')   \
-        "$DIALOG_NON_FQDN_HELO_HOSTNAME" ""           $(echo $VALIDATION_ENABLED | awk '{print $5}')   \
-        "$DIALOG_INVALID_HELO_HOSTNAME" ""            $(echo $VALIDATION_ENABLED | awk '{print $6}')   \
-        "$DIALOG_UNKNOWN_HELO_HOSTNAME" ""            $(echo $VALIDATION_ENABLED | awk '{print $7}')   \
-        "$DIALOG_NON_FQDN_SENDER" ""                  $(echo $VALIDATION_ENABLED | awk '{print $8}')   \
-        "$DIALOG_UNKNOWN_SENDER_DOMAIN" ""            $(echo $VALIDATION_ENABLED | awk '{print $9}')   \
-        "$DIALOG_UNKNOWN_RECIPIENT_DOMAIN" ""         $(echo $VALIDATION_ENABLED | awk '{print $10}')  \
-        "$DIALOG_NON_FQDN_RECIPIENT" ""               $(echo $VALIDATION_ENABLED | awk '{print $11}')  \
-        "$DIALOG_UNAUTH_PIPELINING" ""                $(echo $VALIDATION_ENABLED | awk '{print $12}')  \
-        "$DIALOG_UNVERIFIED_RECIPIENT" ""             $(echo $VALIDATION_ENABLED | awk '{print $13}')  \
+    DIALOG_RET="$($DIALOG --clear --backtitle 'Clearswift configuration' --cancel-label 'Back'         \
+        --ok-label 'Apply' --checklist 'Choose recipient rejection criteria' 0 0 0                     \
+        "$DIALOG_UNKNOWN_CLIENT" ''                   $(echo $VALIDATION_ENABLED | awk '{print $1}')   \
+        "$DIALOG_INVALID_HOSTNAME" ''                 $(echo $VALIDATION_ENABLED | awk '{print $2}')   \
+        "$DIALOG_NON_FQDN_HOSTNAME" ''                $(echo $VALIDATION_ENABLED | awk '{print $3}')   \
+        "$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME" ''  $(echo $VALIDATION_ENABLED | awk '{print $4}')   \
+        "$DIALOG_NON_FQDN_HELO_HOSTNAME" ''           $(echo $VALIDATION_ENABLED | awk '{print $5}')   \
+        "$DIALOG_INVALID_HELO_HOSTNAME" ''            $(echo $VALIDATION_ENABLED | awk '{print $6}')   \
+        "$DIALOG_UNKNOWN_HELO_HOSTNAME" ''            $(echo $VALIDATION_ENABLED | awk '{print $7}')   \
+        "$DIALOG_NON_FQDN_SENDER" ''                  $(echo $VALIDATION_ENABLED | awk '{print $8}')   \
+        "$DIALOG_UNKNOWN_SENDER_DOMAIN" ''            $(echo $VALIDATION_ENABLED | awk '{print $9}')   \
+        "$DIALOG_UNKNOWN_RECIPIENT_DOMAIN" ''         $(echo $VALIDATION_ENABLED | awk '{print $10}')  \
+        "$DIALOG_NON_FQDN_RECIPIENT" ''               $(echo $VALIDATION_ENABLED | awk '{print $11}')  \
+        "$DIALOG_UNAUTH_PIPELINING" ''                $(echo $VALIDATION_ENABLED | awk '{print $12}')  \
+        "$DIALOG_UNVERIFIED_RECIPIENT" ''             $(echo $VALIDATION_ENABLED | awk '{print $13}')  \
         2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
@@ -2091,28 +2064,28 @@ write_examples() {
 # return values:
 # none
 dialog_postfix() {
-    DIALOG_WHITELIST_POSTFIX="Postfix whitelist"
-    DIALOG_WHITELIST_POSTSCREEN="Postscreen whitelist"
-    DIALOG_ESMTP_ACCESS="ESMTP access"
-    DIALOG_SENDER_ACCESS="Sender access"
-    DIALOG_RECIPIENT_ACCESS="Recipient access"
-    DIALOG_HELO_ACCESS="HELO access"
-    DIALOG_SENDER_REWRITE="Sender rewrite"
-    DIALOG_HEADER_REWRITE="Header rewrite"
-    DIALOG_RESTRICTIONS="Postfix restrictions"
+    DIALOG_WHITELIST_POSTFIX='Postfix whitelist'
+    DIALOG_WHITELIST_POSTSCREEN='Postscreen whitelist'
+    DIALOG_ESMTP_ACCESS='ESMTP access'
+    DIALOG_SENDER_ACCESS='Sender access'
+    DIALOG_RECIPIENT_ACCESS='Recipient access'
+    DIALOG_HELO_ACCESS='HELO access'
+    DIALOG_SENDER_REWRITE='Sender rewrite'
+    DIALOG_HEADER_REWRITE='Header rewrite'
+    DIALOG_RESTRICTIONS='Postfix restrictions'
     while true; do
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                 \
-            --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix configuration" 0 0 0 \
-            "$DIALOG_WHITELIST_POSTFIX" ""                                                      \
-            "$DIALOG_WHITELIST_POSTSCREEN" ""                                                   \
-            "$DIALOG_ESMTP_ACCESS" ""                                                           \
-            "$DIALOG_SENDER_ACCESS" ""                                                          \
-            "$DIALOG_RECIPIENT_ACCESS" ""                                                       \
-            "$DIALOG_HELO_ACCESS" ""                                                            \
-            "$DIALOG_SENDER_REWRITE" ""                                                         \
-            "$DIALOG_HEADER_REWRITE" ""                                                         \
-            "$DIALOG_RESTRICTIONS" ""                                                           \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Postfix configuration' 0 0 0 \
+            "$DIALOG_WHITELIST_POSTFIX" ''                                                      \
+            "$DIALOG_WHITELIST_POSTSCREEN" ''                                                   \
+            "$DIALOG_ESMTP_ACCESS" ''                                                           \
+            "$DIALOG_SENDER_ACCESS" ''                                                          \
+            "$DIALOG_RECIPIENT_ACCESS" ''                                                       \
+            "$DIALOG_HELO_ACCESS" ''                                                            \
+            "$DIALOG_SENDER_REWRITE" ''                                                         \
+            "$DIALOG_HEADER_REWRITE" ''                                                         \
+            "$DIALOG_RESTRICTIONS" ''                                                           \
             2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
@@ -2148,13 +2121,11 @@ dialog_postfix() {
 # return values:
 # none
 dialog_restrictions() {
-    DIALOG_RECIPIENT="Recipient restrictions"
+    DIALOG_RECIPIENT='Recipient restrictions'
     while true; do
         exec 3>&1
-        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                 \
-            --cancel-label "Back" --ok-label "Edit" --menu "Manage Postfix restrictions" 0 0 0  \
-            "$DIALOG_RECIPIENT" ""                                                              \
-            2>&1 1>&3)"
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Edit' \
+            --menu 'Manage Postfix restrictions' 0 0 0 "$DIALOG_RECIPIENT" '' 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -2256,7 +2227,7 @@ check_enabled_sender() {
 # return values:
 # greylisting status
 check_enabled_greylist() {
-    if [ -f "$CONFIG_ACTIONS" ] && grep -q 'greylist = null;' "$CONFIG_ACTIONS" && [ -f "$CONFIG_GREYLISTING" ] && grep -q 'enabled = false;' "$CONFIG_GREYLISTING"; then
+    if [ -f "$CONFIG_ACTIONS" ] && grep -q 'greylist = null;' "$CONFIG_ACTIONS" && [ -f "$CONFIG_GREYLIST" ] && grep -q 'enabled = false;' "$CONFIG_GREYLIST"; then
         echo on
     else
         echo off
@@ -2317,7 +2288,19 @@ check_enabled_history() {
 # Spamassassin rules status
 check_enabled_spamassassin() {
     if [ -f "$CONFIG_SPAMASSASSIN" ] && grep -q "ruleset = \"$FILE_RULES\";" "$CONFIG_SPAMASSASSIN"     \
-        && grep -q 'alpha = 0.1;' "$CONFIG_SPAMASSASSIN" && [ -f "$CRON_RULES" ]  ; then
+        && grep -q 'alpha = 0.1;' "$CONFIG_SPAMASSASSIN"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether URL reputation is enabled
+# parameters:
+# none
+# return values:
+# URL reputation status
+check_enabled_reputation() {
+    if [ -f "$CONFIG_REPUTATION" ] && grep -q 'enabled = true;' "$CONFIG_REPUTATION"; then
         echo on
     else
         echo off
@@ -2347,13 +2330,25 @@ check_enabled_razor() {
         echo off
     fi
 }
-# check whether automatic spamd updates is enabled
+# check whether automatic rspamd update is enabled
 # parameters:
 # none
 # return values:
-# automatic spamd updates status
+# automatic rspamd update status
 check_enabled_update() {
     if [ -f "$CRON_UPDATE" ]; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether automatic spamassassin rules update is enabled
+# parameters:
+# none
+# return values:
+# automatic automatic spamassassin rules update status
+check_enabled_rulesupdate() {
+    if [ -f "$CRON_RULES" ]; then
         echo on
     else
         echo off
@@ -2384,8 +2379,8 @@ enable_cluster() {
     echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
     echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
     echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
-    if ! [ -f /etc/rspamd/local.d/worker-controller.inc ] || ! grep -q 'bind_socket = "*:11334";' /etc/rspamd/local.d/worker-controller.inc; then
-        echo 'bind_socket = "*:11334";' >> /etc/rspamd/local.d/worker-controller.inc
+    if ! [ -f $CONFIG_CONTROLLER ] || ! grep -q 'bind_socket = "*:11334";' "$CONFIG_CONTROLLER"; then
+        echo 'bind_socket = "*:11334";' >> "$CONFIG_CONTROLLER"
     fi
     if [ ! -f $CONFIG_FW ] || ! grep -q "\-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" $CONFIG_FW; then
         echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT" >> $CONFIG_FW
@@ -2411,7 +2406,7 @@ disable_cluster() {
     sed -i 's/^#bind 127.0.0.1/bind 127.0.0.1/' "$CONFIG_REDIS"
     sed -i 's/^protected-mode no/protected-mode yes/' "$CONFIG_REDIS"
     rm -f "$CONFIG_RSPAMD_REDIS" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
-    sed -i '/bind_socket = "\*:11334";/d' /etc/rspamd/local.d/worker-controller.inc
+    sed -i '/bind_socket = "\*:11334";/d' "$CONFIG_CONTROLLER"
     sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
     iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
     sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 6379 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
@@ -2464,8 +2459,8 @@ enable_greylist() {
     if ! [ -f "$CONFIG_ACTIONS" ] || ! grep -q 'greylist = null' "$CONFIG_ACTIONS"; then
         echo 'greylist = null;' >> "$CONFIG_ACTIONS"
     fi
-    if ! [ -f "$CONFIG_GREYLISTING" ] || ! grep -q 'enabled = false;' "$CONFIG_GREYLISTING"; then
-        echo 'enabled = false;' >> "$CONFIG_GREYLISTING"
+    if ! [ -f "$CONFIG_GREYLIST" ] || ! grep -q 'enabled = false;' "$CONFIG_GREYLIST"; then
+        echo 'enabled = false;' >> "$CONFIG_GREYLIST"
     fi
 }
 # disable disabling greylisting
@@ -2475,7 +2470,7 @@ enable_greylist() {
 # none
 disable_greylist() {
     [ -f "$CONFIG_ACTIONS" ] && sed -i '/greylist = null;/d' "$CONFIG_ACTIONS"
-    [ -f "$CONFIG_GREYLISTING" ] && sed -i '/enabled = false;/d' "$CONFIG_GREYLISTING"
+    [ -f "$CONFIG_GREYLIST" ] && sed -i '/enabled = false;/d' "$CONFIG_GREYLIST"
 }
 # enable disabling rejecting
 # parameters:
@@ -2549,27 +2544,6 @@ disable_history() {
 enable_spamassassin() {
     echo "ruleset = \"$FILE_RULES\";" >> "$CONFIG_SPAMASSASSIN"
     echo 'alpha = 0.1;' >> "$CONFIG_SPAMASSASSIN"
-    PACKED_SCRIPT='
-    H4sIAFyJsFwAA41Ua5OiOBT9zq/I2L1r97oCvnW2pmsQUVF8NL7d2upCCJAWQiRBlJofv4g9PWP1
-    VO1SpCDJPeeee/K4+yTsEBZ2BnU57g5ExDIYfAkjD1KeumBZ4ku8yN2lU3JAziFyXAYezEdQFkst
-    MIZMDjBYYAZDDF0fYrqDocEi7ICev+v/CTBkZoCLaaORxxB2eDPwMzopYm4QfgYjIzRBB8FwTyEG
-    Dz5vvf1//SX2keM6qv6iLzRl9iUvMJ8I89E005vnuqqmvE+laCGkxPAtwQtMw+Mt4dIzKE1fhPk3
-    DLdU9Jk6Gb/hcvcPFnIAOzFQ5qt8hb/BuBBhL21FGhEShIy3ICjQtA4GvgEWgqIF8rn8Y47jkA3+
-    BsUE5O5v+HPgn78AcyHmQPpA0w1AXjYwDhiwYOqijzAEMwlk4sARhhQFOH8NPiEGSpyNuGudnclq
-    rE2kTir53RHhNhvPnOSq5dNFjZ2quYHeqvH3FkpLIOAnwlw2E/oX8E9p/siGzSj0QLFIkQcxAzmX
-    MfJZEOI4/k/TPug0Qj6VmpIFESMR+yCUyxL+z0I+WhvE2AsM693Z/I+4i6vlrHtx9vJNxYCifOMC
-    KJ6Sj0mvJhjsxhnetMHT99A3D7PAqSQPlc7LTNbV6fzLVUG/SlVJGpRpN5akymomrg6dUXvWa1TK
-    w+dhT+w2a1ZjpcarQelVmxPDksVdV57rQdUoL9bDGdXXW7FwGrf8oZYRas8Ja43ag5jYTRWaQm9T
-    UdtofiaSTPRNdX+IXtvDQPZVZW+2m1F/pctHQRGbreagWjvUX/WWphxOJXm5IF5GmNTcntq37NOw
-    P66z6lZ0DK0+WewHdqe9gF22UbYNbSklc1nHI3kuCqNlorccaVIY1gKFaLSLtjbeKg02aGSEar0U
-    M/+E4LS0F0l515YXtZF8CsiB0J1I1jY8t7aLqHU+Gs9xSXldmvbERQVSVvvBaGyNequDLqzj9XTc
-    bGeEy8pCffbK5sQTtjobMbPhliRlPVgn670tJvVyosJW5QhjsbBaHzs9ZvjLONxvnVgICrPzxusP
-    NpuJ5tdZWM8I24YHnUYtkBxJygaua0VChFm6CX6jOXB/s5jp2U/vT1ivXs7/N+BEOEEEPP1yF1AY
-    HpEJwfVmAiGk6XZj4PcnwYJHAUeedznh/wLDFOADlgUAAA==
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_RULES
-    chmod 700 $CRON_RULES
-    $CRON_RULES
 }
 # disable Spamassassin rules
 # parameters:
@@ -2579,7 +2553,22 @@ enable_spamassassin() {
 disable_spamassassin() {
     sed -i "/$(echo "$FILE_RULES" | sed 's/\//\\\//g')/d" "$CONFIG_SPAMASSASSIN"
     sed -i '/alpha = 0.1;/d' "$CONFIG_SPAMASSASSIN"
-    rm -f $CRON_RULES
+}
+# enable URL reputation
+# parameters:
+# none
+# return values:
+# none
+enable_reputation() {
+    echo 'enabled = true;' >> "$CONFIG_REPUTATION"
+}
+# disable URL reputation
+# parameters:
+# none
+# return values:
+# none
+disable_reputation() {
+    sed -i '/enabled = true;/d' "$CONFIG_REPUTATION"
 }
 # enable Pyzor
 # parameters:
@@ -2666,27 +2655,67 @@ enable_update() {
 disable_update() {
     rm -f $CRON_UPDATE
 }
-# check whether Pyzor is installed
+# enable Spamassassin rules update
+# parameters:
+# none
+# return values:
+# none
+enable_rulesupdate() {
+    PACKED_SCRIPT='
+    H4sIAOxMtFwAA41UbXOiSBD+zq/oNdmYnCcgvu/VphYRFUVN8N2rqxTC8BJhGGEQtfbHH2IuFytb
+    dUcxBTM9/fTTz/T0zRdu42Juo0cOw9xATEydopcw9lDERg7MS6zA8sxNapICcgxd26FwbzyAwJea
+    MEJUCjDMMEUhRo6PcLRBoU5jbEPX3/R+B4yoEeBiOqLYoy62WSPwMzgxpk4QfoOhHhrQdlG4jRCG
+    e5813/5//NL3gWHaivaizVR58j3PUZ9w0+FTxjfPdBRVfjel3lwYEd03OS8wdI81ufNMj6L0dTH7
+    5sPMZW2ijEdvfrnbe9O1gR4oCGyFLbNXPg5ysZeOYhQTEoSUNREUojQPCj+BhlA0IZ/LP+QYxrXg
+    TyieIHd7hZ+Dv/4A6iDMQPogwwkgL+kYBxRMlKrouxjBRISMHOxRGLkBzl82H1wKJcZymUue7fFi
+    pI7Fdkr5XRHuOhpL7dOFy5czGytlc+V6zcbfmm6aAoEPgLnMEvpn5w9hfsuWjTj0oFiMXA9hCjmH
+    UvKN45Ik+U/RPvHUQzalmoIFMSUx/USUyQL+z0Q+Sxsk2At0813Z/L/7zqoK2fSs7PmbkoGidKUC
+    FA+nz0Gz3R/p/HPEcHcHBvls+Dh7SQstvWpQ+Np5uCAZOr3SmDUseLxGuBB8EqWB3H6ZSJryNP1+
+    yaVXiRRR7AtRJxHF8mLCL3btYWvSrZeFwfOgy3caVbO+UJJFv/SqToluSvymI021oKILs+VgEmnL
+    NV84jJr+QM0A1ecTbQ5b/YRYDQUZXHdVVlru9EhEiWirynYXv7YGgeQr8tZoNeLeQpP2nMw3mo1+
+    pbqrvWpNVd4dStJ8RrwM8FR1ukrPtA6D3qhGK2ve1tXaeLbtW+3WDHXoSl7X1bl4mkoaHkpTnhvO
+    T1rTFseFQTWQiRp13LWF13Kd9usZoFIrJdQ/uOiptOWJsGlJs+pQOgRkR6INT5YWOjbXs7h53OvP
+    SUl+nRvW2HELRFB6wXBkDruLncYtk+XTqNHKAOflmfLsCcbY49YaHVKj7pREedlfnpZbiz/VhJOC
+    muU9SvjCYrlvd6nuz5Nwu7YTLihMjiuv11+txqpfo2EtA2zpHrLr1UC0RTFbuJwVCV1M09r4GuXg
+    9uow0y6SdmJUq5w7yU+wY3xyCTz+sgoiFO5dA8Glx0GIorRwKdw9cibaczj2vHOv+BukmnrV4AUA
+    AA==
+    '
+    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_RULES
+    chmod 700 $CRON_RULES
+    $CRON_RULES
+}
+# disable Spamassassin rules update
+# parameters:
+# none
+# return values:
+# none
+disable_rulesupdate() {
+    rm -f $CRON_RULES
+}
+# check whether Pyzor and Razor are installed
 # parameters:
 # none
 # return values:
 # error code - 0 for installed, 1 for not installed
-check_installed_pyzor() {
+check_installed_pyzorrazor() {
     which pyzor &>/dev/null
-    return $?
+    PYZOR_INSTALLED="$?"
+    which razor-check &>/dev/null
+    RAZOR_INSTALLED="$?"
+    return PYZOR_INSTALLED && RAZOR_INSTALLED
 }
-# install Pyzor plugin
+# install Pyzor and Razor plugins
 # parameters:
 # none
 # return values:
 # none
-install_pyzor() {
-    if check_installed_pyzor; then
-        confirm_reinstall 'Pyzor' || return
+install_pyzorrazor() {
+    if check_installed_pyzorrazor; then
+        confirm_reinstall 'Pyzor & Razor' || return
     fi
 
     clear
-    yum install -y pyzor
+    yum install -y pyzor perl-Razor-Agent
     PACKED_SCRIPT='
     H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
     95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
@@ -2743,29 +2772,6 @@ install_pyzor() {
     chkconfig --add pyzorsocket
     chkconfig pyzorsocket on
     service pyzorsocket start
-    get_keypress
-}
-# check whether Razor is installed
-# parameters:
-# none
-# return values:
-# error code - 0 for installed, 1 for not installed
-check_installed_razor() {
-    which razor-check &>/dev/null
-    return $?
-}
-# install Razor plugin
-# parameters:
-# none
-# return values:
-# none
-install_razor() {
-    if check_installed_razor; then
-        confirm_reinstall 'Razor' || return
-    fi
-
-    clear
-    yum install -y perl-Razor-Agent
     PACKED_SCRIPT='
     H4sIAAdCq1wAA4VUTWvbQBA9R79iEQRLoJg4lxJDDiUtFAou5FgKYiWNPvBq191d0bih/70zu6uv
     2KXywWLmzZuZNzMSquSCCdU0oNkT0/Bz6DSwWJsT76vcO+JIOJgtT1cwaI2jgDigP9b8t5pizLkv
@@ -2818,6 +2824,7 @@ install_razor() {
     chkconfig --add razorsocket
     chkconfig razorsocket on
     service razorsocket start
+    service rspamd restart
     get_keypress
 }
 # reset Bayes spam database
@@ -2833,6 +2840,67 @@ reset_bayes() {
         service rspamd start &>/dev/null
     fi
 }
+# add IP range for Rspamd web UI access in dialog inputbox
+# parameters:
+# none
+# return values:
+# error code - 0 for added, 1 for cancel
+add_webui() {
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage Rspamd web UI access' --title 'Add allowed IP/-range' --inputbox 'Enter allowed IP/-range for Rspamd web UI access' 0 50 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        echo "-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT" >> $CONFIG_FW
+        iptables -I INPUT 4 -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT
+        if ! [ -f "$CONFIG_CONTROLLER" ] || ! grep -q 'bind_socket = "*:11334";' "$CONFIG_CONTROLLER"; then
+            echo 'bind_socket = "*:11334";' >> "$CONFIG_CONTROLLER"
+            service rspamd restart &>/dev/null
+        fi
+        return 0
+    else
+        return 1
+    fi
+}
+# add/remove IP ranges for Rspamd web UI access in dialog menu
+# parameters:
+# none
+# return values:
+# none
+webui_access() {
+    while true; do
+        LIST_IP=''
+        [ -f $CONFIG_FW ] && LIST_IP=$(grep 'I INPUT 4 -i eth0 -p tcp --dport 11334 -s ' $CONFIG_FW | awk '{print $11}')
+        if [ -z "$LIST_IP" ]; then
+            add_webui || break
+        else
+            ARRAY_IP=()
+            for IP_ADDRESS in $LIST_IP; do
+                ARRAY_IP+=($IP_ADDRESS '')
+            done
+            exec 3>&1
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove IPs for Rspamd web UI access' 0 0 0 "${ARRAY_IP[@]}" 2>&1 1>&3)"
+            RET_CODE=$?
+            exec 3>&-
+            if [ $RET_CODE = 0 ]; then
+                add_webui
+            else
+                if [ $RET_CODE = 3 ]; then
+                    IP_ADDRESS="$(echo "$DIALOG_RET" | sed 's/\//\\\//g')"
+                    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_ADDRESS -j ACCEPT/d" $CONFIG_FW
+                    iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $DIALOG_RET -j ACCEPT
+                    if [ "$(echo $LIST_IP | wc -w)" = 1 ] && [ -f "$CONFIG_CONTROLLER" ]; then
+                        sed -i '/bind_socket = "*:11334";/d' "$CONFIG_CONTROLLER"
+                        service rspamd restart &>/dev/null
+                    fi
+                else
+                    break
+                fi
+            fi
+        fi
+    done
+}
 # select rspamd feature in dialog checklist
 # parameters:
 # none
@@ -2846,11 +2914,13 @@ dialog_feature_rspamd() {
     DIALOG_BAYES='Enable Bayes-learning'
     DIALOG_HEADERS='Enable detailed headers'
     DIALOG_HISTORY='Enable detailed history'
+    DIALOG_REPUTATION='Enable URL reputation'
     DIALOG_SPAMASSASSIN='Enable Spamassassin rules'
     DIALOG_PYZOR='Enable Pyzor'
     DIALOG_RAZOR='Enable Razor'
-    DIALOG_UPDATE='Enable automatic updates'
-    for FEATURE in cluster sender greylist reject bayes headers history spamassassin pyzor razor update; do
+    DIALOG_UPDATE='Enable automatic Rspamd updates'
+    DIALOG_RULESUPDATE='Enable automatic Spamassassin rules updates'
+    for FEATURE in cluster sender greylist reject bayes headers history reputation spamassassin pyzor razor update rulesupdate; do
         declare -x STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
@@ -2863,9 +2933,11 @@ dialog_feature_rspamd() {
     ARRAY_RSPAMD+=("$DIALOG_HEADERS" '' "$STATUS_HEADERS")
     ARRAY_RSPAMD+=("$DIALOG_HISTORY" '' "$STATUS_HISTORY")
     ARRAY_RSPAMD+=("$DIALOG_SPAMASSASSIN" '' "$STATUS_SPAMASSASSIN")
-    check_installed_pyzor && ARRAY_RSPAMD+=("$DIALOG_PYZOR" '' "$STATUS_PYZOR")
-    check_installed_razor && ARRAY_RSPAMD+=("$DIALOG_RAZOR" '' "$STATUS_RAZOR")
+    ARRAY_RSPAMD+=("$DIALOG_REPUTATION" '' "$STATUS_REPUTATION")
+    check_installed_pyzorrazor && ARRAY_RSPAMD+=("$DIALOG_PYZOR" '' "$STATUS_PYZOR")
+    check_installed_pyzorrazor && ARRAY_RSPAMD+=("$DIALOG_RAZOR" '' "$STATUS_RAZOR")
     ARRAY_RSPAMD+=("$DIALOG_UPDATE" '' "$STATUS_UPDATE")
+    ARRAY_RSPAMD+=("$DIALOG_RULESUPDATE" '' "$STATUS_RULESUPDATE")
     exec 3>&1
     DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
     RET_CODE=$?
@@ -2965,6 +3037,18 @@ dialog_feature_rspamd() {
                 RSPAMD_RESTART=1
             fi
         fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_REPUTATION"; then
+            if [ "$STATUS_REPUTATION" = 'off' ]; then
+                enable_reputation
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''URL reputation'
+        else
+            if [ "$STATUS_REPUTATION" = 'on' ]; then
+                disable_reputation
+                RSPAMD_RESTART=1
+            fi
+        fi
         if echo "$DIALOG_RET" | grep -q "$DIALOG_PYZOR"; then
             if [ "$STATUS_PYZOR" = 'off' ]; then
                 enable_pyzor
@@ -2991,9 +3075,15 @@ dialog_feature_rspamd() {
         fi
         if echo "$DIALOG_RET" | grep -q "$DIALOG_UPDATE"; then
             [ "$STATUS_UPDATE" = 'off' ] && enable_update
-            LIST_ENABLED+=$'\n''Automatic updates'
+            LIST_ENABLED+=$'\n''Automatic Rspamd updates'
         else
             [ "$STATUS_UPDATE" = 'on' ] && disable_update
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_RULESUPDATE"; then
+            [ "$STATUS_RULESUPDATE" = 'off' ] && enable_rulesupdate
+            LIST_ENABLED+=$'\n''Automatic Spamassassin rules updates'
+        else
+            [ "$STATUS_RULESUPDATE" = 'on' ] && disable_rulesupdate
         fi
         [ "$RSPAMD_RESTART" = 1 ] && service rspamd restart &>/dev/null
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED+=$'\n''None'
@@ -3009,24 +3099,22 @@ dialog_config_rspamd() {
     DIALOG_IP='Whitelist sender IP'
     DIALOG_DOMAIN='Whitelist sender domain'
     DIALOG_FROM='Whitelist sender from'
-    DIALOG_PYZOR='Install Pyzor plugin'
-    DIALOG_RAZOR='Install Razor plugin'
+    DIALOG_PYZORRAZOR='Install Pyzor & Razor plugins'
     DIALOG_BAYES='Reset Bayes spam database'
+    DIALOG_WEBUI='Rspamd web UI access'
     DIALOG_STATS='Rspamd stats'
     while true; do
-        DIALOG_PYZOR_INSTALLED="$DIALOG_PYZOR"
-        DIALOG_RAZOR_INSTALLED="$DIALOG_RAZOR"
-        check_installed_pyzor && DIALOG_PYZOR+=' (installed)'
-        check_installed_razor && DIALOG_RAZOR+=' (installed)'
+        DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
+        check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED+=' (installed)'
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
             "$DIALOG_IP" ''                                                                        \
             "$DIALOG_DOMAIN" ''                                                                    \
             "$DIALOG_FROM" ''                                                                      \
-            "$DIALOG_PYZOR_INSTALLED" ''                                                           \
-            "$DIALOG_RAZOR_INSTALLED" ''                                                           \
+            "$DIALOG_PYZORRAZOR_INSTALLED" ''                                                      \
             "$DIALOG_BAYES" ''                                                                     \
+            "$DIALOG_WEBUI" ''                                                                     \
             "$DIALOG_STATS" ''                                                                     \
             2>&1 1>&3)"
         RET_CODE=$?
@@ -3039,12 +3127,12 @@ dialog_config_rspamd() {
                     "$TXT_EDITOR" "$WHITELIST_DOMAIN";;
                 "$DIALOG_FROM")
                     "$TXT_EDITOR" "$WHITELIST_FROM";;
-                "$DIALOG_PYZOR_INSTALLED")
-                    install_pyzor;;
-                "$DIALOG_RAZOR_INSTALLED")
-                    install_razor;;
+                "$DIALOG_PYZORRAZOR_INSTALLED")
+                    install_pyzorrazor;;
                 "$DIALOG_BAYES")
                     reset_bayes;;
+                "$DIALOG_WEBUI")
+                    webui_access;;
                 "$DIALOG_STATS")
                     LIST_STATS='Rspamd stats:'$'\n\n'"$(rspamc stat | grep 'Messages scanned:\|Messages with action add header:\|Messages with action no action:\|Messages learned:\|Connections count:')"
                     $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd stats' --clear --msgbox "$LIST_STATS" 0 0;;

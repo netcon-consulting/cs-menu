@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# update_rules.sh V1.1.0
+# update_rules.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -29,6 +29,7 @@ if ! [ -f "$FILE_DOWNLOAD" ]; then
     fi
 
     tar -C "$DIR_RULES" -xzf "$FILE_DOWNLOAD"
+    [ -f "$FILE_RULES" ] && cp -f "$FILE_RULES" "$FILE_RULES_$(date +%F)"
     cat $DIR_RULES/*.cf > "$FILE_RULES"
 
     PACKED_SCRIPT='
