@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.26.0 for Clearswift SEG >= 4.8
+# menu.sh V1.27.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -54,11 +54,7 @@
 # - automatic Rspamd updates
 #
 # Changelog:
-# - combined installation of Pyzor and Ryzor plugins
-# - added option to open Rspamd web UI port 11334 to 'Rspamd configs' submenu
-# - seperated Rspamd features for activating Spamassassin rules and updating the rules
-# - updated Spamassassin rules update script
-# - added 'URL reputation' as Rspamd feature
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2702,7 +2698,11 @@ check_installed_pyzorrazor() {
     PYZOR_INSTALLED="$?"
     which razor-check &>/dev/null
     RAZOR_INSTALLED="$?"
-    return PYZOR_INSTALLED && RAZOR_INSTALLED
+    if [ "$PYZOR_INSTALLED" = 0 ] && [ "$RAZOR_INSTALLED" = 0 ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 # install Pyzor and Razor plugins
 # parameters:
