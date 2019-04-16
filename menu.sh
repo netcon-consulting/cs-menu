@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.28.0 for Clearswift SEG >= 4.8
+# menu.sh V1.29.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -54,7 +54,7 @@
 # - automatic Rspamd updates
 #
 # Changelog:
-# - added 'Phishing detection' as Rspamd feature
+# - install Pyzor from pip instead of repo
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2748,7 +2748,9 @@ install_pyzorrazor() {
     fi
 
     clear
-    yum install -y pyzor perl-Razor-Agent
+    yum install -y python34-setuptools python34-devel perl-Razor-Agent
+    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
+    pip3 install pyzor
     PACKED_SCRIPT='
     H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
     95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
@@ -2948,12 +2950,12 @@ dialog_feature_rspamd() {
     DIALOG_HEADERS='Enable detailed headers'
     DIALOG_HISTORY='Enable detailed history'
     DIALOG_REPUTATION='Enable URL reputation'
-    DIALOG_SPAMASSASSIN='Enable Spamassassin rules'
+    DIALOG_SPAMASSASSIN='Enable Heinlein SA rules'
     DIALOG_PHISHING='Enable phishing detection'
     DIALOG_PYZOR='Enable Pyzor'
     DIALOG_RAZOR='Enable Razor'
     DIALOG_UPDATE='Enable automatic Rspamd updates'
-    DIALOG_RULESUPDATE='Enable automatic Spamassassin rules updates'
+    DIALOG_RULESUPDATE='Enable automatic SA rules updates'
     for FEATURE in cluster sender greylist reject bayes headers history reputation spamassassin phishing pyzor razor update rulesupdate; do
         declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
@@ -3065,7 +3067,7 @@ dialog_feature_rspamd() {
                 enable_spamassassin
                 RSPAMD_RESTART=1
             fi
-            LIST_ENABLED+=$'\n''Spamassassin rules'
+            LIST_ENABLED+=$'\n''Heinlein SA rules'
         else
             if [ "$STATUS_SPAMASSASSIN" = 'on' ]; then
                 disable_spamassassin
@@ -3128,7 +3130,7 @@ dialog_feature_rspamd() {
         fi
         if echo "$DIALOG_RET" | grep -q "$DIALOG_RULESUPDATE"; then
             [ "$STATUS_RULESUPDATE" = 'off' ] && enable_rulesupdate
-            LIST_ENABLED+=$'\n''Automatic Spamassassin rules updates'
+            LIST_ENABLED+=$'\n''Automatic SA rules updates'
         else
             [ "$STATUS_RULESUPDATE" = 'on' ] && disable_rulesupdate
         fi
