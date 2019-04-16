@@ -1,4 +1,4 @@
-NetCon Clearswift Configuration V1.29.0
+NetCon Clearswift Configuration V1.30.0
 =======================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
@@ -49,3 +49,4 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * integration of Heinlein Spamassassin rules with automatic daily updates
 * integration of Pyzor and Razor
 * automatic Rspamd updates
+* integration of Elasticsearch logging

@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.29.0 for Clearswift SEG >= 4.8
+# menu.sh V1.30.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -48,13 +48,15 @@
 # Rspamd
 # - Rspamd installation and integration as milter
 # - Master-slave cluster setup
-# - feature toggles for greylisting, rejecting, Bayes-learning, detailed spam headers and detailed Rspamd history
+# - feature toggles for greylisting, rejecting, Bayes-learning, detailed spam headers, detailed Rspamd history, URL reputation and phishing detection
 # - integration of Heinlein Spamassassin rules with automatic daily updates
 # - integration of Pyzor and Razor
 # - automatic Rspamd updates
+# - integration of Elasticsearch logging
 #
 # Changelog:
-# - install Pyzor from pip instead of repo
+# - added 'Elasticsearch logging' as Rspamd feature
+# - updated Rspamd update script
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -80,6 +82,7 @@ CONFIG_SPAMASSASSIN='/etc/rspamd/local.d/spamassassin.conf'
 CONFIG_CONTROLLER='/etc/rspamd/local.d/worker-controller.inc'
 CONFIG_REPUTATION='/etc/rspamd/local.d/url_reputation.conf'
 CONFIG_PHISHING='/etc/rspamd/local.d/phishing.conf'
+CONFIG_ELASTIC='/etc/rspamd/local.d/elastic.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
@@ -278,6 +281,7 @@ install_rspamd() {
     e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
+    sed -i '/^\s\+if not plugin_found then$/,/^\s\+end$/d' /usr/share/rspamd/plugins/elastic.lua
     chkconfig rspamd on
     chkconfig redis on
     service redis start
@@ -2365,6 +2369,18 @@ check_enabled_rulesupdate() {
         echo off
     fi
 }
+# check whether Elasticsearch logging is enabled
+# parameters:
+# none
+# return values:
+# Elasticsearch logging status
+check_enabled_elastic() {
+    if [ -f "$CONFIG_ELASTIC" ] && grep -q '^server = ' "$CONFIG_ELASTIC"; then
+        echo on
+    else
+        echo off
+    fi
+}
 # enable master-slave cluster
 # parameters:
 # none
@@ -2638,40 +2654,42 @@ disable_razor() {
 # none
 enable_update() {
     PACKED_SCRIPT='
-    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
+    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
+    q6XUEgwAAA==
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_UPDATE
     chmod 700 $CRON_UPDATE
@@ -2720,6 +2738,38 @@ enable_rulesupdate() {
 # none
 disable_rulesupdate() {
     rm -f $CRON_RULES
+}
+# enable Elasticsearch logging
+# parameters:
+# $1 - Elasticsearch host IP
+# return values:
+# none
+enable_elastic() {
+    local DIALOG_RET RET_CODE ELASTIC_HOST
+
+    if [ -z "$1" ]; then
+        exec 3>&1
+        DIALOG_RET="$(dialog --clear --backtitle 'Enable features' --title 'Elasticsearch logging'   \
+            --inputbox 'Enter IP address of Elasticsearch host' 0 50 2>&1 1>&3)"
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+            ELASTIC_HOST="$DIALOG_RET"
+        else
+            return 1
+        fi
+    else
+        ELASTIC_HOST="$1"
+    fi
+    echo "server = \"$ELASTIC_HOST:9200\";" >> "$CONFIG_ELASTIC"
+}
+# disable Elasticsearch logging
+# parameters:
+# $1 - Elasticsearch host IP
+# return values:
+# none
+disable_elastic() {
+    sed -i "/^server = \"$1:9200\";/d" "$CONFIG_ELASTIC"
 }
 # check whether Pyzor and Razor are installed
 # parameters:
@@ -2956,9 +3006,11 @@ dialog_feature_rspamd() {
     DIALOG_RAZOR='Enable Razor'
     DIALOG_UPDATE='Enable automatic Rspamd updates'
     DIALOG_RULESUPDATE='Enable automatic SA rules updates'
-    for FEATURE in cluster sender greylist reject bayes headers history reputation spamassassin phishing pyzor razor update rulesupdate; do
+    DIALOG_ELASTIC='Enable Elasticsearch logging'
+    for FEATURE in cluster sender greylist reject bayes headers history reputation spamassassin phishing pyzor razor update rulesupdate elastic; do
         declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
+    [ "$STATUS_ELASTIC" = 'on' ] && ELASTIC_HOST="$(awk 'match($0, /server = "([^:]+):9200";/, a) {print a[1]}' "$CONFIG_ELASTIC")" || ELASTIC_HOST=''
     NUM_PEERS="$(grep '<Peer address="' /var/cs-gateway/peers.xml | wc -l)"
     ARRAY_RSPAMD=()
     [ "$NUM_PEERS" -gt 1 ] && ARRAY_RSPAMD+=("$DIALOG_CLUSTER" '' "$STATUS_CLUSTER")
@@ -2975,6 +3027,7 @@ dialog_feature_rspamd() {
     check_installed_pyzorrazor && ARRAY_RSPAMD+=("$DIALOG_RAZOR" '' "$STATUS_RAZOR")
     ARRAY_RSPAMD+=("$DIALOG_UPDATE" '' "$STATUS_UPDATE")
     ARRAY_RSPAMD+=("$DIALOG_RULESUPDATE" '' "$STATUS_RULESUPDATE")
+    ARRAY_RSPAMD+=("$DIALOG_ELASTIC" '' "$STATUS_ELASTIC")
     exec 3>&1
     DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Apply' --checklist 'Choose rspamd features to enable' 0 0 0 "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
     RET_CODE=$?
@@ -3133,6 +3186,18 @@ dialog_feature_rspamd() {
             LIST_ENABLED+=$'\n''Automatic SA rules updates'
         else
             [ "$STATUS_RULESUPDATE" = 'on' ] && disable_rulesupdate
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_ELASTIC"; then
+            if [ "$STATUS_ELASTIC" = 'off' ]; then
+                enable_elastic "$ELASTIC_HOST"
+                RSPAMD_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Elasticsearch logging'
+        else
+            if [ "$STATUS_ELASTIC" = 'on' ]; then
+                disable_elastic "$ELASTIC_HOST"
+                RSPAMD_RESTART=1
+            fi
         fi
         [ "$RSPAMD_RESTART" = 1 ] && service rspamd restart &>/dev/null
         [ -z "$LIST_ENABLED" ] && LIST_ENABLED+=$'\n''None'

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# update_rspamd.sh V1.1.0
+# update_rspamd.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -37,6 +37,7 @@ if [ "$?" != 0 ]; then
         e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
         '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
+        sed -i '/^\s\+if not plugin_found then$/,/^\s\+end$/d' /usr/share/rspamd/plugins/elastic.lua
 
         MESSAGE_EMAIL="Rspamd successfully updated to version '$(yum list rspamd | grep rspamd | awk '{print $2}')'"
     else
