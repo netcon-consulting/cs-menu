@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.30.0 for Clearswift SEG >= 4.8
+# menu.sh V1.31.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,8 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added 'Elasticsearch logging' as Rspamd feature
 # - updated Rspamd update script
+# - fixed Rspamd Elasticsearch logging
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -281,7 +281,6 @@ install_rspamd() {
     e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
-    sed -i '/^\s\+if not plugin_found then$/,/^\s\+end$/d' /usr/share/rspamd/plugins/elastic.lua
     chkconfig rspamd on
     chkconfig redis on
     service redis start
@@ -2229,7 +2228,7 @@ check_enabled_sender() {
 # return values:
 # greylisting status
 check_enabled_greylist() {
-    if [ -f "$CONFIG_ACTIONS" ] && grep -q 'greylist = null;' "$CONFIG_ACTIONS" && [ -f "$CONFIG_GREYLIST" ] && grep -q 'enabled = false;' "$CONFIG_GREYLIST"; then
+    if [ -f "$CONFIG_ACTIONS" ] && grep -q '^greylist = null;$' "$CONFIG_ACTIONS" && [ -f "$CONFIG_GREYLIST" ] && grep -q '^enabled = false;$' "$CONFIG_GREYLIST"; then
         echo on
     else
         echo off
@@ -2241,7 +2240,7 @@ check_enabled_greylist() {
 # return values:
 # rejecting status
 check_enabled_reject() {
-    if [ -f "$CONFIG_ACTIONS" ] && grep -q 'reject = null;' "$CONFIG_ACTIONS"; then
+    if [ -f "$CONFIG_ACTIONS" ] && grep -q '^reject = null;$' "$CONFIG_ACTIONS"; then
         echo on
     else
         echo off
@@ -2253,7 +2252,7 @@ check_enabled_reject() {
 # return values:
 # bayes-learning status
 check_enabled_bayes() {
-    if [ -f "$CONFIG_BAYES" ] && grep -q 'autolearn = true;' "$CONFIG_BAYES"; then
+    if [ -f "$CONFIG_BAYES" ] && grep -q '^autolearn = true;$' "$CONFIG_BAYES"; then
         echo on
     else
         echo off
@@ -2265,7 +2264,7 @@ check_enabled_bayes() {
 # return values:
 # detailed headers status
 check_enabled_headers() {
-    if [ -f "$CONFIG_HEADERS" ] && grep -q 'extended_spam_headers = true;' "$CONFIG_HEADERS"; then
+    if [ -f "$CONFIG_HEADERS" ] && grep -q '^extended_spam_headers = true;$' "$CONFIG_HEADERS"; then
         echo on
     else
         echo off
@@ -2277,7 +2276,7 @@ check_enabled_headers() {
 # return values:
 # detailed history status
 check_enabled_history() {
-    if [ -f "$CONFIG_HISTORY" ] && grep -q 'servers = 127.0.0.1:6379;' "$CONFIG_HISTORY"; then
+    if [ -f "$CONFIG_HISTORY" ] && grep -q '^servers = 127.0.0.1:6379;$' "$CONFIG_HISTORY"; then
         echo on
     else
         echo off
@@ -2289,8 +2288,8 @@ check_enabled_history() {
 # return values:
 # Spamassassin rules status
 check_enabled_spamassassin() {
-    if [ -f "$CONFIG_SPAMASSASSIN" ] && grep -q "ruleset = \"$FILE_RULES\";" "$CONFIG_SPAMASSASSIN"     \
-        && grep -q 'alpha = 0.1;' "$CONFIG_SPAMASSASSIN"; then
+    if [ -f "$CONFIG_SPAMASSASSIN" ] && grep -q "^ruleset = \"$FILE_RULES\";$" "$CONFIG_SPAMASSASSIN"     \
+        && grep -q '^alpha = 0.1;$' "$CONFIG_SPAMASSASSIN"; then
         echo on
     else
         echo off
@@ -2302,7 +2301,7 @@ check_enabled_spamassassin() {
 # return values:
 # URL reputation status
 check_enabled_reputation() {
-    if [ -f "$CONFIG_REPUTATION" ] && grep -q 'enabled = true;' "$CONFIG_REPUTATION"; then
+    if [ -f "$CONFIG_REPUTATION" ] && grep -q '^enabled = true;$' "$CONFIG_REPUTATION"; then
         echo on
     else
         echo off
@@ -2314,8 +2313,8 @@ check_enabled_reputation() {
 # return values:
 # phishing detection status
 check_enabled_phishing() {
-    if [ -f "$CONFIG_PHISHING" ] && grep -q 'phishtank_enabled = true;' "$CONFIG_PHISHING"                              \
-        && grep -q 'phishtank_map = "https://rspamd.com/phishtank/online-valid.json.zst";' "$CONFIG_PHISHING"; then
+    if [ -f "$CONFIG_PHISHING" ] && grep -q '^phishtank_enabled = true;$' "$CONFIG_PHISHING"                              \
+        && grep -q '^phishtank_map = "https://rspamd.com/phishtank/online-valid.json.zst";$' "$CONFIG_PHISHING"; then
         echo on
     else
         echo off
@@ -2327,7 +2326,7 @@ check_enabled_phishing() {
 # return values:
 # Pyzor status
 check_enabled_pyzor() {
-    if [ -f "$CONFIG_LOCAL" ] && grep -q 'pyzor { }' "$CONFIG_LOCAL"; then
+    if [ -f "$CONFIG_LOCAL" ] && grep -q '^pyzor { }$' "$CONFIG_LOCAL"; then
         echo on
     else
         echo off
@@ -2339,7 +2338,7 @@ check_enabled_pyzor() {
 # return values:
 # Razor status
 check_enabled_razor() {
-    if [ -f "$CONFIG_LOCAL" ] && grep -q 'razor { }' "$CONFIG_LOCAL"; then
+    if [ -f "$CONFIG_LOCAL" ] && grep -q '^razor { }$' "$CONFIG_LOCAL"; then
         echo on
     else
         echo off
@@ -2375,7 +2374,8 @@ check_enabled_rulesupdate() {
 # return values:
 # Elasticsearch logging status
 check_enabled_elastic() {
-    if [ -f "$CONFIG_ELASTIC" ] && grep -q '^server = ' "$CONFIG_ELASTIC"; then
+    if [ -f "$CONFIG_ELASTIC" ] && grep -q '^server = ' "$CONFIG_ELASTIC" && grep -q '^ingest_module = true;$' "$CONFIG_ELASTIC"    \
+        && grep -q '^debug = true;$' "$CONFIG_ELASTIC" && grep -q '^import_kibana = true;$' "$CONFIG_ELASTIC"; then
         echo on
     else
         echo off
@@ -2654,42 +2654,41 @@ disable_razor() {
 # none
 enable_update() {
     PACKED_SCRIPT='
-    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
-    q6XUEgwAAA==
+    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
+    H/Txne3y11bsz/8B3xJ0NvYLAAA=
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_UPDATE
     chmod 700 $CRON_UPDATE
@@ -2762,6 +2761,9 @@ enable_elastic() {
         ELASTIC_HOST="$1"
     fi
     echo "server = \"$ELASTIC_HOST:9200\";" >> "$CONFIG_ELASTIC"
+    echo 'ingest_module = true;' >> "$CONFIG_ELASTIC"
+    echo 'debug = true;' >> "$CONFIG_ELASTIC"
+    echo 'import_kibana = true;' >> "$CONFIG_ELASTIC"
 }
 # disable Elasticsearch logging
 # parameters:
@@ -2770,6 +2772,9 @@ enable_elastic() {
 # none
 disable_elastic() {
     sed -i "/^server = \"$1:9200\";/d" "$CONFIG_ELASTIC"
+    sed -i '/ingest_module = true;/d' "$CONFIG_ELASTIC"
+    sed -i '/debug = true;/d' "$CONFIG_ELASTIC"
+    sed -i '/import_kibana = true;/d' "$CONFIG_ELASTIC"
 }
 # check whether Pyzor and Razor are installed
 # parameters:

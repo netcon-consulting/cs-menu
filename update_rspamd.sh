@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# update_rspamd.sh V1.2.0
+# update_rspamd.sh V1.3.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -12,6 +12,7 @@ EMAIL_RECIPIENT='uwe@usommer.de'
 
 yum check-update rspamd &>/dev/null
 if [ "$?" != 0 ]; then
+    service rspamd stop &>/dev/null
     yum update -y rspamd &>/dev/null
     if [ "$?" = 0 ]; then
         PACKED_SCRIPT='
@@ -37,12 +38,12 @@ if [ "$?" != 0 ]; then
         e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
         '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
-        sed -i '/^\s\+if not plugin_found then$/,/^\s\+end$/d' /usr/share/rspamd/plugins/elastic.lua
 
         MESSAGE_EMAIL="Rspamd successfully updated to version '$(yum list rspamd | grep rspamd | awk '{print $2}')'"
     else
         MESSAGE_EMAIL='Error updating rspamd'
     fi
+    service rspamd start &>/dev/null
     DOMAIN_RECIPIENT="$(echo "$EMAIL_RECIPIENT"| awk -F"@" '{print $2}')"
     MAIL_RELAY=''
     [ -f "$TRANSPORT_MAP" ] && MAIL_RELAY="$(grep "^$DOMAIN_RECIPIENT " $TRANSPORT_MAP | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
