@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.31.0 for Clearswift SEG >= 4.8
+# menu.sh V1.32.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,8 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - updated Rspamd update script
-# - fixed Rspamd Elasticsearch logging
+# - additionally show Rspamd version in 'Rspamd info & stats'
+# - updated check sender IP script
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -3221,7 +3221,7 @@ dialog_config_rspamd() {
     DIALOG_PYZORRAZOR='Install Pyzor & Razor plugins'
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_WEBUI='Rspamd web UI access'
-    DIALOG_STATS='Rspamd stats'
+    DIALOG_STATS='Rspamd info & stats'
     while true; do
         DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
         check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED+=' (installed)'
@@ -3253,8 +3253,8 @@ dialog_config_rspamd() {
                 "$DIALOG_WEBUI")
                     webui_access;;
                 "$DIALOG_STATS")
-                    LIST_STATS='Rspamd stats:'$'\n\n'"$(rspamc stat | grep 'Messages scanned:\|Messages with action add header:\|Messages with action no action:\|Messages learned:\|Connections count:')"
-                    $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd stats' --clear --msgbox "$LIST_STATS" 0 0;;
+                    LIST_STATS="Rspamd version: $(rspamd -v | awk '{print $4}')"$'\n\n''Rspamd stats:'$'\n\n'"$(rspamc stat | grep 'Messages scanned:\|Messages with action add header:\|Messages with action no action:\|Messages learned:\|Connections count:')"
+                    $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd info & stats' --clear --msgbox "$LIST_STATS" 0 0;;
             esac
         else
             break
@@ -3687,26 +3687,30 @@ init_cs() {
     CUSTOM_COMMAND="$DIR_COMMANDS/check_sender_ip.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
         PACKED_SCRIPT="
-        H4sIAIhuhlwAA71WbW/iRhD+7l8xITSGBvMSKZUgog0K3BU1yUXh7nQV5JCxx9iKvevuLoH0cv+9
-        s2sDhiR9yYeiRODd8czzPPPs2IcHjVnEGjNXhpZ1CF6I3v1UIvNRTKO0LkP43Kq36k3rkHYvePoo
-        onmooOJV4aTZasM1qgvO4BNTKBiGCTI5Q+GqBZvD+2T2aw0iFvBzhsrjzKF/uYhVxOZ1jycmZ2+h
-        Qi5kBz4tEUY8SVDU4MoVHvQjFPcEReMSqBaCgcd9lB26boIDGUoY3lAJiCOpaP10Z51xVdhrt2lz
-        wQR6/IEgzmIEFIILyxreTN8NLwddu96I0qkOt/Xa5fD6t64dKpV2Go10hfVI+jyO6z5uw656X6a9
-        94PuSeunZhMOdTlJBZgvrcFVb3g5vR1cDG+Gg+uPXXuxxPOFNBQph615RQFg4kYxBBHB8TlKAxpX
-        lBxUiOwlwFDJvrQa3Xa7ao3BCaBUbpXgDp6e9N2K2GbphzeORrqfm26PJPBYK6VCl0FOpAZKPILi
-        FL9kMXd9YLgEKi8janMgeAI+BhFDH5Y4I2nZvUVVDiDHkEuZIxnTSgVXqYByxXcVwvEPskpdyK8c
-        Ws9vMDvVEjhzRffkYCjLmVHBAvos56iyCroxFPqhWO/o54aPDw22iGMTbchvSASkMUHOFE1NcRUl
-        CFK5SQo8yPQn2owvtTaeQB2juZsdyrXRToLLfOMycGMUKu+g1ixXhjoWpREyZZDQvWMo/wIHXbJt
-        kZD+KL7wwgKPzUb/A9nnumAfraQXcordM1bpCdzlPTjvSuclsL+lImIKyiff7eo2m1HD9X2BUmq6
-        GeQM/gYtJG4ccJFshPoX1lsXoPb/SdD2UWsfHB1tHLmOzglc9n7XtPxoDseSpoCCY8Z9JukEQbKC
-        Z9ngCaSOcpign0pTcFqQ0f874p7LdPd8pCGVUIfg6gv1TxAzIL77MtiSfEP6sDersKX3Cv+skRc5
-        rLVJ10fVnDJ7bXS7RAxNuxwJ9vhCT2gYrWfcXeGA73jdBmcEMlFpt4inc3JaMseuEnKpmJtg9Xz7
-        Gxy/Cvv2MqCDyKK/Q/rW1lcu6WUOjaDC9i16GD2g3zHIbT0DM3+F6BLKs/XpCfiC/QdrEYLB8POg
-        Px197N0a/88FptR8sL/ulzTD78kUzCzhLcgmQYsYTTpkh7wxuyn3mpOz0+f6/+M2uO53NzNyFx4c
-        U5skHUZi/HpIq1qblCEtrSXYajQZ2a9LQkO49YIuBOeZKrhSwvXUa4rQIwDPsgdZqh7fIAGZfKA1
-        2FDd5VjbQfct/Z5RfQG8TvRyT+ldYD38qIH/ROQN/aSz2uv3bwej0WZO7+JaT6nEVV5YKTdr0JiM
-        K+Om067fHVcnd40auFXIZ5g7bt2ZKZYz3GZ/Rs884Yvk6CrevDwUUJ7WAGOJxaWmlZnlDyh9LdSY
-        yB/Lpe2DeV2uuXm1OLX+AvB0OQY2CgAA
+        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
         "
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
