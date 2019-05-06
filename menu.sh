@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.32.0 for Clearswift SEG >= 4.8
+# menu.sh V1.33.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - additionally show Rspamd version in 'Rspamd info & stats'
-# - updated check sender IP script
+# - disable rspamd headers for mail from internal network
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -528,10 +527,12 @@ enable_rspamd() {
     if [ -f "$MAP_CLIENT" ]; then
         CLIENT_REJECT="$(postmulti -i postfix-inbound -x postconf -n | grep '^cp_client_' | grep 'REJECT' | awk '{print $1}')"
         if [ -z "$CLIENT_REJECT" ]; then
-            awk '{print $1}' $MAP_CLIENT | sort -u >> $WHITELIST_IP
+            LIST_IP="$(awk '{print $1}' $MAP_CLIENT | sort -u | xargs)"
         else
-            awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $MAP_CLIENT | sort -u >> $WHITELIST_IP
+            LIST_IP="$(awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $MAP_CLIENT | sort -u | xargs)"
         fi
+        echo "$LIST_IP" | xargs -n 1 >> $WHITELIST_IP
+        echo "local_addrs = [192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, fd00::/8, 169.254.0.0/16, fe80::/10, $(echo "$LIST_IP" | sed 's/ /, /g')];" >> $CONFIG_OPTIONS
     fi
     echo "# end managed by $TITLE_MAIN" >> $WHITELIST_IP
 }
@@ -552,6 +553,7 @@ disable_rspamd() {
         newaliases
     fi
     [ -f "$WHITELIST_IP" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_IP
+    [ -f "$CONFIG_OPTIONS" ] && sed -i '/local_addrs = \[192.168.0.0\/16, 10.0.0.0\/8, 172.16.0.0\/12, fd00::\/8, 169.254.0.0\/16, fe80::\/10/d' $CONFIG_OPTIONS
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -2204,7 +2206,7 @@ dialog_clearswift() {
 # return values:
 # master-slave cluster status
 check_enabled_cluster() {
-    if [ -f "$CONFIG_OPTIONS" ]; then
+    if [ -f "$CONFIG_OPTIONS" ] && grep -q '^neighbours {$' "$CONFIG_OPTIONS" && grep -q '^dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";$' "$CONFIG_OPTIONS"; then
         echo on
     else
         echo off
@@ -2402,7 +2404,7 @@ enable_cluster() {
         echo "write_servers = \"$IP_MASTER:6379\";" > "$CONFIG_RSPAMD_REDIS"
     fi
     echo 'read_servers = "127.0.0.1";' >> "$CONFIG_RSPAMD_REDIS"
-    echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' > "$CONFIG_OPTIONS"
+    echo 'neighbours {'$'\n\t'"server1 { host = \"$IP_MASTER:11334\"; }"$'\n\t'"server2 { host = \"$IP_SLAVE:11334\"; }"$'\n''}' >> "$CONFIG_OPTIONS"
     echo 'dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";' >> "$CONFIG_OPTIONS"
     echo 'backend = "redis";' > /etc/rspamd/local.d/classifier-bayes.conf
     echo 'backend = "redis";' > /etc/rspamd/local.d/worker-fuzzy.inc
@@ -2432,7 +2434,9 @@ disable_cluster() {
     CONFIG_RSPAMD_REDIS='/etc/rspamd/local.d/redis.conf'
     sed -i 's/^#bind 127.0.0.1/bind 127.0.0.1/' "$CONFIG_REDIS"
     sed -i 's/^protected-mode no/protected-mode yes/' "$CONFIG_REDIS"
-    rm -f "$CONFIG_RSPAMD_REDIS" "$CONFIG_OPTIONS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
+    rm -f "$CONFIG_RSPAMD_REDIS" /etc/rspamd/local.d/classifier-bayes.conf /etc/rspamd/local.d/worker-fuzzy.inc
+    sed -i '/^neighbours {$/,/^}$/d' "$CONFIG_OPTIONS"
+    sed -i '/dynamic_conf = "/var/lib/rspamd/rspamd_dynamic";/d' "$CONFIG_OPTIONS"
     sed -i '/bind_socket = "\*:11334";/d' "$CONFIG_CONTROLLER"
     sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT/d" $CONFIG_FW
     iptables -D INPUT -i eth0 -p tcp --dport 11334 -s $IP_OTHER -j ACCEPT
