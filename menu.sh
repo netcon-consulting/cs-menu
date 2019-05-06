@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.33.0 for Clearswift SEG >= 4.8
+# menu.sh V1.34.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,9 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - disable rspamd headers for mail from internal network
+# - start/stop rspamd and redis services when enabling/disabling rspamd
+# - added options for manual rspamd update and fixing of rspamd service script to 'Rspamd configs' submenu
+# - added toggle for DNS query logging to 'Other configs' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -126,6 +128,28 @@ CRON_BACKUP='/etc/cron.daily/email_backup.sh'
 CRON_RULES='/etc/cron.daily/update_rules.sh'
 CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
 APPLY_NEEDED=0
+RSPAMD_SCRIPT='
+H4sIAGNGr1wAA41WbW/aSBD+fP4VU2NFyUnGSav0Tqnoqdc4OVQCCMidTu0JGXsNFsZLdtdpo5D/
+frO7XnsNKKo/GHvmmbdnZsd03gSLrAj4yuk4HWB8G20S8EGsMg48ZtlWABcRExyiIsFHuuWoJAaZ
+RGRDC6fT6cCf4W1/CP1hf4a3mxF6GzP6mCWEX0F9aTPUTchDmTGS+FPpXSE8hr4EmaccvIKI75St
+20C61Z6M1rJA4DVJozIXlkO4bInRHN+nK8qEf010cRktrmDSrgVaSn1VEHmHNMsFYVmxrCxgy2hM
+OFcshMNrmwP0Fq/WMS3SbCl9+fD7JVzIvJJWkIpOJD3aD8KfuCAbtKjCFNGGXDVENr7xCoiIA62q
+frpSfxSGfrUwqH1tswTjEo0KHiMWsLLY84cYR9JISxYTSMsiliVAni1YxJ66TrdKIu4mQVZkAn8M
+iFuGVQtlgTqLkkUSUzto0jOzgMafVyRe4/xFwnaArJXbrvMVXG8Yzv4ZTb70h7cu9MAtqAv/wckJ
+kB+ZgHPH0UX03KDkTA2+FrhaESWbfRWKXAeZX/a800XEiWQf505ZnTnOZDr+dHc9/zwa3sxv+oMQ
+zY+3wDXQ+2k46blzE7eS3k5G92NLjMX46fE+6YIOWKqa6OQ0Xssm9lT/5FvAywXiaoQ6z6dn8OzI
+NmOgH6YgdL3baa4ujTI1yqZIC/ZewUi8ouAX4Lnq8MmeeJKzK3CVvjonJoofg7dPHPhlLZQUgb+s
+3xU5yhEj4jHKe94fddgqTU9rwCcPcK4ZErSMV+AZPox9yQqDdl4kGXRbc2HXQbfbgzrWWZ7LU6il
+4M/Cyd2RvLL0MKMPcmsWjtmDCuJ6WP50NAhn/45DF97gwHI881HuHuDr5EgB7rdv5+/efb14f+vW
++jSrH6ez0XjWvwtH97PeZS39vkIOZFqWGjkWOreE2pGAreY4JKLk8wfZ6QUj0boF4DkhW7hoyXIi
+WrG9Z+vtxW/ACS1Im4h2UkcJq+p3Z9mG0FIAYYwyoHFcMvw4gGBPsluCqk9Uta67cENx16Rlnj9p
+ufpykU2EiwnR1UIlvOtacfab/KU/GFhq3GCq+JQy8kgYRCnuaZj2byUOFkStbFIIOCXdZRfuh/3h
+DKaDMByfWV50OyyeLd1eM45x3QxqK/UWs9ZIsI06x62jUKnrM3R4NBhpbwq9aARK5VAYvB55yW71
+gCbaOqdR8lPGTTUTZfTKuTMb5K9qIUzC2d+fBq2FgLFT2fb5XgZVOVLfJFNpPbPr7TyPrSlVmela
+7Vq/6pxbiPlDE97I4GOQkMegwKmEtx9PLlRC+GXBdXDhQlY0NDYDYx/I5mtmtF4zHB8+1O04bm0W
+92vWFVO7houzV9GS5tej/faKvWqWv+/FbuFhddL9kYj7QCwgMcXghvCr559lxkzML5bLXxtjNbae
+e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
+'
 ###################################################################################################
 TITLE_MAIN='NetCon Clearswift Configuration'
 ###################################################################################################
@@ -257,33 +281,7 @@ install_rspamd() {
     AZdjxC4XVL4TXDgqFU4eEumYS2+Wj3mhsfu/0Vj8hWZuXk2fo04qAQAA
     '
     printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/signatures_group.conf
-    PACKED_SCRIPT='
-    H4sIAGNGr1wAA41WbW/aSBD+fP4VU2NFyUnGSav0Tqnoqdc4OVQCCMidTu0JGXsNFsZLdtdpo5D/
-    frO7XnsNKKo/GHvmmbdnZsd03gSLrAj4yuk4HWB8G20S8EGsMg48ZtlWABcRExyiIsFHuuWoJAaZ
-    RGRDC6fT6cCf4W1/CP1hf4a3mxF6GzP6mCWEX0F9aTPUTchDmTGS+FPpXSE8hr4EmaccvIKI75St
-    20C61Z6M1rJA4DVJozIXlkO4bInRHN+nK8qEf010cRktrmDSrgVaSn1VEHmHNMsFYVmxrCxgy2hM
-    OFcshMNrmwP0Fq/WMS3SbCl9+fD7JVzIvJJWkIpOJD3aD8KfuCAbtKjCFNGGXDVENr7xCoiIA62q
-    frpSfxSGfrUwqH1tswTjEo0KHiMWsLLY84cYR9JISxYTSMsiliVAni1YxJ66TrdKIu4mQVZkAn8M
-    iFuGVQtlgTqLkkUSUzto0jOzgMafVyRe4/xFwnaArJXbrvMVXG8Yzv4ZTb70h7cu9MAtqAv/wckJ
-    kB+ZgHPH0UX03KDkTA2+FrhaESWbfRWKXAeZX/a800XEiWQf505ZnTnOZDr+dHc9/zwa3sxv+oMQ
-    zY+3wDXQ+2k46blzE7eS3k5G92NLjMX46fE+6YIOWKqa6OQ0Xssm9lT/5FvAywXiaoQ6z6dn8OzI
-    NmOgH6YgdL3baa4ujTI1yqZIC/ZewUi8ouAX4Lnq8MmeeJKzK3CVvjonJoofg7dPHPhlLZQUgb+s
-    3xU5yhEj4jHKe94fddgqTU9rwCcPcK4ZErSMV+AZPox9yQqDdl4kGXRbc2HXQbfbgzrWWZ7LU6il
-    4M/Cyd2RvLL0MKMPcmsWjtmDCuJ6WP50NAhn/45DF97gwHI881HuHuDr5EgB7rdv5+/efb14f+vW
-    +jSrH6ez0XjWvwtH97PeZS39vkIOZFqWGjkWOreE2pGAreY4JKLk8wfZ6QUj0boF4DkhW7hoyXIi
-    WrG9Z+vtxW/ACS1Im4h2UkcJq+p3Z9mG0FIAYYwyoHFcMvw4gGBPsluCqk9Uta67cENx16Rlnj9p
-    ufpykU2EiwnR1UIlvOtacfab/KU/GFhq3GCq+JQy8kgYRCnuaZj2byUOFkStbFIIOCXdZRfuh/3h
-    DKaDMByfWV50OyyeLd1eM45x3QxqK/UWs9ZIsI06x62jUKnrM3R4NBhpbwq9aARK5VAYvB55yW71
-    gCbaOqdR8lPGTTUTZfTKuTMb5K9qIUzC2d+fBq2FgLFT2fb5XgZVOVLfJFNpPbPr7TyPrSlVmela
-    7Vq/6pxbiPlDE97I4GOQkMegwKmEtx9PLlRC+GXBdXDhQlY0NDYDYx/I5mtmtF4zHB8+1O04bm0W
-    92vWFVO7houzV9GS5tej/faKvWqWv+/FbuFhddL9kYj7QCwgMcXghvCr559lxkzML5bLXxtjNbae
-    e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
-    chkconfig rspamd on
-    chkconfig redis on
-    service redis start
-    service rspamd start
+    printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     get_keypress
 }
 # install ACME Tool
@@ -535,6 +533,10 @@ enable_rspamd() {
         echo "local_addrs = [192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, fd00::/8, 169.254.0.0/16, fe80::/10, $(echo "$LIST_IP" | sed 's/ /, /g')];" >> $CONFIG_OPTIONS
     fi
     echo "# end managed by $TITLE_MAIN" >> $WHITELIST_IP
+    chkconfig rspamd on
+    chkconfig redis on
+    service redis start &>/dev/null
+    service rspamd start &>/dev/null
 }
 # disable Rspamd
 # parameters:
@@ -554,6 +556,10 @@ disable_rspamd() {
     fi
     [ -f "$WHITELIST_IP" ] && sed -i "/# start managed by $TITLE_MAIN/,/# end managed by $TITLE_MAIN/d" $WHITELIST_IP
     [ -f "$CONFIG_OPTIONS" ] && sed -i '/local_addrs = \[192.168.0.0\/16, 10.0.0.0\/8, 172.16.0.0\/12, fd00::\/8, 169.254.0.0\/16, fe80::\/10/d' $CONFIG_OPTIONS
+    chkconfig rspamd off
+    chkconfig redis off
+    service rspamd stop &>/dev/null
+    service redis stop &>/dev/null
 }
 # enable Let's Encrypt cert
 # parameters:
@@ -2995,6 +3001,23 @@ webui_access() {
         fi
     done
 }
+# check for rspamd update and install it
+# parameters:
+# none
+# return values:
+# none
+rspamd_update() {
+    yum check-update rspamd &>/dev/null
+    if [ "$?" = 0 ]; then
+        $DIALOG --backtitle "$TITLE_MAIN" --title "Update rspamd" --clear --msgbox 'No Rspamd update available.' 0 0
+    else
+        clear
+        service rspamd stop
+        yum update -y rspamd
+        [ "$?" = 0 ] && printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
+        service rspamd start
+    fi
+}
 # select rspamd feature in dialog checklist
 # parameters:
 # none
@@ -3226,6 +3249,8 @@ dialog_config_rspamd() {
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_WEBUI='Rspamd web UI access'
     DIALOG_STATS='Rspamd info & stats'
+    DIALOG_UPDATE='Update Rspamd'
+    DIALOG_SERVICE='Fix Rspamd service script'
     while true; do
         DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
         check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED+=' (installed)'
@@ -3239,6 +3264,8 @@ dialog_config_rspamd() {
             "$DIALOG_BAYES" ''                                                                     \
             "$DIALOG_WEBUI" ''                                                                     \
             "$DIALOG_STATS" ''                                                                     \
+            "$DIALOG_UPDATE" ''                                                                    \
+            "$DIALOG_SERVICE" ''                                                                   \
             2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
@@ -3259,6 +3286,10 @@ dialog_config_rspamd() {
                 "$DIALOG_STATS")
                     LIST_STATS="Rspamd version: $(rspamd -v | awk '{print $4}')"$'\n\n''Rspamd stats:'$'\n\n'"$(rspamc stat | grep 'Messages scanned:\|Messages with action add header:\|Messages with action no action:\|Messages learned:\|Connections count:')"
                     $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd info & stats' --clear --msgbox "$LIST_STATS" 0 0;;
+                "$DIALOG_UPDATE")
+                    rspamd_update;;
+                "$DIALOG_SERVICE")
+                    printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
             esac
         else
             break
@@ -3404,6 +3435,37 @@ dialog_anomaly() {
         fi
     done
 }
+# toggle DNS query logging
+# parameters:
+# none
+# return values:
+# none
+toggle_logging() {
+    if [ -f "$CONFIG_BIND" ] && grep -q '^logging {$' "$CONFIG_BIND"; then
+        STATUS_CURRENT='enabled'
+        STATUS_TOGGLE='Disable'
+    else
+        STATUS_CURRENT='disabled'
+        STATUS_TOGGLE='Enable'
+    fi
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle DNS query logging' --yesno "DNS query logging is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    if [ "$?" = 0 ]; then
+        if [ $STATUS_CURRENT = 'disabled' ]; then
+            DIR_LOG='/var/log/named'
+            mkdir -p "$DIR_LOG"
+            chown named:named "$DIR_LOG"
+            PACKED_SCRIPT='
+            H4sIAEg90FwAA02O0QrCMAxFn+dXhL1r57MfI2W71kCbalMHnfjvZlNBSEg4uZebmENgCfTcdePV
+            iyDS/YHC0POFI1bebUvvZl9czMGJT5jcV3Uw0tOMopxF6TiQ8gKbQzqZVWEnro2mZjYeV3YrLHVf
+            OYEa1MjLevQVIZf2S9+C/z/56KzeT8agabIAAAA=
+            '
+            printf "%s" $PACKED_SCRIPT | base64 -d | gunzip >> "$CONFIG_BIND"
+        else
+            sed -i '/^logging {$/,/^};$/d' "$CONFIG_BIND"
+        fi
+        service named restart &>/dev/null
+    fi
+}
 # select other configuration to manage in dialog menu
 # parameters:
 # none
@@ -3417,6 +3479,7 @@ dialog_other() {
     DIALOG_FORWARDING='Internal DNS forwarding'
     DIALOG_REPORT='Monthly email stats reports'
     DIALOG_ANOMALY='Sender anomaly detection'
+    DIALOG_LOG='DNS query logging'
     ARRAY_OTHER=()
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY_OTHER+=("$DIALOG_MAIL_INTERN" '')
@@ -3425,6 +3488,7 @@ dialog_other() {
     ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
     ARRAY_OTHER+=("$DIALOG_REPORT" '')
     ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
+    ARRAY_OTHER+=("$DIALOG_LOG" '')
     while true; do
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                  \
@@ -3449,6 +3513,8 @@ dialog_other() {
                     dialog_report;;
                 "$DIALOG_ANOMALY")
                     dialog_anomaly;;
+                "$DIALOG_LOG")
+                    toggle_logging;;
             esac
         else
             break
