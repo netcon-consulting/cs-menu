@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.34.0 for Clearswift SEG >= 4.8
+# menu.sh V1.35.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,9 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - start/stop rspamd and redis services when enabling/disabling rspamd
-# - added options for manual rspamd update and fixing of rspamd service script to 'Rspamd configs' submenu
-# - added toggle for DNS query logging to 'Other configs' submenu
+# - keep local copy of exported addresslists archive
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1528,10 +1526,11 @@ export_address_list() {
             $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox 'Cannot determine mail relay' 0 0
         else
             echo '[CS-addresslists] Exported addresslists' | mail -s '[CS-addresslists] Exported addresslists' -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) -a "$FILE_ADDRLIST" "$DIALOG_RET"
+            LIST_EXPORTED+=$'\n\n'"Archive of exported addresslist send to '$DIALOG_RET' and local copy saved to '$FILE_ADDRLIST'."
+            $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox "$LIST_EXPORTED" 0 0
         fi
-        $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox "$LIST_EXPORTED" 0 0
     fi
-    rm -rf "$DIR_ADDRLIST" "$FILE_ADDRLIST"
+    rm -rf "$DIR_ADDRLIST"
 }
 # toggle password check for cs-admin
 # parameters:
