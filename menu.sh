@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.35.0 for Clearswift SEG >= 4.8
+# menu.sh V1.36.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - keep local copy of exported addresslists archive
+# - do not update all packages before installing rspamd (messes with CS's own update mechanism)
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -235,7 +235,6 @@ install_rspamd() {
     install_epel
     curl https://rspamd.com/rpm-stable/centos-6/rspamd.repo > /etc/yum.repos.d/rspamd.repo
     rpm --import https://rspamd.com/rpm-stable/gpg.key
-    yum update -y
     yum install -y redis rspamd
     rspamadm configwizard
     CONFIG_MULTIMAP='/etc/rspamd/local.d/multimap.conf'
