@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.36.0 for Clearswift SEG >= 4.8
+# menu.sh V1.37.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,9 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - do not update all packages before installing rspamd (messes with CS's own update mechanism)
+# - for internal DNS forward zones support multiple IPs
+# - disable DNSSEC validation when internal DNS forward zones are used
+# - added option for manually generating sender domain/from whitelists to 'Rspamd configs' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -147,6 +149,25 @@ gCbaOqdR8lPGTTUTZfTKuTMb5K9qIUzC2d+fBq2FgLFT2fb5XgZVOVLfJFNpPbPr7TyPrSlVmela
 7Vq/6pxbiPlDE97I4GOQkMegwKmEtx9PLlRC+GXBdXDhQlY0NDYDYx/I5mtmtF4zHB8+1O04bm0W
 92vWFVO7houzV9GS5tej/faKvWqWv+/FbuFhddL9kYj7QCwgMcXghvCr559lxkzML5bLXxtjNbae
 e8+jJf5l8s7hWUeS5O+0251F5bFMdrrAnc2BRftLc7hVam8dwqPY+R/GuLfatAsAAA==
+'
+SENDER_SCRIPT='
+H4sIADUMr1wAA7VVXXPiNhR9jn/FXYeu7SRGgYfOdANsGD42zADJELb74FCPwAJrYsteWSxNN/vf
+K9kKMRR2207rGQYs6Z5zz9GROH2D5pShOc5CwziFjLCAcH8TUkEimolqFsKvterP1UvjVE53kvSJ
+01UowF44UL+s/QJjIjoJg49MEM5IGBOWzQnHYs1W8CGe31wAI2KRMFd+snUkKFtVF0mcw7XXIkz4
+OxhhvoAuJfxR8oMdVwP9+/pgrWMY3cHEb3e7k+Hgftq0kIhTNB3d4SDgJMtU45ZhDNv3U79zO+4P
+PsglXzBHi8xdYUE2+AkFJI2SJ9mtyFCEM9FO04iSQEpZ0tVa9k8TVv09jiTOp5vBtKeI/O7tqD0Y
+a7CIzhHPUhwHaGuXr/0LkhhTZpVK+5Pb0d8oXPIklpRSyyuZFveCqeY0mp7RRSsifOWAL/A8ImA7
+8NU48cBdglkpeWHCDN6+hQUW++PPsOIkBTcB9w4s+32j+dBoF5YOZY9TBfvQcqpn9ns584AOzFnG
+t1IjSpnuY685s1JTfHjzCG4frBKSBdbXZcLBps3aFdBG0x73z2sOql/B+Tl1IOWUCajY9KzufNuh
+00wqFk2zYpNFmBzh+Wccsn6xFuAG8NBSbtZLAw01UHPM3Og/JJ1iVw4/P4NuIB9RfcaPAeXgpnKs
+HF/TkCmQlnCCAxgOxr0rCBLjhC7BgzcFqBqVoFcgQsKMk5Nxe9Tz8+hvZRZLCqVWjMUitCuXF4AY
+jknTtL3fzNm5Y6ILwNKkQh/2arNcXUYCsDIEyEcry5H4W0dfcFt7PaPKtoVqlAkpf0mNIGEEGtCw
+d/ZfHlYeFyF8TbWp31SOTcNQe7EFBMqk9VEGO4xO7grIRxqTa35tYRvcz2B5m08zL7yZeXQw88R0
+5pHezIuGxXt2n49Z2kjQT15snV1bx1W+huhaZkfnoy7da7V2he2Cul9+iLsFKLxQpdpLw8iX3Xcm
+g7upSrS8pInaT6hcysQZ+mjvX0/6fKtNdSmYSF7qAnMBMWZ4JQfnT9q6AhhdyBXy8jk6H5iHSP7K
+nvf//3LruHTb057f+TiZ9Ma5L4G80+H8p74ypTgOP+AFe52qokBmrITl6N04KrYc4EJoIknc9d7U
+EZCX1r4j+Gjtf6yrMLKkqrx5O5qKiYPl/0aP3kFZuWHgF/+C7/T3wSwfKFbXCV/u36LfuV/+BNba
+ePbkCAAA
 '
 ###################################################################################################
 TITLE_MAIN='NetCon Clearswift Configuration'
@@ -1710,15 +1731,16 @@ add_forward() {
     if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
         ZONE_NAME="$DIALOG_RET"
         exec 3>&1
-        DIALOG_RET="$(dialog --clear --backtitle 'Internal DNS forwarding' --title 'Add zone for internal DNS forwarding' --inputbox 'Enter IP' 0 50 2>&1 1>&3)"
+        DIALOG_RET="$(dialog --clear --backtitle 'Internal DNS forwarding' --title 'Add zone for internal DNS forwarding' --inputbox 'Enter IPs (space separated)' 0 50 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
             echo "zone \"$ZONE_NAME\" {" >> $CONFIG_BIND
             echo '    type forward;' >> $CONFIG_BIND
-    	    echo "    forwarders { $DIALOG_RET; };" >> $CONFIG_BIND
+            echo "    forwarders { "$(for IP_ADDR in $DIALOG_RET; do echo "$IP_ADDR;"; done)" };" >> $CONFIG_BIND
             echo '    forward only;' >> $CONFIG_BIND
             echo '};' >> $CONFIG_BIND
+            sed -i -E 's/dnssec-validation (auto|yes);/dnssec-validation no; # disabled because of internal forward zones/' $CONFIG_BIND
             return 0
         else
             return 1
@@ -1740,10 +1762,9 @@ internal_forwarding() {
             while read LINE; do
                 if echo "$LINE" | grep -q '^zone ".*" {$'; then
                     ZONE_NAME="$(echo $LINE | awk 'match($0, /^zone "(.*)" {$/, a) {print a[1]}')"
-                    ZONE_IP=""
                 fi
-                if ! [ -z "$ZONE_NAME" ] && echo "$LINE" | grep -q '^\s*forwarders { \S*; };$'; then
-                    LIST_FORWARD+=" $ZONE_NAME($(echo $LINE | awk 'match($0, /forwarders { (.*); };$/, a) {print a[1]}'))"
+                if ! [ -z "$ZONE_NAME" ] && echo "$LINE" | grep -q '^\s*forwarders { .* };$'; then
+                    LIST_FORWARD+=" $ZONE_NAME("$(echo $LINE | awk 'match($0, /forwarders { (.*); };$/, a) {print a[1]}' | sed 's/; /,/g')")"
                     ZONE_NAME=''
                 fi
             done < <(sed -n '/^zone ".*" {$/,/^}$/p' $CONFIG_BIND)
@@ -1765,6 +1786,7 @@ internal_forwarding() {
             else
                 if [ $RET_CODE = 3 ]; then
                     sed -i "/zone \"$(echo $DIALOG_RET | awk -F\( '{print $1}')\" {/,/^}/d" $CONFIG_BIND
+                    grep -q '^\s*forwarders { .* };$' $CONFIG_BIND || sed -i 's/dnssec-validation no; # disabled because of internal forward zones/dnssec-validation auto;/' $CONFIG_BIND
                 else
                     break
                 fi
@@ -2454,26 +2476,7 @@ disable_cluster() {
 # return values:
 # none
 enable_sender() {
-    PACKED_SCRIPT='
-    H4sIADUMr1wAA7VVXXPiNhR9jn/FXYeu7SRGgYfOdANsGD42zADJELb74FCPwAJrYsteWSxNN/vf
-    K9kKMRR2207rGQYs6Z5zz9GROH2D5pShOc5CwziFjLCAcH8TUkEimolqFsKvterP1UvjVE53kvSJ
-    01UowF44UL+s/QJjIjoJg49MEM5IGBOWzQnHYs1W8CGe31wAI2KRMFd+snUkKFtVF0mcw7XXIkz4
-    OxhhvoAuJfxR8oMdVwP9+/pgrWMY3cHEb3e7k+Hgftq0kIhTNB3d4SDgJMtU45ZhDNv3U79zO+4P
-    PsglXzBHi8xdYUE2+AkFJI2SJ9mtyFCEM9FO04iSQEpZ0tVa9k8TVv09jiTOp5vBtKeI/O7tqD0Y
-    a7CIzhHPUhwHaGuXr/0LkhhTZpVK+5Pb0d8oXPIklpRSyyuZFveCqeY0mp7RRSsifOWAL/A8ImA7
-    8NU48cBdglkpeWHCDN6+hQUW++PPsOIkBTcB9w4s+32j+dBoF5YOZY9TBfvQcqpn9ns584AOzFnG
-    t1IjSpnuY685s1JTfHjzCG4frBKSBdbXZcLBps3aFdBG0x73z2sOql/B+Tl1IOWUCajY9KzufNuh
-    00wqFk2zYpNFmBzh+Wccsn6xFuAG8NBSbtZLAw01UHPM3Og/JJ1iVw4/P4NuIB9RfcaPAeXgpnKs
-    HF/TkCmQlnCCAxgOxr0rCBLjhC7BgzcFqBqVoFcgQsKMk5Nxe9Tz8+hvZRZLCqVWjMUitCuXF4AY
-    jknTtL3fzNm5Y6ILwNKkQh/2arNcXUYCsDIEyEcry5H4W0dfcFt7PaPKtoVqlAkpf0mNIGEEGtCw
-    d/ZfHlYeFyF8TbWp31SOTcNQe7EFBMqk9VEGO4xO7grIRxqTa35tYRvcz2B5m08zL7yZeXQw88R0
-    5pHezIuGxXt2n49Z2kjQT15snV1bx1W+huhaZkfnoy7da7V2he2Cul9+iLsFKLxQpdpLw8iX3Xcm
-    g7upSrS8pInaT6hcysQZ+mjvX0/6fKtNdSmYSF7qAnMBMWZ4JQfnT9q6AhhdyBXy8jk6H5iHSP7K
-    nvf//3LruHTb057f+TiZ9Ma5L4G80+H8p74ypTgOP+AFe52qokBmrITl6N04KrYc4EJoIknc9d7U
-    EZCX1r4j+Gjtf6yrMLKkqrx5O5qKiYPl/0aP3kFZuWHgF/+C7/T3wSwfKFbXCV/u36LfuV/+BNba
-    ePbkCAAA
-    '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_SENDER
+    printf "%s" $SENDER_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
     $CRON_SENDER
 }
@@ -3249,6 +3252,7 @@ dialog_config_rspamd() {
     DIALOG_STATS='Rspamd info & stats'
     DIALOG_UPDATE='Update Rspamd'
     DIALOG_SERVICE='Fix Rspamd service script'
+    DIALOG_SENDER='Generate sender domain/from whitelists'
     while true; do
         DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
         check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED+=' (installed)'
@@ -3264,6 +3268,7 @@ dialog_config_rspamd() {
             "$DIALOG_STATS" ''                                                                     \
             "$DIALOG_UPDATE" ''                                                                    \
             "$DIALOG_SERVICE" ''                                                                   \
+            "$DIALOG_SENDER" ''                                                                    \
             2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
@@ -3288,6 +3293,12 @@ dialog_config_rspamd() {
                     rspamd_update;;
                 "$DIALOG_SERVICE")
                     printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
+                "$DIALOG_SENDER")
+                    FILE_SCRIPT='/tmp/sender_whitelist.sh'
+                    printf "%s" $SENDER_SCRIPT | base64 -d | gunzip > $FILE_SCRIPT
+                    chmod 700 $FILE_SCRIPT
+                    $FILE_SCRIPT
+                    rm -f $FILE_SCRIPT;;
             esac
         else
             break
