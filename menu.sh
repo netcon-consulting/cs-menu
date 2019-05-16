@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.37.0 for Clearswift SEG >= 4.8
+# menu.sh V1.38.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,9 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - for internal DNS forward zones support multiple IPs
-# - disable DNSSEC validation when internal DNS forward zones are used
-# - added option for manually generating sender domain/from whitelists to 'Rspamd configs' submenu
+# - for the rspamd sender IP whitelist convert incomplete IP addresses to CIDR IP ranges
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -547,10 +545,24 @@ enable_rspamd() {
         else
             LIST_IP="$(awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $MAP_CLIENT | sort -u | xargs)"
         fi
-        echo "$LIST_IP" | xargs -n 1 >> $WHITELIST_IP
-        echo "local_addrs = [192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, fd00::/8, 169.254.0.0/16, fe80::/10, $(echo "$LIST_IP" | sed 's/ /, /g')];" >> $CONFIG_OPTIONS
+        LIST_IPADDR=''
+        for IP_ADDR in $LIST_IP; do
+            NUM_DOTS="$(echo "$IP_ADDR" | awk -F. '{print NF-1}')"
+            if [ "$NUM_DOTS" = 3 ]; then
+                [ -z "$LIST_IPADDR" ] && LIST_IPADDR+="$IP_ADDR" || LIST_IPADDR+=" $IP_ADDR"
+            elif [ "$NUM_DOTS" = 2 ]; then
+                [ -z "$LIST_IPADDR" ] && LIST_IPADDR+="$IP_ADDR.0/24" || LIST_IPADDR+=" $IP_ADDR.0/24"
+            elif [ "$NUM_DOTS" = 1 ]; then
+                [ -z "$LIST_IPADDR" ] && LIST_IPADDR+="$IP_ADDR.0.0/16" || LIST_IPADDR+=" $IP_ADDR.0.0/16"
+            else
+                [ -z "$LIST_IPADDR" ] && LIST_IPADDR+="$IP_ADDR.0.0.0/8" || LIST_IPADDR+=" $IP_ADDR.0.0.0/8"
+            fi
+        done
+        echo "$LIST_IPADDR" | xargs -n 1 >> $WHITELIST_IP
+        echo "local_addrs = [$(echo "$LIST_IPADDR" | sed 's/ /, /g')];" >> $CONFIG_OPTIONS
     fi
     echo "# end managed by $TITLE_MAIN" >> $WHITELIST_IP
+    chown _rspamd:_rspamd $WHITELIST_IP
     chkconfig rspamd on
     chkconfig redis on
     service redis start &>/dev/null
