@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.38.0 for Clearswift SEG >= 4.8
+# menu.sh V1.39.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,8 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - for the rspamd sender IP whitelist convert incomplete IP addresses to CIDR IP ranges
+# - hide option for fixing the rspamd service script when the script is already fixed
+# - added option for backup and restore of Postfix features config to 'Postfix configs' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -125,6 +126,9 @@ CRON_SENDER='/etc/cron.daily/sender_whitelist.sh'
 CRON_BACKUP='/etc/cron.daily/email_backup.sh'
 CRON_RULES='/etc/cron.daily/update_rules.sh'
 CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
+MD5_RSPAMD='7ba3f694eed8e0015bdf605f9618424b'
+BACKUP_IN='/root/inbound-main.cf'
+BACKUP_OUT='/root/outbound-main.cf'
 APPLY_NEEDED=0
 RSPAMD_SCRIPT='
 H4sIAGNGr1wAA41WbW/aSBD+fP4VU2NFyUnGSav0Tqnoqdc4OVQCCMidTu0JGXsNFsZLdtdpo5D/
@@ -2114,6 +2118,8 @@ dialog_postfix() {
     DIALOG_SENDER_REWRITE='Sender rewrite'
     DIALOG_HEADER_REWRITE='Header rewrite'
     DIALOG_RESTRICTIONS='Postfix restrictions'
+    DIALOG_BACKUP='Backup Postfix feature config'
+    DIALOG_RESTORE='Restore Postfix feature config'
     while true; do
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                 \
@@ -2127,6 +2133,8 @@ dialog_postfix() {
             "$DIALOG_SENDER_REWRITE" ''                                                         \
             "$DIALOG_HEADER_REWRITE" ''                                                         \
             "$DIALOG_RESTRICTIONS" ''                                                           \
+            "$DIALOG_BACKUP" ''                                                                 \
+            "$DIALOG_RESTORE" ''                                                                \
             2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
@@ -2150,6 +2158,14 @@ dialog_postfix() {
                     $TXT_EDITOR $HEADER_REWRITE;;
                 "$DIALOG_RESTRICTIONS")
                     dialog_restrictions;;
+                "$DIALOG_BACKUP")
+                    cp -r "$PF_IN" "$BACKUP_IN"
+                    cp -r "$PF_OUT" "$BACKUP_OUT";;
+                "$DIALOG_RESTORE")
+                    cp -r "$BACKUP_IN" "$PF_IN"
+                    cp -r "$BACKUP_OUT" "$PF_OUT"
+                    $DIALOG --backtitle "$TITLE_MAIN" --title 'Postfix feature config restore' --clear --msgbox 'Postfix feature config restored.'$'\n\n''Apply configuration in main menu.' 0 0
+                    APPLY_NEEDED=1;;
             esac
         else
             break
@@ -3263,25 +3279,26 @@ dialog_config_rspamd() {
     DIALOG_WEBUI='Rspamd web UI access'
     DIALOG_STATS='Rspamd info & stats'
     DIALOG_UPDATE='Update Rspamd'
-    DIALOG_SERVICE='Fix Rspamd service script'
     DIALOG_SENDER='Generate sender domain/from whitelists'
+    DIALOG_SERVICE='Fix Rspamd service script'
     while true; do
         DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
         check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED+=' (installed)'
+        ARRAY_RSPAMD=()
+        ARRAY_RSPAMD+=("$DIALOG_IP" '')
+        ARRAY_RSPAMD+=("$DIALOG_DOMAIN" '')
+        ARRAY_RSPAMD+=("$DIALOG_FROM" '')
+        ARRAY_RSPAMD+=("$DIALOG_PYZORRAZOR_INSTALLED" '')
+        ARRAY_RSPAMD+=("$DIALOG_BAYES" '')
+        ARRAY_RSPAMD+=("$DIALOG_WEBUI" '')
+        ARRAY_RSPAMD+=("$DIALOG_STATS" '')
+        ARRAY_RSPAMD+=("$DIALOG_UPDATE" '')
+        ARRAY_RSPAMD+=("$DIALOG_SENDER" '')
+        [ "$(md5sum /etc/init.d/rspamd | awk '{print $1}')" = "$MD5_RSPAMD" ] || ARRAY_RSPAMD+=("$DIALOG_SERVICE" '')
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
-            "$DIALOG_IP" ''                                                                        \
-            "$DIALOG_DOMAIN" ''                                                                    \
-            "$DIALOG_FROM" ''                                                                      \
-            "$DIALOG_PYZORRAZOR_INSTALLED" ''                                                      \
-            "$DIALOG_BAYES" ''                                                                     \
-            "$DIALOG_WEBUI" ''                                                                     \
-            "$DIALOG_STATS" ''                                                                     \
-            "$DIALOG_UPDATE" ''                                                                    \
-            "$DIALOG_SERVICE" ''                                                                   \
-            "$DIALOG_SENDER" ''                                                                    \
-            2>&1 1>&3)"
+            "${ARRAY_RSPAMD[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
@@ -3303,14 +3320,14 @@ dialog_config_rspamd() {
                     $DIALOG --backtitle "$TITLE_MAIN" --title 'Rspamd info & stats' --clear --msgbox "$LIST_STATS" 0 0;;
                 "$DIALOG_UPDATE")
                     rspamd_update;;
-                "$DIALOG_SERVICE")
-                    printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
                 "$DIALOG_SENDER")
                     FILE_SCRIPT='/tmp/sender_whitelist.sh'
                     printf "%s" $SENDER_SCRIPT | base64 -d | gunzip > $FILE_SCRIPT
                     chmod 700 $FILE_SCRIPT
                     $FILE_SCRIPT
                     rm -f $FILE_SCRIPT;;
+                "$DIALOG_SERVICE")
+                    printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
             esac
         else
             break
