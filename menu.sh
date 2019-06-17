@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.39.0 for Clearswift SEG >= 4.8
+# menu.sh V1.40.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -327,7 +327,7 @@ install_letsencrypt() {
     acmetool want $(hostname)
     if [ $? = 0 ]; then
         # import cert and key into CS keystore
-        mv /var/cs-gateway/keystore /var/cs-gateway/keystore.old
+        mv -f /var/cs-gateway/keystore /var/cs-gateway/keystore.old
         cd /home/cs-admin
         openssl pkcs12 -export -name tomcat -in "$DIR_CERT/cert" -inkey "$DIR_CERT/privkey" -out keystore.p12 -passout pass:$PASSWORD_KEYSTORE
         keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore keystore.p12 -srcstoretype pkcs12 -deststorepass $PASSWORD_KEYSTORE -srcstorepass $PASSWORD_KEYSTORE
@@ -1424,6 +1424,59 @@ ssh_access() {
         fi
     done
 }
+# add IP range for blocking SMTP access in dialog inputbox
+# parameters:
+# none
+# return values:
+# error code - 0 for added, 1 for cancel
+add_block() {
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage SMTP access' --title 'Add blocked IP/-range' --inputbox 'Enter IP/-range for blocking SMTP access' 0 50 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        echo "-I INPUT 4 -i eth0 -p tcp --dport 25 -s $DIALOG_RET -j REJECT" >> $CONFIG_FW
+        iptables -I INPUT 4 -i eth0 -p tcp --dport 25 -s $DIALOG_RET -j REJECT
+        return 0
+    else
+        return 1
+    fi
+}
+# add/remove IP ranges for blocking SMTP access in dialog menu
+# parameters:
+# none
+# return values:
+# none
+smtp_block() {
+    while true; do
+        LIST_IP=''
+        [ -f $CONFIG_FW ] && LIST_IP=$(grep 'I INPUT 4 -i eth0 -p tcp --dport 25 -s ' $CONFIG_FW | awk '{print $11}')
+        if [ -z "$LIST_IP" ]; then
+            add_block || break
+        else
+            ARRAY_IP=()
+            for IP_ADDRESS in $LIST_IP; do
+                ARRAY_IP+=($IP_ADDRESS '')
+            done
+            exec 3>&1
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove IPs for blocking SMTP access' 0 0 0 "${ARRAY_IP[@]}" 2>&1 1>&3)"
+            RET_CODE=$?
+            exec 3>&-
+            if [ $RET_CODE = 0 ]; then
+                add_block
+            else
+                if [ $RET_CODE = 3 ]; then
+                    IP_ADDRESS="$(echo "$DIALOG_RET" | sed 's/\//\\\//g')"
+                    sed -i "/-I INPUT 4 -i eth0 -p tcp --dport 25 -s $IP_ADDRESS -j REJECT/d" $CONFIG_FW
+                    iptables -D INPUT -i eth0 -p tcp --dport 25 -s $DIALOG_RET -j REJECT
+                else
+                    break
+                fi
+            fi
+        fi
+    done
+}
 # add public key for SSH authentication for cs-admin in dialog inputbox
 # parameters:
 # none
@@ -1537,6 +1590,7 @@ get_addr() {
 # return values:
 # none
 export_address_list() {
+    rm -rf "$DIR_ADDRLIST"
     mkdir -p "$DIR_ADDRLIST"
     LIST_EXPORTED='Address lists exported:'$'\n'
     while read LINE; do
@@ -1566,7 +1620,6 @@ export_address_list() {
             $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox "$LIST_EXPORTED" 0 0
         fi
     fi
-    rm -rf "$DIR_ADDRLIST"
 }
 # toggle password check for cs-admin
 # parameters:
@@ -1649,7 +1702,7 @@ toggle_backup() {
         STATUS_CURRENT='disabled'
         STATUS_TOGGLE='Enable'
     fi
-    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle config email backup' --yesno "CS config email backup $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60 2>&1 1>&3
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle config email backup' --yesno "CS config email backup $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
     if [ "$?" = 0 ]; then
         if [ $STATUS_CURRENT = 'disabled' ]; then
             exec 3>&1
@@ -2204,12 +2257,13 @@ dialog_clearswift() {
     DIALOG_CUSTOM_COMMANDS='Custom commands'
     DIALOG_LDAP='LDAP schedule'
     DIALOG_SSH='SSH access'
+    DIALOG_SMTP='SMTP block'
     DIALOG_KEY_AUTH='SSH key authentication for cs-admin'
     DIALOG_IMPORT_KEYSTORE='Import PKCS12 for Tomcat'
     DIALOG_EXPORT_ADDRESS='Export and email address lists'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
-    DIALOG_TOGGLE_BACKUP='Config email backup'
+    DIALOG_TOGGLE_BACKUP='Email backup'
     while true; do
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
@@ -2217,6 +2271,7 @@ dialog_clearswift() {
             "$DIALOG_CUSTOM_COMMANDS" ''                                                           \
             "$DIALOG_LDAP" ''                                                                      \
             "$DIALOG_SSH" ''                                                                       \
+            "$DIALOG_SMTP" ''                                                                      \
             "$DIALOG_KEY_AUTH" ''                                                                  \
             "$DIALOG_IMPORT_KEYSTORE" ''                                                           \
             "$DIALOG_EXPORT_ADDRESS" ''                                                            \
@@ -2236,6 +2291,8 @@ dialog_clearswift() {
                     ldap_schedule;;
                 "$DIALOG_SSH")
                     ssh_access;;
+                "$DIALOG_SMTP")
+                    smtp_block;;
                 "$DIALOG_KEY_AUTH")
                     key_auth;;
                 "$DIALOG_IMPORT_KEYSTORE")
