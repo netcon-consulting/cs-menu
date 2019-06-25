@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.40.0 for Clearswift SEG >= 4.8
+# menu.sh V1.41.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - hide option for fixing the rspamd service script when the script is already fixed
-# - added option for backup and restore of Postfix features config to 'Postfix configs' submenu
+# - improved handling of recipient restrictions
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -129,7 +128,7 @@ CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
 MD5_RSPAMD='7ba3f694eed8e0015bdf605f9618424b'
 BACKUP_IN='/root/inbound-main.cf'
 BACKUP_OUT='/root/outbound-main.cf'
-APPLY_NEEDED=0
+APPLY_NEEDED=''
 RSPAMD_SCRIPT='
 H4sIAGNGr1wAA41WbW/aSBD+fP4VU2NFyUnGSav0Tqnoqdc4OVQCCMidTu0JGXsNFsZLdtdpo5D/
 frO7XnsNKKo/GHvmmbdnZsd03gSLrAj4yuk4HWB8G20S8EGsMg48ZtlWABcRExyiIsFHuuWoJAaZ
@@ -630,7 +629,7 @@ enable_letsencrypt() {
 disable_letsencrypt() {
     for OPTION in                                       \
         "smtpd_tls_key_file=$DIR_CERT/privkey"          \
-        "smtpd_tls_cert_file=$DIR_CERT/fullchain";do
+        "smtpd_tls_cert_file=$DIR_CERT/fullchain"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
     for OPTION in                                       \
@@ -1200,7 +1199,6 @@ dialog_feature_postfix() {
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
         LIST_ENABLED=''
-        APPLY_NEEDED=''
         POSTFIX_RESTART=''
         if check_installed_rspamd; then
             if echo "$DIALOG_RET" | grep -q "$DIALOG_RSPAMD"; then
@@ -1965,23 +1963,102 @@ anomaly_detect() {
         fi
     done
 }
-# get list of recipient validation status
+# get status of defined recipient validation
+# parameters:
+# $1 - validation
+# return values:
+# recipient validation status
+check_enabled_validation() {
+    [ -f "$PF_IN" ] && LINE_VALIDATION="$(grep 'smtpd_recipient_restrictions=' "$PF_IN")"
+    if echo "$LINE_VALIDATION" | grep -q "$1"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# get status of unverified_recipient recipient validation
 # parameters:
 # none
 # return values:
-# list of recipient validation status
-check_validation_enabled() {
-    LINE_VALIDATION=''
-    [ -f $PF_IN ] && LINE_VALIDATION="$(grep 'smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access' $PF_IN)"
-    for VALIDATION in unknown_client invalid_hostname non_fqdn_hostname unknown_reverse_client_hostname non_fqdn_helo_hostname   \
-        invalid_helo_hostname unknown_helo_hostname non_fqdn_sender unknown_sender_domain unknown_recipient_domain               \
-        non_fqdn_recipient unauth_pipelining unverified_recipient
-    do
-        if [ -z "$LINE_VALIDATION" ] || ! [[ $LINE_VALIDATION = *"reject_$VALIDATION"* ]]; then
-            echo off
-        else
-            echo on
+# unverified_recipient recipient validation status
+check_enabled_unverified_recipient() {
+    if [ -f "$PF_IN" ]                                                                                  \
+        && grep 'smtpd_recipient_restrictions=' "$PF_IN" | grep -q 'unverified_recipient'               \
+        && grep -q 'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map' "$PF_IN"    \
+        && grep -q 'address_verify_map=' "$PF_IN"                                                       \
+        && grep -q "unverified_recipient_reject_reason=\"User doesn't exist\"" "$PF_IN"                 \
+        && [ -f "$PF_OUT" ]                                                                             \
+        && grep -q 'address_verify_map=' "$PF_OUT"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# enable extra options for unverified_recipient recipient validation
+# parameters:
+# none
+# return values:
+# none
+enable_unverified_recipient() {
+    for OPTION in                                                                   \
+        'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map'    \
+        'address_verify_map='                                                       \
+        "unverified_recipient_reject_reason=\"User doesn't exist\""; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
         fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+    for OPTION in                                                                   \
+        'address_verify_map='; do
+        if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
+            echo "$OPTION" >> "$PF_OUT"
+        fi
+        postmulti -i postfix-outbound -x postconf "$OPTION"
+    done
+}
+# disable extra options for unverified_recipient recipient validation
+# parameters:
+# none
+# return values:
+# none
+disable_unverified_recipient() {
+    for OPTION in                                                                   \
+        'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map'    \
+        'address_verify_map='                                                       \
+        "unverified_recipient_reject_reason=\"User doesn't exist\""; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+    for OPTION in                                                                   \
+        'address_verify_map='; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
+    done
+}
+# enable extra options for recipient validation
+# parameters:
+# none
+# return values:
+# none
+enable_validation() {
+    for OPTION in                                                                   \
+        'smtpd_delay_reject=yes'                                                    \
+        'smtpd_helo_required=yes'; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable extra options for recipient validation
+# parameters:
+# none
+# return values:
+# none
+disable_validation() {
+    for OPTION in                                                                   \
+        'smtpd_delay_reject=yes'                                                    \
+        'smtpd_helo_required=yes'; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
 }
 # select recipient validation to enable in dialog checkbox
@@ -1990,97 +2067,82 @@ check_validation_enabled() {
 # return values:
 # none
 recipient_validation() {
-    DIALOG_UNKNOWN_CLIENT='unknown_client'
-    DIALOG_INVALID_HOSTNAME='invalid_hostname'
-    DIALOG_NON_FQDN_HOSTNAME='non_fqdn_hostname'
-    DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME='unknown_reverse_client_hostname'
-    DIALOG_NON_FQDN_HELO_HOSTNAME='non_fqdn_helo_hostname'
-    DIALOG_INVALID_HELO_HOSTNAME='invalid_helo_hostname'
-    DIALOG_UNKNOWN_HELO_HOSTNAME='unknown_helo_hostname'
-    DIALOG_NON_FQDN_SENDER='non_fqdn_sender'
-    DIALOG_UNKNOWN_SENDER_DOMAIN='unknown_sender_domain'
-    DIALOG_UNKNOWN_RECIPIENT_DOMAIN='unknown_recipient_domain'
-    DIALOG_NON_FQDN_RECIPIENT='non_fqdn_recipient'
-    DIALOG_UNAUTH_PIPELINING='unauth_pipelining'
-    DIALOG_UNVERIFIED_RECIPIENT='unverified_recipient'
-    VALIDATION_ENABLED="$(check_validation_enabled)"
+    VALIDATION_ENABLED=''
+    for VALIDATION in unknown_client invalid_hostname non_fqdn_hostname unknown_reverse_client_hostname non_fqdn_helo_hostname   \
+        invalid_helo_hostname unknown_helo_hostname non_fqdn_sender unknown_sender_domain unknown_recipient_domain               \
+        non_fqdn_recipient unauth_pipelining; do
+        declare DIALOG_${VALIDATION^^}="$VALIDATION"
+        STATUS_VALIDATION="$(check_enabled_validation $VALIDATION)"
+        declare STATUS_${VALIDATION^^}="$STATUS_VALIDATION"
+        [ "$STATUS_VALIDATION" = 'on' ] && VALIDATION_ENABLED=1
+    done
+    declare DIALOG_UNVERIFIED_RECIPIENT='unverified_recipient'
+    STATUS_VALIDATION="$(check_enabled_unverified_recipient)"
+    declare STATUS_UNVERIFIED_RECIPIENT="$STATUS_VALIDATION"
+    [ "$STATUS_VALIDATION" = 'on' ] && VALIDATION_ENABLED=1
     exec 3>&1
-    DIALOG_RET="$($DIALOG --clear --backtitle 'Clearswift configuration' --cancel-label 'Back'         \
-        --ok-label 'Apply' --checklist 'Choose recipient rejection criteria' 0 0 0                     \
-        "$DIALOG_UNKNOWN_CLIENT" ''                   $(echo $VALIDATION_ENABLED | awk '{print $1}')   \
-        "$DIALOG_INVALID_HOSTNAME" ''                 $(echo $VALIDATION_ENABLED | awk '{print $2}')   \
-        "$DIALOG_NON_FQDN_HOSTNAME" ''                $(echo $VALIDATION_ENABLED | awk '{print $3}')   \
-        "$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME" ''  $(echo $VALIDATION_ENABLED | awk '{print $4}')   \
-        "$DIALOG_NON_FQDN_HELO_HOSTNAME" ''           $(echo $VALIDATION_ENABLED | awk '{print $5}')   \
-        "$DIALOG_INVALID_HELO_HOSTNAME" ''            $(echo $VALIDATION_ENABLED | awk '{print $6}')   \
-        "$DIALOG_UNKNOWN_HELO_HOSTNAME" ''            $(echo $VALIDATION_ENABLED | awk '{print $7}')   \
-        "$DIALOG_NON_FQDN_SENDER" ''                  $(echo $VALIDATION_ENABLED | awk '{print $8}')   \
-        "$DIALOG_UNKNOWN_SENDER_DOMAIN" ''            $(echo $VALIDATION_ENABLED | awk '{print $9}')   \
-        "$DIALOG_UNKNOWN_RECIPIENT_DOMAIN" ''         $(echo $VALIDATION_ENABLED | awk '{print $10}')  \
-        "$DIALOG_NON_FQDN_RECIPIENT" ''               $(echo $VALIDATION_ENABLED | awk '{print $11}')  \
-        "$DIALOG_UNAUTH_PIPELINING" ''                $(echo $VALIDATION_ENABLED | awk '{print $12}')  \
-        "$DIALOG_UNVERIFIED_RECIPIENT" ''             $(echo $VALIDATION_ENABLED | awk '{print $13}')  \
+    DIALOG_RET="$($DIALOG --clear --backtitle 'Clearswift configuration' --cancel-label 'Back'          \
+        --ok-label 'Apply' --checklist 'Choose recipient rejection criteria' 0 0 0                      \
+        "$DIALOG_UNKNOWN_CLIENT" ''                   "$STATUS_UNKNOWN_CLIENT"                          \
+        "$DIALOG_INVALID_HOSTNAME" ''                 "$STATUS_INVALID_HOSTNAME"                        \
+        "$DIALOG_NON_FQDN_HOSTNAME" ''                "$STATUS_NON_FQDN_HOSTNAME"                       \
+        "$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME" ''  "$STATUS_UNKNOWN_REVERSE_CLIENT_HOSTNAME"         \
+        "$DIALOG_NON_FQDN_HELO_HOSTNAME" ''           "$STATUS_NON_FQDN_HELO_HOSTNAME"                  \
+        "$DIALOG_INVALID_HELO_HOSTNAME" ''            "$STATUS_INVALID_HELO_HOSTNAME"                   \
+        "$DIALOG_UNKNOWN_HELO_HOSTNAME" ''            "$STATUS_UNKNOWN_HELO_HOSTNAME"                   \
+        "$DIALOG_NON_FQDN_SENDER" ''                  "$STATUS_NON_FQDN_SENDER"                         \
+        "$DIALOG_UNKNOWN_SENDER_DOMAIN" ''            "$STATUS_UNKNOWN_SENDER_DOMAIN"                   \
+        "$DIALOG_UNKNOWN_RECIPIENT_DOMAIN" ''         "$STATUS_UNKNOWN_RECIPIENT_DOMAIN"                \
+        "$DIALOG_NON_FQDN_RECIPIENT" ''               "$STATUS_NON_FQDN_RECIPIENT"                      \
+        "$DIALOG_UNAUTH_PIPELINING" ''                "$STATUS_UNAUTH_PIPELINING"                       \
+        "$DIALOG_UNVERIFIED_RECIPIENT" ''             "$STATUS_UNVERIFIED_RECIPIENT"                    \
         2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
     if [ $RET_CODE = 0 ]; then
-        if [ -f $PF_IN ]; then
-            sed -i '/# Recipient validation/d' $PF_IN
-            sed -i '/smtpd_recipient_restrictions=/d' $PF_IN
-            sed -i '/smtpd_delay_reject=yes/d' $PF_IN
-            sed -i '/smtpd_helo_required=yes/d' $PF_IN
-            sed -i '/address_verify_transport_maps=/d' $PF_IN
-            sed -i '/address_verify_map=/d' $PF_IN
-            sed -i '/address_verify_map=/d' $PF_OUT
-        fi
-        if ! [ -z "$DIALOG_RET" ]; then
-            LIST_ENABLED='smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access'
-            for FEATURE in $DIALOG_RET; do
-                case "$FEATURE" in
-                    \"$DIALOG_UNKNOWN_CLIENT\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_CLIENT";;
-                    \"$DIALOG_INVALID_HOSTNAME\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_INVALID_HOSTNAME";;
-                    \"$DIALOG_NON_FQDN_HOSTNAME\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_HOSTNAME";;
-                    \"$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_REVERSE_CLIENT_HOSTNAME";;
-                    \"$DIALOG_NON_FQDN_HELO_HOSTNAME\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_HELO_HOSTNAME";;
-                    \"$DIALOG_INVALID_HELO_HOSTNAME\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_INVALID_HELO_HOSTNAME";;
-                    \"$DIALOG_UNKNOWN_HELO_HOSTNAME\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_HELO_HOSTNAME";;
-                    \"$DIALOG_NON_FQDN_SENDER\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_SENDER";;
-                    \"$DIALOG_UNKNOWN_SENDER_DOMAIN\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_SENDER_DOMAIN";;
-                    \"$DIALOG_UNKNOWN_RECIPIENT_DOMAIN\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNKNOWN_RECIPIENT_DOMAIN";;
-                    \"$DIALOG_NON_FQDN_RECIPIENT\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_NON_FQDN_RECIPIENT";;
-                    \"$DIALOG_UNAUTH_PIPELINING\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNAUTH_PIPELINING";;
-                    \"$DIALOG_UNVERIFIED_RECIPIENT\")
-                        LIST_ENABLED="$LIST_ENABLED, reject_$DIALOG_UNVERIFIED_RECIPIENT";;
-                esac
-            done
-            echo "$LIST_ENABLED" >> $PF_IN
-            if [[ $DIALOG_RET = *\"$DIALOG_UNVERIFIED_RECIPIENT\"* ]]; then
-                echo 'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map' >> $PF_IN
-                echo 'address_verify_map=' >> $PF_IN
-                echo 'address_verify_map=' >> $PF_OUT
-            fi
-            echo 'smtpd_delay_reject=yes' >> $PF_IN
-            echo 'smtpd_helo_required=yes' >> $PF_IN
-        fi    
-        VALIDATION_ENABLED_NEW="$(check_validation_enabled)"
-        for COUNTER in $(seq 1 13); do
-            if ! [ "$(echo $VALIDATION_ENABLED | awk "{print $"$COUNTER"}")" = "$(echo $VALIDATION_ENABLED_NEW | awk "{print $"$COUNTER"}")" ]; then
-                activate_config
-                break
+        LIST_ENABLED=''
+        MODIFIED=''
+        for VALIDATION in unknown_client invalid_hostname non_fqdn_hostname unknown_reverse_client_hostname non_fqdn_helo_hostname   \
+            invalid_helo_hostname unknown_helo_hostname non_fqdn_sender unknown_sender_domain unknown_recipient_domain               \
+            non_fqdn_recipient unauth_pipelining; do
+            if echo "$DIALOG_RET" | grep -q "$(eval echo '$'DIALOG_${VALIDATION^^})"; then
+                LIST_ENABLED+=", reject_$VALIDATION"
+                [ "$(eval echo '$'STATUS_${VALIDATION^^})" = 'off' ] && MODIFIED=1
+            else
+                [ "$(eval echo '$'STATUS_${VALIDATION^^})" = 'on' ] && MODIFIED=1
             fi
         done
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_UNVERIFIED_RECIPIENT"; then
+            LIST_ENABLED+=', reject_unverified_recipient'
+            if [ "$STATUS_UNVERIFIED_RECIPIENT" = 'off' ]; then
+                enable_unverified_recipient
+                MODIFIED=1
+            fi
+        else
+            if [ "$STATUS_UNVERIFIED_RECIPIENT" = 'on' ]; then
+                disable_unverified_recipient
+                MODIFIED=1
+                APPLY_NEEDED=1
+            fi
+        fi
+        if [ "$MODIFIED" = 1 ]; then
+            [ -f "$PF_IN" ] && sed -i '/smtpd_recipient_restrictions=/d' "$PF_IN"
+            if [ -z "$LIST_ENABLED" ]; then
+                disable_validation
+                APPLY_NEEDED=1
+            else
+                [ -z "$VALIDATION_ENABLED" ] && enable_validation
+                LIST_ENABLED="smtpd_recipient_restrictions=check_client_access cidr:/etc/postfix/maps/check_client_access_ips, check_sender_access regexp:/etc/postfix/maps/check_sender_access, check_recipient_access regexp:/etc/postfix/maps/check_recipient_access, check_helo_access regexp:/etc/postfix/maps/check_helo_access$LIST_ENABLED"
+                echo "$LIST_ENABLED" >> "$PF_IN"
+            fi
+            if [ "$APPLY_NEEDED" = 1 ]; then
+                $DIALOG --backtitle "Clearswift configuration" --title 'Recipient restrictions' --clear --msgbox 'Recipient restrictions changed.'$'\n\n''IMPORTANT: Apply configuration in main menu.' 0 0
+            else
+                postmulti -i postfix-inbound -x postconf "$LIST_ENABLED"
+                postfix stop &>/dev/null
+                postfix start &>/dev/null
+            fi
+        fi
     fi
 }
 ###################################################################################################
@@ -3819,7 +3881,7 @@ apply_config() {
         if [ ! -z "$SESSION_ID" ]; then
             curl -k -i -d "policy=true&system=true&pmm=true&proxy=true&peers=true&users=true&reports=true&tlsCertificates=true&maintenance=true&detail='applied by $TITLE_MAIN'&reason=764c31c0-8d6a-4bf2-ab22-44d61b6784fb&planned=yes&items=" \
         	    --header "Cookie: $SESSION_ID" -X POST "$DOMAIN/Appliance/Deployer/StartDeployment.jsp" &>/dev/null
-            APPLY_NEEDED=0
+            APPLY_NEEDED=''
         fi
     fi
 }
