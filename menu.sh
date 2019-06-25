@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.41.0 for Clearswift SEG >= 4.8
+# menu.sh V1.42.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - improved handling of recipient restrictions
+# - added support for Postfix sender dependent routing
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -95,6 +95,7 @@ HELO_ACCESS="$DIR_MAPS/check_helo_access"
 RECIPIENT_ACCESS="$DIR_MAPS/check_recipient_access"
 SENDER_ACCESS="$DIR_MAPS/check_sender_access"
 SENDER_REWRITE="$DIR_MAPS/sender_canonical_maps"
+SENDER_ROUTING="$DIR_MAPS/relayhost_map"
 WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
@@ -686,7 +687,7 @@ disable_tls() {
 # none
 enable_esmtp_filter() {
     for OPTION in                                                               \
-        "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access"   \
+        "smtpd_discard_ehlo_keyword_address_maps=cidr:$ESMTP_ACCESS"   \
         'smtpd_discard_ehlo_keywords='; do
         if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
             echo "$OPTION" >> "$PF_IN"
@@ -701,7 +702,7 @@ enable_esmtp_filter() {
 # none
 disable_esmtp_filter() {
     for OPTION in                                                               \
-        "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access"   \
+        "smtpd_discard_ehlo_keyword_address_maps=cidr:$ESMTP_ACCESS"   \
         'smtpd_discard_ehlo_keywords='; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
@@ -740,7 +741,7 @@ disable_dane() {
 # none
 enable_sender_rewrite() {
     for OPTION in                                                             \
-        "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps"; do
+        "sender_canonical_maps=regexp:$SENDER_REWRITE"; do
         if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
             echo "$OPTION" >> "$PF_IN"
         fi
@@ -754,7 +755,32 @@ enable_sender_rewrite() {
 # none
 disable_sender_rewrite() {
     for OPTION in                                                             \
-        "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps"; do
+        "sender_canonical_maps=regexp:$SENDER_REWRITE"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+}
+# enable sender dependent routing
+# parameters:
+# none
+# return values:
+# none
+enable_sender_routing() {
+    for OPTION in                                                             \
+        "sender_dependent_default_transport_maps=hash:$SENDER_ROUTING"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable sender dependent routing
+# parameters:
+# none
+# return values:
+# none
+disable_sender_routing() {
+    for OPTION in                                                             \
+        "sender_dependent_default_transport_maps=hash:$SENDER_ROUTING"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
 }
@@ -1032,8 +1058,8 @@ check_enabled_tls() {
 # return values:
 # ESMTP filter status
 check_enabled_esmtp_filter() {
-    if [ -f "$PF_IN" ]                                                                              \
-        && grep -q "smtpd_discard_ehlo_keyword_address_maps=cidr:$DIR_MAPS/esmtp_access" "$PF_IN"   \
+    if [ -f "$PF_IN" ]                                                                     \
+        && grep -q "smtpd_discard_ehlo_keyword_address_maps=cidr:$ESMTP_ACCESS" "$PF_IN"   \
         && grep -q 'smtpd_discard_ehlo_keywords=' "$PF_IN"; then 
         echo on
     else
@@ -1060,8 +1086,21 @@ check_enabled_dane() {
 # return values:
 # sender rewrite status
 check_enabled_sender_rewrite() {
-    if [ -f "$PF_IN" ]                                                                              \
-        && grep -q "sender_canonical_maps=regexp:$DIR_MAPS/sender_canonical_maps" "$PF_IN"; then
+    if [ -f "$PF_IN" ]                                                              \
+        && grep -q "sender_canonical_maps=regexp:$SENDER_REWRITE" "$PF_IN"; then
+        echo on
+    else
+        echo off
+    fi
+}
+# check whether sender dependent routing is enabled
+# parameters:
+# none
+# return values:
+# sender dependent routing status
+check_enabled_sender_routing() {
+    if [ -f "$PF_IN" ]                                                                                              \
+        && grep -q "sender_dependent_default_transport_maps=hash:$SENDER_ROUTING" "$PF_IN"; then
         echo on
     else
         echo off
@@ -1171,12 +1210,13 @@ dialog_feature_postfix() {
     DIALOG_ESMTP_FILTER='ESMTP-filter'
     DIALOG_DANE='DANE'
     DIALOG_SENDER_REWRITE='Sender rewrite'
+    DIALOG_SENDER_ROUTING='Sender dependent routing'
     DIALOG_BOUNCE_IN='Inbound-Bounce'
     DIALOG_BOUNCE_OUT='Outbound-Bounce'
     DIALOG_OFFICE365='Office365 IP-range whitelisting'
     DIALOG_POSTSCREEN='Postscreen'
     DIALOG_POSTSCREEN_DEEP='PS Deep'
-    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite bounce_in bounce_out office365 postscreen postscreen_deep; do
+    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing bounce_in bounce_out office365 postscreen postscreen_deep; do
         declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     [ "$STATUS_BOUNCE_IN" = 'on' ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_IN=''
@@ -1188,6 +1228,7 @@ dialog_feature_postfix() {
     ARRAY_ENABLE+=("$DIALOG_ESMTP_FILTER" '' "$STATUS_ESMTP_FILTER")
     check_installed_local_dns && ARRAY_ENABLE+=("$DIALOG_DANE" '' "$STATUS_DANE")
     ARRAY_ENABLE+=("$DIALOG_SENDER_REWRITE" '' "$STATUS_SENDER_REWRITE")
+    ARRAY_ENABLE+=("$DIALOG_SENDER_ROUTING" '' "$STATUS_SENDER_ROUTING")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" '' "$STATUS_BOUNCE_IN")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" '' "$STATUS_BOUNCE_OUT")
     ARRAY_ENABLE+=("$DIALOG_OFFICE365" '' "$STATUS_OFFICE365")
@@ -1275,6 +1316,18 @@ dialog_feature_postfix() {
         else
             if [ "$STATUS_SENDER_REWRITE" = 'on' ]; then
                 disable_sender_rewrite
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_SENDER_ROUTING"; then
+            if [ "$STATUS_SENDER_ROUTING" = 'off' ]; then
+                enable_sender_routing
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Sender dependent routing'
+        else
+            if [ "$STATUS_SENDER_ROUTING" = 'on' ]; then
+                disable_sender_routing
                 APPLY_NEEDED=1
             fi
         fi
@@ -2154,67 +2207,75 @@ recipient_validation() {
 # return values:
 # none
 write_examples() {
-    [ -d $DIR_MAPS ] || mkdir -p $DIR_MAPS
-    if [ ! -f $WHITELIST_POSTSCREEN ]; then
-        echo '######################################################################' >> $WHITELIST_POSTSCREEN
-        echo '# IPs vom postscreen ausschliessen, Whitelisten (Monitoring Systeme) #' >> $WHITELIST_POSTSCREEN
-        echo '######################################################################' >> $WHITELIST_POSTSCREEN
+    [ -d "$DIR_MAPS" ] || mkdir -p "$DIR_MAPS"
+    if ! [ -f "$WHITELIST_POSTSCREEN" ]; then
+        echo '######################################################################' >> "$WHITELIST_POSTSCREEN"
+        echo '# IPs vom postscreen ausschliessen, Whitelisten (Monitoring Systeme) #' >> "$WHITELIST_POSTSCREEN"
+        echo '######################################################################' >> "$WHITELIST_POSTSCREEN"
         echo '#NetCon (CIDR)' >> $WHITELIST_POSTSCREEN
         echo '#88.198.215.226 permit' >> $WHITELIST_POSTSCREEN
         echo '#85.10.249.206  permit' >> $WHITELIST_POSTSCREEN
     fi
-    if [ ! -f $WHITELIST_POSTFIX ]; then
-        echo '############################################################' >> $WHITELIST_POSTFIX
-        echo '# IP-Adressen erlauben, die ein seltsames Verhalten zeigen #' >> $WHITELIST_POSTFIX
-        echo '############################################################' >> $WHITELIST_POSTFIX
-        echo '# Postfix IP Whitelist (CIDR)' >> $WHITELIST_POSTFIX
-        echo '#1.2.3.4  REJECT unwanted newsletters!' >> $WHITELIST_POSTFIX
-        echo '#1.2.3.0/24  OK' >> $WHITELIST_POSTFIX
+    if ! [ -f "$WHITELIST_POSTFIX" ]; then
+        echo '############################################################' >> "$WHITELIST_POSTFIX"
+        echo '# IP-Adressen erlauben, die ein seltsames Verhalten zeigen #' >> "$WHITELIST_POSTFIX"
+        echo '############################################################' >> "$WHITELIST_POSTFIX"
+        echo '# Postfix IP Whitelist (CIDR)' >> "$WHITELIST_POSTFIX"
+        echo '#1.2.3.4  REJECT unwanted newsletters!' >> "$WHITELIST_POSTFIX"
+        echo '#1.2.3.0/24  OK' >> "$WHITELIST_POSTFIX"
     fi
-    if [ ! -f $SENDER_ACCESS ]; then
-        echo '##########################################' >> $SENDER_ACCESS
-        echo '# Postfix Sender Email Blacklist (REGEXP)#' >> $SENDER_ACCESS
-        echo '# bestimmte Domains von Extern ablehnen  #' >> $SENDER_ACCESS
-        echo '##########################################' >> $SENDER_ACCESS
-        echo '#/.*@isdoll\.de$/                       REJECT mydomain in your envelope sender not allowed! Use your own domain!' >> $SENDER_ACCESS
+    if ! [ -f "$SENDER_ACCESS" ]; then
+        echo '##########################################' >> "$SENDER_ACCESS"
+        echo '# Postfix Sender Email Blacklist (REGEXP)#' >> "$SENDER_ACCESS"
+        echo '# bestimmte Domains von Extern ablehnen  #' >> "$SENDER_ACCESS"
+        echo '##########################################' >> "$SENDER_ACCESS"
+        echo '#/.*@isdoll\.de$/    REJECT mydomain in your envelope sender not allowed! Use your own domain!' >> "$SENDER_ACCESS"
     fi
-    if [ ! -f $RECIPIENT_ACCESS ]; then
-        echo '#############################################' >> $RECIPIENT_ACCESS
-        echo '# Postfix Recipient Email Blacklist (REJECT)#' >> $RECIPIENT_ACCESS
-        echo '# bestimmte Empfaenger ablehnen             #' >> $RECIPIENT_ACCESS
-        echo '#############################################' >> $RECIPIENT_ACCESS
-        echo '#/mueller@isdoll\.de$/                  REJECT user has moved!' >> $RECIPIENT_ACCESS
+    if ! [ -f "$RECIPIENT_ACCESS" ]; then
+        echo '#############################################' >> "$RECIPIENT_ACCESS"
+        echo '# Postfix Recipient Email Blacklist (REJECT)#' >> "$RECIPIENT_ACCESS"
+        echo '# bestimmte Empfaenger ablehnen             #' >> "$RECIPIENT_ACCESS"
+        echo '#############################################' >> "$RECIPIENT_ACCESS"
+        echo '#/mueller@isdoll\.de$/    REJECT user has moved!' >> "$RECIPIENT_ACCESS"
     fi
-    if [ ! -f $HELO_ACCESS ]; then
-        echo '#######################################' >> $HELO_ACCESS
-        echo '# Postfix Helo Blacklist (REGEXP)     #' >> $HELO_ACCESS
-        echo '# HELO String des Mailservers pruefen #' >> $HELO_ACCESS
-        echo '#######################################' >> $HELO_ACCESS
+    if ! [ -f "$HELO_ACCESS" ]; then
+        echo '#######################################' >> "$HELO_ACCESS"
+        echo '# Postfix Helo Blacklist (REGEXP)     #' >> "$HELO_ACCESS"
+        echo '# HELO String des Mailservers pruefen #' >> "$HELO_ACCESS"
+        echo '#######################################' >> "$HELO_ACCESS"
     fi
-    if [ ! -f $ESMTP_ACCESS ]; then
-        echo '##################################' >> $ESMTP_ACCESS
-        echo '# Postfix ESMTP Verbs            #' >> $ESMTP_ACCESS
-        echo '# remove unnecessary ESMTP Verbs #' >> $ESMTP_ACCESS
-        echo '##################################' >> $ESMTP_ACCESS
-        echo '#130.180.71.126/32      silent-discard, auth' >> $ESMTP_ACCESS
-        echo '#212.202.158.254/32     silent-discard, auth' >> $ESMTP_ACCESS
-        echo '#0.0.0.0/0              silent-discard, etrn, enhancedstatuscodes, dsn, pipelining, auth' >> $ESMTP_ACCESS
+    if ! [ -f "$ESMTP_ACCESS" ]; then
+        echo '##################################' >> "$ESMTP_ACCESS"
+        echo '# Postfix ESMTP Verbs            #' >> "$ESMTP_ACCESS"
+        echo '# remove unnecessary ESMTP Verbs #' >> "$ESMTP_ACCESS"
+        echo '##################################' >> "$ESMTP_ACCESS"
+        echo '#130.180.71.126/32      silent-discard, auth' >> "$ESMTP_ACCESS"
+        echo '#212.202.158.254/32     silent-discard, auth' >> "$ESMTP_ACCESS"
+        echo '#0.0.0.0/0              silent-discard, etrn, enhancedstatuscodes, dsn, pipelining, auth' >> "$ESMTP_ACCESS"
     fi
-    if [ ! -f $HEADER_REWRITE ]; then
-        echo '#####################################' >> $HEADER_REWRITE
-        echo '# Postfix Outbound Header Rewriting #' >> $HEADER_REWRITE
-        echo '#####################################' >> $HEADER_REWRITE
-        echo '#/^\s*Received: from \S+ \(\S+ \[\S+\]\)(.*)/ REPLACE Received: from [127.0.0.1] (localhost [127.0.0.1])$1' >> $HEADER_REWRITE
-        echo '#/^\s*User-Agent/        IGNORE' >> $HEADER_REWRITE
-        echo '#/^\s*X-Enigmail/        IGNORE' >> $HEADER_REWRITE
-        echo '#/^\s*X-Mailer/          IGNORE' >> $HEADER_REWRITE
-        echo '#/^\s*X-Originating-IP/  IGNORE' >> $HEADER_REWRITE
+    if ! [ -f "$HEADER_REWRITE" ]; then
+        echo '#####################################' >> "$HEADER_REWRITE"
+        echo '# Postfix Outbound Header Rewriting #' >> "$HEADER_REWRITE"
+        echo '#####################################' >> "$HEADER_REWRITE"
+        echo '#/^\s*Received: from \S+ \(\S+ \[\S+\]\)(.*)/ REPLACE Received: from [127.0.0.1] (localhost [127.0.0.1])$1' >> "$HEADER_REWRITE"
+        echo '#/^\s*User-Agent/        IGNORE' >> "$HEADER_REWRITE"
+        echo '#/^\s*X-Enigmail/        IGNORE' >> "$HEADER_REWRITE"
+        echo '#/^\s*X-Mailer/          IGNORE' >> "$HEADER_REWRITE"
+        echo '#/^\s*X-Originating-IP/  IGNORE' >> "$HEADER_REWRITE"
     fi
-    if [ ! -f $SENDER_REWRITE ]; then
-        echo '#############################' >> $SENDER_REWRITE
-        echo '# fix broken sender address #' >> $SENDER_REWRITE
-        echo '#############################' >> $SENDER_REWRITE
-        echo '#/^<.*>(.*)@(.*)>/   ${1}@${2}' >> $SENDER_REWRITE
+    if ! [ -f "$SENDER_REWRITE" ]; then
+        echo '#############################' >> "$SENDER_REWRITE"
+        echo '# fix broken sender address #' >> "$SENDER_REWRITE"
+        echo '#############################' >> "$SENDER_REWRITE"
+        echo '#/^<.*>(.*)@(.*)>/   ${1}@${2}' >> "$SENDER_REWRITE"
+    fi
+    if ! [ -f "$SENDER_ROUTING" ]; then
+        echo '############################' >> "$SENDER_ROUTING"
+        echo '# sender dependent routing #' >> "$SENDER_ROUTING"
+        echo '############################' >> "$SENDER_ROUTING"
+        echo '#mueller.isdoll.de     smtp:[127.0.0.1]:10026' >> "$SENDER_ROUTING"
+        echo '#@isdoll.de            smtp:[127.0.0.1]:10026' >> "$SENDER_ROUTING"
+        postmap "$SENDER_ROUTING"
     fi
 }
 ###################################################################################################
@@ -2232,6 +2293,7 @@ dialog_postfix() {
     DIALOG_HELO_ACCESS='HELO access'
     DIALOG_SENDER_REWRITE='Sender rewrite'
     DIALOG_HEADER_REWRITE='Header rewrite'
+    DIALOG_SENDER_ROUTING='Sender dependent routing'
     DIALOG_RESTRICTIONS='Postfix restrictions'
     DIALOG_BACKUP='Backup Postfix feature config'
     DIALOG_RESTORE='Restore Postfix feature config'
@@ -2247,6 +2309,7 @@ dialog_postfix() {
             "$DIALOG_HELO_ACCESS" ''                                                            \
             "$DIALOG_SENDER_REWRITE" ''                                                         \
             "$DIALOG_HEADER_REWRITE" ''                                                         \
+            "$DIALOG_SENDER_ROUTING" ''                                                         \
             "$DIALOG_RESTRICTIONS" ''                                                           \
             "$DIALOG_BACKUP" ''                                                                 \
             "$DIALOG_RESTORE" ''                                                                \
@@ -2256,21 +2319,24 @@ dialog_postfix() {
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_WHITELIST_POSTFIX")
-                    $TXT_EDITOR $WHITELIST_POSTFIX;;
+                    "$TXT_EDITOR" "$WHITELIST_POSTFIX";;
                 "$DIALOG_WHITELIST_POSTSCREEN")
-                    $TXT_EDITOR $WHITELIST_POSTSCREEN;;
+                    "$TXT_EDITOR" "$WHITELIST_POSTSCREEN";;
                 "$DIALOG_ESMTP_ACCESS")
-                    $TXT_EDITOR $ESMTP_ACCESS;;
+                    "$TXT_EDITOR" "$ESMTP_ACCESS";;
                 "$DIALOG_SENDER_ACCESS")
-                    $TXT_EDITOR $SENDER_ACCESS;;
+                    "$TXT_EDITOR" "$SENDER_ACCESS";;
                 "$DIALOG_RECIPIENT_ACCESS")
-                    $TXT_EDITOR $RECIPIENT_ACCESS;;
+                    "$TXT_EDITOR" "$RECIPIENT_ACCESS";;
                 "$DIALOG_HELO_ACCESS")
-                    $TXT_EDITOR $HELO_ACCESS;;
+                    "$TXT_EDITOR" "$HELO_ACCESS";;
                 "$DIALOG_SENDER_REWRITE")
-                    $TXT_EDITOR $SENDER_REWRITE;;
+                    "$TXT_EDITOR" "$SENDER_REWRITE";;
                 "$DIALOG_HEADER_REWRITE")
-                    $TXT_EDITOR $HEADER_REWRITE;;
+                    "$TXT_EDITOR" "$HEADER_REWRITE";;
+                "$DIALOG_SENDER_ROUTING")
+                    "$TXT_EDITOR" "$SENDER_ROUTING"
+                    postmap "$SENDER_ROUTING";;
                 "$DIALOG_RESTRICTIONS")
                     dialog_restrictions;;
                 "$DIALOG_BACKUP")
