@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.42.0 for Clearswift SEG >= 4.8
+# menu.sh V1.43.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added support for Postfix sender dependent routing
+# - added custom command 'decrypt_zip.sh'
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2039,7 +2039,7 @@ check_enabled_unverified_recipient() {
         && grep 'smtpd_recipient_restrictions=' "$PF_IN" | grep -q 'unverified_recipient'               \
         && grep -q 'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map' "$PF_IN"    \
         && grep -q 'address_verify_map=' "$PF_IN"                                                       \
-        && grep -q "unverified_recipient_reject_reason=\"User doesn't exist\"" "$PF_IN"                 \
+        && grep -q "unverified_recipient_reject_reason=User doesn't exist" "$PF_IN"                     \
         && [ -f "$PF_OUT" ]                                                                             \
         && grep -q 'address_verify_map=' "$PF_OUT"; then
         echo on
@@ -2056,7 +2056,7 @@ enable_unverified_recipient() {
     for OPTION in                                                                   \
         'address_verify_transport_maps=hash:/etc/postfix-outbound/transport.map'    \
         'address_verify_map='                                                       \
-        "unverified_recipient_reject_reason=\"User doesn't exist\""; do
+        "unverified_recipient_reject_reason=User doesn't exist"; do
         if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
             echo "$OPTION" >> "$PF_IN"
         fi
@@ -3979,7 +3979,7 @@ init_cs() {
     chown cs-admin:cs-adm "$DIR_COMMANDS"
     CUSTOM_COMMAND="$DIR_COMMANDS/check_sender_ip.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT="
+        PACKED_SCRIPT='
         H4sIAAd3uFwAA7VXa0/jRhT97l9x16SdpMR5UFGJbEOJINCowCKyrLYCNjL2OB5hz7gzEwJd9r/3
         zviRB2R3W6mWItnzuPeccx8z2XrTvmO8feer2HG2IIhpcD9RlIdUTljWUjF86LZ+bnWcLZw9FNmT
         ZNNYQz1owE6nuwfnVB8KDldcU8lpnFKu7qj09YxP4SS9+70JjEfigFMdCO7hT80Szfi0FYjU2hzM
@@ -4004,14 +4004,14 @@ init_cs() {
         wbBmhkaxSphVRZorRD5nX3JhXqdqbG3kOrSA1lkavBtTBa+y5cnB+DcZf0eaYI8YHB1dDsfj6lBb
         RV9239TXQVyvdZrQvrmuX3e8vdbtduPmto1HMF4K897sX3dvbXdeSLFwsEkHshzzBUGy6RJVKVBc
         6nEkqW5ylpX9d9DfdfJM/QvcT0swbtRPNXdx2cGrkfWx6/wDSfw9GgENAAA=
-        "
+        '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
         chmod +x "$CUSTOM_COMMAND"
     fi
     CUSTOM_COMMAND="$DIR_COMMANDS/add_external.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT="
+        PACKED_SCRIPT='
         H4sIACFvhlwAA81WbXPaRhD+zq/YyJoIBYSszDgTu7YnnhjaTBsnA3aSjuVkhLRCGsQdPR2xXdv/
         PXt6ASRkkqYfWmwGdC/7vOzeHjtP7HHM7LGXRq3WDnhB8AVvJArmJb00gg9Oj/5aOzT1ms9vRTyJ
         JLR9E57vOi/hDOVrzuCCqQ0YzZClYxSeXLAJ/Dob/9aFmIX8FUPpc2bRO10kMmaTns9nWcyThYy4
@@ -4029,14 +4029,14 @@ init_cs() {
         3TILbTp/6vBlDdjsgkFt0lDdt7s8imuJqq7e7Iln/Y9HRTEVNwy4ZeutMl8/pnlSi1NaxukcaVAr
         y/v7htlicyMXWuVq4FZdd48fZ5JnUTFpxCqma54HmKBE4ElQM7zpF0r5ysorfuzqD4qrv4ZEGWnI
         KzXy78PcrXAe4kIOaWuAydrk3nKoKDH6oP9sbrf1DX7vj3kfCwAA
-        "
+        '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
         chmod +x "$CUSTOM_COMMAND"
     fi
     CUSTOM_COMMAND="$DIR_COMMANDS/remove_external.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT="
+        PACKED_SCRIPT='
         H4sIAAdvhlwAA5WR3U/CMBTF3/dXHMFQSBhjJCQGQ6IZfvCgPgjGhKIZ425rZK22xY+I/7tlBOKD
         Gr1pk97TnpNfc6t7wUzIYBab3POq0FSoZ7qnV0taxouWyXETtjqt0Ku620g9vmmR5Rb1pIFOOzzA
         JdlISYzl2kB5QdLMSMd2KTOcFbPzJoRM1ZEkmyjpu22WCytk1kpUUWYeL22utOlh/EK4VkVBuomL
@@ -4044,14 +4044,14 @@ init_cs() {
         d6Fwtf0v2MntiMHGGVKtCrCR6jEshKTymfNnmh7hP4Hd8fqIryxvqB4qfOJ8fApWRn8JXpehOXwB
         ZoJvPQEP122w8e5cO+6wlFLxO2gU/QLK6xFfJbzB3zv8gzf+Bfyz14H/idut6ppoOxOQ1kqXI+x3
         m6CFoa9S25u4xG1MBX2EmKJWA70K64a7Wm1Obe8TJTtzIbMCAAA=
-        "
+        '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
         chmod +x "$CUSTOM_COMMAND"
     fi
     CUSTOM_COMMAND="$DIR_COMMANDS/wildfire_scan.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT="
+        PACKED_SCRIPT='
         H4sIAJjsnVwAA6VV8W/iNhT+PX/FuzRSYCuEMO2k0lIda+GKrr2doLSbui4yiSFWEyeynePYev/7
         nk0o4YDTqosUyc+xv+99732Oj954U8a9KZGxZR3BgiXRjAkayJDwpozhzm/6zZZ1hN8usnwp2DxW
         UAvr0G75J/CRqouMw4QrKjiNU8rllAqiCj6H9+n06hg4VWHGG/jKIlGMz5thlhq4XqHiTHTghogQ
@@ -4069,14 +4069,14 @@ init_cs() {
         qlI91mqrSkb98eT6dtO1bd59bSt/L5W+rWcONG6/sBXxd4Xt9LAkwj+HvpG+LzDUF8QuHdswuQ2/
         5bsoUQ/a68Evbv1lxYFCr+hXF5e7tbhM5PR0Q9I6iLfHFLtgrSqW/2NYfhWr/WNY7QrWTweRJnx9
         Oaxb537TEXcP9ksBqSShFelb4T9jMhrtKAkAAA==
-        "
+        '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
         chmod +x "$CUSTOM_COMMAND"
     fi
     CUSTOM_COMMAND="$DIR_COMMANDS/hybrid_scan.sh"
     if [ ! -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT="
+        PACKED_SCRIPT='
         H4sIAHvsnVwAA7VXbW/bNhD+rl9xVQTI7ur4pV3QOlNRN7ETY2lS2HFfUHQCLdEWF4kSSCqO1/a/
         70jJsRy7zbZmBIKER/G5u4fPHZm9R80p480pkZFl7UG0nAoW+jIgfF9G8K69395vWXu4cpRmS8Hm
         kYJaUIdOq/0Czqk6SjlMuKKC0yihXE6pICrnczhJpqdPgFMVpLyBPzKPFePz/SBNDFwvV1EquvCG
@@ -4101,7 +4101,30 @@ init_cs() {
         claR5WZcu7i+LsK4vz5/nHjh+B8lvlW6ZQh41evH838joBTY3XDYdiRu8fo2Nw0WnqIxk4qGd6Sz
         HbetW4u30Zx27jDRtsqLacMxvvRZwNJcPqyv9i5fMpfZ/+Gss8PZ43s9TPjq+bc6a/fOUbk/8Gmu
         5g0rXtMVk9sfjS5Gd/KsCK6v/2uCMEdBz0EW72bQL7ZNqW36Mk+BUL81/wbuydKMdg4AAA==
-        "
+        '
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
+    fi
+    CUSTOM_COMMAND="$DIR_COMMANDS/decrypt_zip.sh"
+    if [ ! -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT='
+        H4sIABvjFV0AA6VUbW/bNhD+rl9xVdTIRifJzrekdbbML1mAtAkcuy1QBIYsnSyiFqmSVGx32X/f
+        kbJsz0v7pQQMi7zjc3fPc8eTV9Gc8Wgeq9xxTiDFRG5KPfvOylDl8LEbdsKOc0KWvig3ki1yDa2k
+        DWed7jl8QN0XHKZco+SYF8jVHGWsK76A62L+12/AUSeCB/RT1VIzvggTUVi4q0rnQl7A+1gmMGAo
+        vyrk0CrCdPv9x4t32yZJibqSHBKRorqgfQcCoIQhY0uEJOZcaJhjUwumsGI6h5hvQGSgc4RSiieW
+        kqGMlVoJmSpC6R6iqCpJUKmsWi43eyDyOj8nt4pLTMQT1TonX5RSSMcZ3dwOZ/dXDw+f7saDnh+J
+        UkeJChaxxlW8iVQiWalVVJcVUaTZLnqo19p3nMHNeDb8PBlf9Sd0XxdlNHl/j2st48SYbYDB8M/p
+        NVmfYhktxSI6FIz25HZ7dz27Hw9HN597/iUt3548TEf25B0t35C4kkyjgoKqjBcIWgBdr4u3dBme
+        UswYJ5qMpZQYRKrKMrYGul7GMi6QhLcKeIa8LdReoKd4WdUKccHRsRFnhNVqw98O0MIkF+B6+4y9
+        rrdP1oXLS7LasunUdf55Oe8U59Vil/2v5GaRjrL74rVSkhDe+K9H8Hritx8J8TA1q4hNjmXwBYLv
+        ZCCHR3h+brZntH1rGOUHwFOT0AV4LZo95JQweJ02IN/2mlHUFDUzRbn1vTXT1IBOxrbNQKz0DLoN
+        /cpEy7bBD6LtaAe3X8+GKGnUrNK+1/X/j31ABriDusFo/qx3GIYUThYQSBProGVdp/iaMglBeXzu
+        9O+mHybDca/rrHITVmKcEgA00/IWUmGzGA8fpreT3RC4XqvihofgnjAbbxeC9ChEXfXZ5Wm3XZdj
+        pXC9313o0fPwCKenxM+23f4bxIVnWEikGN/AZzwRkmZb714G/4DJPZtbbkYNhz94L+pJaqDA2/Lg
+        HqFZbX7i9TLbjdUq17VbEs/8NXQTfbgu5Q4R3oDhJ6WGh3dN++5YPdJ9X9sLL6r7gw74FzhbkMNO
+        BgAA
+        '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
         chmod +x "$CUSTOM_COMMAND"
