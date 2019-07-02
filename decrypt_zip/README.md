@@ -1,4 +1,4 @@
-decrypt_zip.sh V1.0.0
+decrypt_zip.sh V1.1.0
 =====================
 
 Attempts to decrypt zip file using a provided list of passwords and returns info either which password successfully decrypted the zip or that it could not be decrypted with any of the passwords.

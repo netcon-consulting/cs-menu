@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# decrypt_zip.sh V1.0.0
+# decrypt_zip.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
 # return codes:
-# 0 - zip file cannot be decrypted with any of the provided passwords
-# 1 - zip file successfully decrypted
+# 0 - zip file successfully decrypted
+# 1 - zip file cannot be decrypted with any of the provided passwords
 # 99 - unrecoverable error
 
 FILE_PASSWORD='/opt/cs-gateway/scripts/netcon/zip_passwords.txt'
@@ -67,10 +67,11 @@ while read -r PASSWORD; do
         write_debug "File '$1' successfully decrypted with password $COUNTER"
         write_log "password $COUNTER"
         rm -rf "$DIR_EXTRACT"
-        exit 1
+        exit 0
     fi
     COUNTER="$(expr $COUNTER + 1)"
 done < "$FILE_PASSWORD"
 
 write_debug "File '$1' cannot be decrypted"
 rm -rf "$DIR_EXTRACT"
+exit 1
