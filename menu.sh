@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.44.0 for Clearswift SEG >= 4.8
+# menu.sh V1.45.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,7 +55,8 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - updated 'decrypt_zip.sh'
+# - added option for installing zbar
+# - added custom command 'check_qr.sh'
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -224,8 +225,11 @@ show_wait() {
 # return values:
 # none
 install_epel() {
-    wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
-    rpm -ivh epel-release-6-8.noarch.rpm
+    if ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
+        echo 'Installing EPEL...'
+        wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -O /tmp/epel-release-6-8.noarch.rpm
+        rpm -ivh /tmp/epel-release-6-8.noarch.rpm
+    fi
 }
 # install Clearswift from Repo
 # parameters:
@@ -343,6 +347,7 @@ install_letsencrypt() {
 # none
 install_auto_update() {
     clear
+    install_epel
     sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     yum install -y yum-cron
     /etc/init.d/yum-cron start
@@ -371,6 +376,17 @@ install_local_dns() {
     grep -q "#include" $CONFIG_BIND || sed -i 's/include/#include/' $CONFIG_BIND
     grep -q "named.ca" $CONFIG_BIND || sed -i 's/db\.cache/named\.ca/' $CONFIG_BIND
     /etc/init.d/named restart
+    get_keypress
+}
+# install zbar
+# parameters:
+# none
+# return values:
+# none
+install_zbar() {
+    clear
+    install_epel
+    yum install -y zbar
     get_keypress
 }
 ###################################################################################################
@@ -430,6 +446,15 @@ check_installed_local_dns() {
     RET_CODE=$(grep -q "dnssec-validation auto;" $CONFIG_BIND || grep -q "#include" $CONFIG_BIND || grep -q "named.ca" $CONFIG_BIND)
     return $RET_CODE
 }
+# check whether zbar is installed
+# parameters:
+# none
+# return values:
+# error code - 0 for installed, 1 for not installed
+check_installed_zbar() {
+    which zbarimg &>/dev/null
+    return $?
+}
 ###################################################################################################
 # print info for installed feature
 # parameters:
@@ -470,6 +495,7 @@ dialog_install() {
     DIALOG_AUTO_UPDATE="Auto update"
     DIALOG_VMWARE_TOOLS="VMware Tools"
     DIALOG_LOCAL_DNS="Local DNS resolver"
+    DIALOG_ZBAR="Zbar QR-code reader"
     EXPLANATION_RSPAMD="Implemented as a milter on Port 11332.\nThe webinterface runs on Port 11334 on localhost.\nYou will need a SSH Tunnel to access the Web interface.\nssh root@servername -L 11334:127.0.0.1:11334\n\nEnable corresponding feature in menu under 'Enable features->Rspamd'"
     EXPLANATION_LETSENCRYPT="Easy acquisition of Let's Encrypt certificates for TLS. It will autorenew the certificates via cronjob.\n\nEnable corresponding feature in menu under 'Enable features->Let's-Encrypt-Cert'"
     EXPLANATION_LOCAL_DNS="DNS forwarding disabled and local DNSSec resolver enabled for DANE validation.\n\nEnable corresponding feature in menu under 'Enable features->DANE'"
@@ -479,11 +505,13 @@ dialog_install() {
         DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE"
         DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS"
         DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
+        DIALOG_ZBAR_INSTALLED="$DIALOG_ZBAR"
         check_installed_rspamd && DIALOG_RSPAMD_INSTALLED+=' (installed)'
         check_installed_letsencrypt && DIALOG_LETSENCRYPT_INSTALLED+=' (installed)'
         check_installed_auto_update && DIALOG_AUTO_UPDATE_INSTALLED+=' (installed)'
         check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED+=' (installed)'
         check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED+=' (installed)'
+        check_installed_zbar && DIALOG_ZBAR_INSTALLED+=' (installed)'
         exec 3>&1
             DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"             \
                 --cancel-label "Back" --ok-label "Apply"                        \
@@ -493,6 +521,7 @@ dialog_install() {
                 "$DIALOG_RSPAMD_INSTALLED" ""                                   \
                 "$DIALOG_LETSENCRYPT_INSTALLED" ""                              \
                 "$DIALOG_AUTO_UPDATE_INSTALLED" ""                              \
+                "$DIALOG_ZBAR_INSTALLED" ""                                     \
                 2>&1 1>&3)"
             RET_CODE=$?
         exec 3>&-
@@ -508,6 +537,8 @@ dialog_install() {
                     install_feature "vmware_tools" "$DIALOG_VMWARE_TOOLS";;
                 "$DIALOG_LOCAL_DNS_INSTALLED")
                     install_feature "local_dns" "$DIALOG_LOCAL_DNS" "$EXPLANATION_LOCAL_DNS";;
+                "$DIALOG_ZBAR_INSTALLED")
+                    install_feature "zbar" "$DIALOG_ZBAR";;
             esac
         else
             break
@@ -4124,6 +4155,25 @@ init_cs() {
         bmv2kp0UlcZHZ4dhsyrHGG87b21o42N0B4eHKOCquZ8mseERpoJgjh/gUhZzgS+J2mjm1uTdSrzS
         pr927A9vXDW3G/mdlQ72Dpox7C+n9qu9jhrnWmaJ5ul/a7lRPrIoxAYRXoHWJ8HxgjfPOmnH921t
         e15m+w8dYLiE1m/Y4LhRwwYAAA==
+        '
+        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
+        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
+        chmod +x "$CUSTOM_COMMAND"
+    fi
+    CUSTOM_COMMAND="$DIR_COMMANDS/check_qr.sh"
+    if ! [ -f $CUSTOM_COMMAND ]; then
+        PACKED_SCRIPT='
+        H4sIAOBfHF0AA21S62+bMBD/zl9xpagO0khCvjVbs01Z0lXKHk2XadI0RTwOsAo2M6b0kf7vOxOy
+        ILWWkPCd7/e4u9OTUcjFKAyqzLJOIcowut3+VcMqg5/+0B+OrVMKz2X5oHiaaRhELkzG/jl8RT2X
+        AjZCoxKYFSiqEFWga5HCZRF+fgMCdSSFR19V55qLdBjJooX7WOtMqil8CVQEnziq2woFDIph3P1/
+        eLXWNQoV6loJiGSM1ZTuY/Cg5BEFEWKJFQipKSt0wAVcr9uH9MzvPeuyVS99fk75WiiM5B25CHME
+        VEoqy1p9u9x+Xy+WV78u2IwOayM3m2UbeUeHGVmN4prIC6yqIEXQEnKZQsIJqOE6A52RPEy4wLjN
+        lAq9UVUnCb8HKi8DFRRIrWw9OUZtB3W0fBfk9d6zkAKtlnFLWAMXniygg1EmwXaOih3fOYq1YTaj
+        7PJqtdhS1LaeLYsn8Bu8Rwr7NvyB3e5wndD1rREtesgbo2cKzoC2BQXpBWfsAopIPZQa4+0jL423
+        rXFt7+vuuabeWgm3rAPxhUFvqU8MW9KR99j+OwN7HggzT1nSfrTNZI7PXmK3YE3Gowwew0DxIoWz
+        2SjGu5Go8/x1aNa9ZLSoGFdmZCECrYUO8hzjlyTrxc1m9YPkDw4crfLJkci1u5baznsbLmg3+7Y2
+        65Up7qa0R7NhB6nCEtj12pvTLk4ZRYLmFrxlP8aeSsWFBmfyzA4l3gLYINO63DVN4zJ3r7gbIJGZ
+        iZ6d9SwzIY0ISGQtYmam3WtHW3H07LeW29+x9Q8VYWLCJQQAAA==
         '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"
