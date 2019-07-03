@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.45.0 for Clearswift SEG >= 4.8
+# menu.sh V1.46.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -55,8 +55,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added option for installing zbar
-# - added custom command 'check_qr.sh'
+# - updated 'check_qr.sh'
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -4163,17 +4162,17 @@ init_cs() {
     CUSTOM_COMMAND="$DIR_COMMANDS/check_qr.sh"
     if ! [ -f $CUSTOM_COMMAND ]; then
         PACKED_SCRIPT='
-        H4sIAOBfHF0AA21S62+bMBD/zl9xpagO0khCvjVbs01Z0lXKHk2XadI0RTwOsAo2M6b0kf7vOxOy
-        ILWWkPCd7/e4u9OTUcjFKAyqzLJOIcowut3+VcMqg5/+0B+OrVMKz2X5oHiaaRhELkzG/jl8RT2X
-        AjZCoxKYFSiqEFWga5HCZRF+fgMCdSSFR19V55qLdBjJooX7WOtMqil8CVQEnziq2woFDIph3P1/
-        eLXWNQoV6loJiGSM1ZTuY/Cg5BEFEWKJFQipKSt0wAVcr9uH9MzvPeuyVS99fk75WiiM5B25CHME
-        VEoqy1p9u9x+Xy+WV78u2IwOayM3m2UbeUeHGVmN4prIC6yqIEXQEnKZQsIJqOE6A52RPEy4wLjN
-        lAq9UVUnCb8HKi8DFRRIrWw9OUZtB3W0fBfk9d6zkAKtlnFLWAMXniygg1EmwXaOih3fOYq1YTaj
-        7PJqtdhS1LaeLYsn8Bu8Rwr7NvyB3e5wndD1rREtesgbo2cKzoC2BQXpBWfsAopIPZQa4+0jL423
-        rXFt7+vuuabeWgm3rAPxhUFvqU8MW9KR99j+OwN7HggzT1nSfrTNZI7PXmK3YE3Gowwew0DxIoWz
-        2SjGu5Go8/x1aNa9ZLSoGFdmZCECrYUO8hzjlyTrxc1m9YPkDw4crfLJkci1u5baznsbLmg3+7Y2
-        65Up7qa0R7NhB6nCEtj12pvTLk4ZRYLmFrxlP8aeSsWFBmfyzA4l3gLYINO63DVN4zJ3r7gbIJGZ
-        iZ6d9SwzIY0ISGQtYmam3WtHW3H07LeW29+x9Q8VYWLCJQQAAA==
+        H4sIADi9HF0AA21S226bQBB95ysmBGWNVGzjt7iN28q1k0juJU5dVaoii8sAq8AuWZaQi/PvHTAO
+        SMlKSOyZnXPOXI6PRj4XI98rEsM4hiDB4HZ7p4ZFAn/c4WQ4No4Jnsv8UfE40TAIbJiM3VP4gXou
+        BWyERiUwyVAUPipPlyKG88y/+AACdSCFQ19RppqLeBjIrKH7WupEqil891QA3ziq2wIFDLJh2P5/
+        eTfXrh0q1KUSEMgQiyndx+BAzgMCEUKJBQipKSq0xwVcrZuH9MztPWujRS98ekrxUigM5D1V4acI
+        qJRUhrH6eb79tV4sL/+esRkd1iDXm2WDfKLDaluV4prEMywKL0bQElIZQ8SJqOI6AZ2QPYy4wLCJ
+        5AqdUVFGEX8ASs895WVIrWxqsmq3LVVX8r2XlvuahRRoNIpb4hrY8GwAHQwSCabVObZcqzNrwmxG
+        0eXlarEl1DReDINH8A+cJ4JdE25gtztcJ3T9WJsWPeZN7WcK1oC2BQX5BWtsA4pAPeYaw+0Tz+va
+        tnXV5j7vgWvqrRFxwzgIn9XsjfRRrRa14j2118rAnHuinqfMaT+aZjLLZW+5G7Iq4UECT76neBbD
+        yWwU4v1IlGn6PjVrXzJaVAyLemQ+Aq2F9tIUw7ci68X1ZvWb7A8OGo3zSSdkm21LTeuzCWe0mzdw
+        cnKYyz7fhB3ECnNw7oBdrZ05LeCU9Sxu1qta4/2kLoMQr7oFZ9nH2HOuuNBgTV7Yq84C2CDROt9V
+        VWUze19YO2cSM/cmu84wIWsTEMlShKxeil7XmoyuNW7TmeZ3bPwH6crJM0wEAAA=
         '
         printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
         chown cs-admin:cs-adm "$CUSTOM_COMMAND"

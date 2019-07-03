@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.1.0
+# check_qr.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -42,7 +42,7 @@ fi
 
 RESULT="$(zbarimg "$1" 2>/dev/null)"
 
-if [ "$?" = 0 ]; then
+if [ "$?" = 0 ] && echo "$RESULT" | grep -q 'QR-Code:'; then
     URL="$(echo "$RESULT" | grep 'QR-Code:' | awk -F 'QR-Code:' '{print $2}' | grep -E '(http|www)')"
     [ -z "$URL" ] && write_log 'no URL found' || write_log "$URL"
     exit 1
