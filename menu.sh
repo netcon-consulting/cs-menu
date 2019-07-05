@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.46.0 for Clearswift SEG >= 4.8
+# menu.sh V1.47.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -29,6 +29,7 @@
 # - automatic mail queue cleanup
 # - automatic daily CS config backup via mail
 # - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
+# - Import 'run external command' policy rules
 #
 # Postfix settings
 # - Postscreen weighted blacklists and bot detection for Postfix
@@ -55,7 +56,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - updated 'check_qr.sh'
+# - added import feature for 'run external command' policy rules to 'Clearswift config' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1631,12 +1632,18 @@ import_keystore() {
         --inputbox "Enter filename of keystore to import [Note: keystore password must be '$PASSWORD_KEYSTORE']" 0 50 2>&1 1>&3)"
     RET_CODE=$?
     exec 3>&-
-    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ] && [ -f $DIALOG_RET ]; then
-        keytool -importkeystore -destkeystore $TMP_KEYSTORE -srckeystore $DIALOG_RET -srcstoretype pkcs12 -deststorepass $PASSWORD_KEYSTORE -srcstorepass $PASSWORD_KEYSTORE &>/dev/null
-        if [ $? = 0 ]; then
-            mv /var/cs-gateway/keystore /var/cs-gateway/keystore.old
-            mv $TMP_KEYSTORE /var/cs-gateway/keystore
-            cs-servicecontrol restart tomcat &>/dev/null
+    if [ "$RET_CODE" = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        if [ -f "$DIALOG_RET" ]; then
+            keytool -importkeystore -destkeystore "$TMP_KEYSTORE" -srckeystore "$DIALOG_RET" -srcstoretype pkcs12 -deststorepass "$PASSWORD_KEYSTORE" -srcstorepass "$PASSWORD_KEYSTORE" &>/dev/null
+            if [ "$?" = 0 ]; then
+                mv /var/cs-gateway/keystore /var/cs-gateway/keystore.old
+                mv "$TMP_KEYSTORE" /var/cs-gateway/keystore
+                cs-servicecontrol restart tomcat &>/dev/null
+            else
+                $DIALOG --backtitle 'Manage configuration' --title 'Error importing keystore' --clear --msgbox 'Error importing keystore' 0 0
+            fi
+        else
+            $DIALOG --backtitle 'Manage configuration' --title 'File does not exist' --clear --msgbox "File '$DIALOG_RET' does not exist" 0 0
         fi
     fi
 }
@@ -1699,6 +1706,190 @@ export_address_list() {
             echo '[CS-addresslists] Exported addresslists' | mail -s '[CS-addresslists] Exported addresslists' -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) -a "$FILE_ADDRLIST" "$DIALOG_RET"
             LIST_EXPORTED+=$'\n\n'"Archive of exported addresslist send to '$DIALOG_RET' and local copy saved to '$FILE_ADDRLIST'."
             $DIALOG --backtitle 'Clearswift Configuration' --title 'Export address lists' --clear --msgbox "$LIST_EXPORTED" 0 0
+        fi
+    fi
+}
+# create 'run external command' policy rule from config file
+# parameters:
+# none
+# return values:
+# none
+create_rule() {
+    DIR_CFG='/var/cs-gateway/uicfg'
+    DIR_RULES="$DIR_CFG/policy/rules"
+
+    if ! [ -f "$1" ]; then
+        echo "Cannot open rule file '$1'"
+        return 1
+    fi
+
+    NAME_RULE="$(sed -n '/name_rule/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$NAME_RULE" ]; then
+        echo "'name_rule' is empty"
+        return 2
+    fi
+
+    PATH_CMD="$(sed -n '/path_cmd/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$PATH_CMD" ]; then
+        echo "'path_cmd' is empty"
+        return 3
+    fi
+
+    TIMEOUT="$(sed -n '/timeout/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$TIMEOUT" ]; then
+        echo "'timeout' is empty"
+        return 4
+    fi
+
+    LIST_MEDIA="$(sed -n '/media_types/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$LIST_MEDIA" ]; then
+        echo "'media_types' is empty"
+        return 5
+    fi
+
+    LIST_CODE="$(sed -n '/return_codes/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$LIST_CODE" ]; then
+        echo "'return_codes' is empty"
+        return 6
+    fi
+
+    LIST_DISPOSAL="$(sed -n '/disposal_actions/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$LIST_DISPOSAL" ]; then
+        echo "'disposal_actions' is empty"
+        return 7
+    fi
+
+    if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
+        echo "rule '$NAME_RULE' already exists"
+        return 8
+    fi
+
+    LIST_TYPE="$(xmlstarlet sel -t -m "Configuration/MediaTypes/MediaTypeGroup/MediaType[@name!='New']" -v @mnemonic -o "," -v @uuid -o "," -v @encrypted -o "," -v @signed -o "," -v @signedAndEncrypted -o "," -v @drm -o "," -v @notProtected -n $LAST_CONFIG)"
+
+    LIST_AREA="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/MessageArea" -v @name -o "," -v @uuid -n $LAST_CONFIG)"
+
+    ACTION_DROP="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Drop" -v @uuid -n $LAST_CONFIG)"
+    ACTION_NDR="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/NDR" -v @uuid -n $LAST_CONFIG)"
+    ACTION_DELIVER="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Deliver" -v @uuid -n $LAST_CONFIG)"
+    ACTION_NONE="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/None" -v @uuid -n $LAST_CONFIG)"
+    ACTION_REJECT="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Reject" -v @uuid -n $LAST_CONFIG)"
+    ACTION_TAG="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/TagAndDeliver" -v @uuid -n $LAST_CONFIG)"
+
+    UUID_RULE="$(uuidgen)"
+
+    POLICY_RULE="<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><ExecutablePolicyRule name=\"$NAME_RULE\" siteSpecific=\"false\" template=\"9255cf2d-3000-832b-406e-38bd46975444\" uuid=\"$UUID_RULE\"><WhatToFind><MediaTypes selection=\"anyof\" uuid=\"$(uuidgen)\">"
+
+    while read LINE_MEDIA; do
+        MEDIA_TYPE=''
+
+        NAME_MEDIA="$(echo $LINE_MEDIA | awk -F, '{print $1}')"
+
+        while read LINE_TYPE; do
+            NAME_TYPE="$(echo $LINE_TYPE | awk -F, '{print $1}')"
+
+            if [ "$NAME_MEDIA" = "$NAME_TYPE" ]; then
+                MEDIA_TYPE+='<MediaType'
+
+                INDEX=1
+
+                if ! [ -z "$(echo $LINE_TYPE | awk -F, '{print $3}')" ]; then
+                    INDEX="$(expr $INDEX + 1)"
+                    MEDIA_TYPE+=" enc=\"$(echo $LINE_MEDIA | awk -F, "{print $"$INDEX"}")\""
+                fi
+                if ! [ -z "$(echo $LINE_TYPE | awk -F, '{print $4}')" ]; then
+                    INDEX="$(expr $INDEX + 1)"
+                    MEDIA_TYPE+=" digsign=\"$(echo $LINE_MEDIA | awk -F, "{print $"$INDEX"}")\""
+                fi
+                if ! [ -z "$(echo $LINE_TYPE | awk -F, '{print $5}')" ]; then
+                    INDEX="$(expr $INDEX + 1)"
+                    MEDIA_TYPE+=" digsignenc=\"$(echo $LINE_MEDIA | awk -F, "{print $"$INDEX"}")\""
+                fi
+                if ! [ -z "$(echo $LINE_TYPE | awk -F, '{print $6}')" ]; then
+                    INDEX="$(expr $INDEX + 1)"
+                    MEDIA_TYPE+=" drm=\"$(echo $LINE_MEDIA | awk -F, "{print $"$INDEX"}")\""
+                fi
+                if ! [ -z "$(echo $LINE_TYPE | awk -F, '{print $7}')" ]; then
+                    INDEX="$(expr $INDEX + 1)"
+                    MEDIA_TYPE+=" notprotect=\"$(echo $LINE_MEDIA | awk -F, "{print $"$INDEX"}")\""
+                fi
+
+                MEDIA_TYPE+=">$(echo $LINE_TYPE | awk -F, '{print $2}')</MediaType>"
+
+                break
+            fi
+        done < <(echo "$LIST_TYPE")
+
+        POLICY_RULE+="$MEDIA_TYPE"
+    done < <(echo "$LIST_MEDIA")
+
+    POLICY_RULE+="</MediaTypes><Direction direction=\"either\" uuid=\"$(uuidgen)\"/><ExecutableSettings uuid=\"$(uuidgen)\"><Filename>$PATH_CMD</Filename><CmdLine>%FILENAME% %LOGNAME%</CmdLine><ResponseList>"
+
+    while read LINE_CODE; do
+        POLICY_RULE+="<Response action=\"$(echo $LINE_CODE | awk -F, '{print $2}' | tr [a-z] [A-Z])\" code=\"$(echo $LINE_CODE | awk -F, '{print $1}')\">$(echo $LINE_CODE | awk -F, '{print $3}')</Response>"
+    done < <(echo "$LIST_CODE")
+
+    POLICY_RULE+="</ResponseList><Advanced mutex=\"false\" timeout=\"$TIMEOUT\"><LogFilePrefix>&gt;&gt;&gt;&gt;</LogFilePrefix><LogFilePostfix>&lt;&lt;&lt;&lt;</LogFilePostfix></Advanced></ExecutableSettings></WhatToFind><PrimaryActions><WhatToDo><Disposal disposal=\"$ACTION_DELIVER\" primaryCrypto=\"UNDEFINED\" secondary=\"$ACTION_NONE\" secondaryCrypto=\"UNDEFINED\" uuid=\"$(uuidgen)\"/></WhatToDo><WhatToDoWeb><PrimaryWebAction editable=\"true\" type=\"allow\" uuid=\"$(uuidgen)\"/></WhatToDoWeb><WhatElseToDo/></PrimaryActions>"
+
+    DISPOSAL="$(echo "$LIST_DISPOSAL" | grep '^modified,' | awk -F, '{print $2}')"
+    case "$DISPOSAL" in
+        drop|ndr|deliver|none|reject|tag)
+            ACTION_PRIMARY="$(eval echo '$'ACTION_${DISPOSAL^^})";;
+        *)
+            ACTION_PRIMARY="$(echo "$LIST_AREA" | grep "^$DISPOSAL," | awk -F, '{print $2}')";;
+    esac
+    DISPOSAL="$(echo "$LIST_DISPOSAL" | grep '^modified,' | awk -F, '{print $3}')"
+    case "$DISPOSAL" in
+        drop|ndr|deliver|none|reject|tag)
+            ACTION_SECONDARY="$(eval echo '$'ACTION_${DISPOSAL^^})";;
+        *)
+            ACTION_SECONDARY="$(echo "$LIST_AREA" | grep "^$DISPOSAL," | awk -F, '{print $2}')";;
+    esac
+    POLICY_RULE+="<ModifiedActions><WhatToDo><Disposal disposal=\"$ACTION_PRIMARY\" primaryCrypto=\"UNDEFINED\" secondary=\"$ACTION_SECONDARY\" secondaryCrypto=\"UNDEFINED\" uuid=\"$(uuidgen)\"/></WhatToDo><WhatToDoWeb><PrimaryWebAction editable=\"true\" type=\"none\" uuid=\"$(uuidgen)\"/></WhatToDoWeb><WhatElseToDo/></ModifiedActions>"
+
+    DISPOSAL="$(echo "$LIST_DISPOSAL" | grep '^detected,' | awk -F, '{print $2}')"
+    case "$DISPOSAL" in
+        drop|ndr|deliver|none|reject|tag)
+            ACTION_PRIMARY="$(eval echo '$'ACTION_${DISPOSAL^^})";;
+        *)
+            ACTION_PRIMARY="$(echo "$LIST_AREA" | grep "^$DISPOSAL," | awk -F, '{print $2}')";;
+    esac
+    DISPOSAL="$(echo "$LIST_DISPOSAL" | grep '^detected,' | awk -F, '{print $3}')"
+    case "$DISPOSAL" in
+        drop|ndr|deliver|none|reject|tag)
+            ACTION_SECONDARY="$(eval echo '$'ACTION_${DISPOSAL^^})";;
+        *)
+            ACTION_SECONDARY="$(echo "$LIST_AREA" | grep "^$DISPOSAL," | awk -F, '{print $2}')";;
+    esac
+    POLICY_RULE+="<DetectedActions><WhatToDo><Disposal disposal=\"$ACTION_PRIMARY\" primaryCrypto=\"UNDEFINED\" secondary=\"$ACTION_SECONDARY\" secondaryCrypto=\"UNDEFINED\" uuid=\"$(uuidgen)\"/></WhatToDo><WhatToDoWeb><PrimaryWebAction editable=\"true\" type=\"none\" uuid=\"$(uuidgen)\"/></WhatToDoWeb><WhatElseToDo/></DetectedActions></ExecutablePolicyRule>"
+
+    echo "$POLICY_RULE" > "$DIR_RULES/$UUID_RULE.xml"
+    sed -i 's/changesMade="false"/changesMade="true"/' "$DIR_CFG/trail.xml"
+
+    tomcat_control restart &>/dev/null
+}
+# toggle password check for cs-admin
+# parameters:
+# none
+# return values:
+# none
+import_rule() {
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage configuration' --title 'Import policy rule' --inputbox 'Enter filename of rule config file' 0 50 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
+        if [ -f "$DIALOG_RET" ]; then
+            RESULT="$(create_rule "$DIALOG_RET")"
+            RET_CODE=$?
+            [ "$RET_CODE" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
+        else
+            $DIALOG --backtitle 'Manage configuration' --title 'File does not exist' --clear --msgbox "File '$DIALOG_RET' does not exist" 0 0
         fi
     fi
 }
@@ -2419,6 +2610,7 @@ dialog_clearswift() {
     DIALOG_KEY_AUTH='SSH key authentication for cs-admin'
     DIALOG_IMPORT_KEYSTORE='Import PKCS12 for Tomcat'
     DIALOG_EXPORT_ADDRESS='Export and email address lists'
+    DIALOG_RULE='Import policy rule'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
     DIALOG_TOGGLE_BACKUP='Email backup'
@@ -2433,6 +2625,7 @@ dialog_clearswift() {
             "$DIALOG_KEY_AUTH" ''                                                                  \
             "$DIALOG_IMPORT_KEYSTORE" ''                                                           \
             "$DIALOG_EXPORT_ADDRESS" ''                                                            \
+            "$DIALOG_RULE" ''                                                                      \
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
             "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
             "$DIALOG_TOGGLE_BACKUP" ''                                                             \
@@ -2457,6 +2650,8 @@ dialog_clearswift() {
                     import_keystore;;
                 "$DIALOG_EXPORT_ADDRESS")
                     export_address_list;;
+                "$DIALOG_RULE")
+                    import_rule;;
                 "$DIALOG_TOGGLE_PASSWORD")
                     toggle_password;;
                 "$DIALOG_TOGGLE_CLEANUP")
@@ -4234,9 +4429,9 @@ check_update() {
 # return values:
 # none
 grep -q 'alias menu=/root/menu.sh' /root/.bashrc || echo 'alias menu=/root/menu.sh' >> /root/.bashrc
+check_update
 check_installed_seg && init_cs
 write_examples
-check_update
 print_info
 DIALOG_SEG='Install Clearswift SEG'
 DIALOG_INSTALL='Install features'
