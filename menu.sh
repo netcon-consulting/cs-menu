@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.47.0 for Clearswift SEG >= 4.8
+# menu.sh V1.48.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,7 +56,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added import feature for 'run external command' policy rules to 'Clearswift config' submenu
+# - added install feature for external commands to 'Clearswift config' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -117,7 +117,8 @@ SSH_KEYS='/home/cs-admin/.ssh/authorized_keys'
 BLACKLISTS='zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4'
 FILE_PASSWORD='/tmp/TMPpassword'
 EMAIL_DEFAULT='uwe@usommer.de'
-LINK_UPDATE='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh'
+LINK_GITHUB='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
+LINK_UPDATE="$LINK_GITHUB/menu.sh"
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
 CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
@@ -1435,6 +1436,32 @@ dialog_feature_postfix() {
 ###################################################################################################
 # some custom settings
 ###################################################################################################
+install_command() {
+    LIST_COMMAND="$(wget https://github.com/netcon-consulting/cs-menu/external_commands -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
+    while true; do
+        ARRAY_COMMAND=()
+        for NAME_COMMAND in $LIST_COMMAND; do
+            [ -f "$DIR_COMMANDS/$NAME_COMMAND.sh" ] && ARRAY_COMMAND+=("$NAME_COMMAND (installed)" '') || ARRAY_COMMAND+=("$NAME_COMMAND" '')
+        done
+        exec 3>&1
+        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --title 'External commands' --cancel-label 'Back' --ok-label 'Install' --extra-button --extra-label 'Info'        \
+            --menu 'Install external command' 0 0 0 "${ARRAY_COMMAND[@]}" 2>&1 1>&3)"
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ]; then
+            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.sh" -O "$DIR_COMMANDS/$DIALOG_RET.sh"
+            chown cs-admin:cs-adm "$DIR_COMMANDS/$DIALOG_RET.sh"
+            chmod +x "$DIR_COMMANDS/$DIALOG_RET.sh"
+            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.rule" -O "$DIR_COMMANDS/$DIALOG_RET.rule"
+            create_rule "$DIR_COMMANDS/$DIALOG_RET.rule"
+        elif [ $RET_CODE = 3 ]; then
+            INFO_COMMAND="$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/README.md")"
+            [ -z "$INFO_COMMAND" ] || $DIALOG --backtitle "$TITLE_MAIN" --title 'External command info' --clear --msgbox "$INFO_COMMAND" 0 0
+        else
+            break
+        fi
+    done
+}
 # edit LDAP schedule
 # parameters:
 # none
@@ -2603,6 +2630,7 @@ dialog_restrictions() {
 # return values:
 # none
 dialog_clearswift() {
+    DIALOG_INSTALL_COMMAND='Install external command'
     DIALOG_CUSTOM_COMMANDS='Custom commands'
     DIALOG_LDAP='LDAP schedule'
     DIALOG_SSH='SSH access'
@@ -2618,6 +2646,7 @@ dialog_clearswift() {
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
+            "$DIALOG_INSTALL_COMMAND" ''                                                           \
             "$DIALOG_CUSTOM_COMMANDS" ''                                                           \
             "$DIALOG_LDAP" ''                                                                      \
             "$DIALOG_SSH" ''                                                                       \
@@ -2634,6 +2663,8 @@ dialog_clearswift() {
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
+                "$DIALOG_LDAP")
+                    install_command;;
                 "$DIALOG_CUSTOM_COMMANDS")
                     cd $DIR_COMMANDS
                     $TXT_EDITOR .
