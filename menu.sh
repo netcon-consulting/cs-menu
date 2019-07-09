@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.49.0 for Clearswift SEG >= 4.8
+# menu.sh V1.50.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -57,7 +57,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - removed pre-installed external commands
+# - when installing custom commands also create the corresponding message areas for the disposal actions if necessary
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1453,8 +1453,7 @@ install_command() {
             wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.sh" -O "$DIR_COMMANDS/$DIALOG_RET.sh" 2>/dev/null
             chown cs-admin:cs-adm "$DIR_COMMANDS/$DIALOG_RET.sh"
             chmod +x "$DIR_COMMANDS/$DIALOG_RET.sh"
-            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.rule" -O "$DIR_COMMANDS/$DIALOG_RET.rule" 2>/dev/null
-            RESULT="$(create_rule "$DIR_COMMANDS/$DIALOG_RET.rule")"
+            RESULT="$(create_rule "$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.rule" -O - 2>/dev/null)")"
             if [ "$?" = 0 ]; then
                 APPLY_NEEDED=1
             else
@@ -1744,54 +1743,55 @@ export_address_list() {
 }
 # create 'run external command' policy rule from config file
 # parameters:
-# none
+# $1 - rule config
 # return values:
 # none
 create_rule() {
     DIR_CFG='/var/cs-gateway/uicfg'
     DIR_RULES="$DIR_CFG/policy/rules"
+    FILE_DISPOSAL="$DIR_CFG/policy/disposals.xml"
 
-    if ! [ -f "$1" ]; then
-        echo "Cannot open rule file '$1'"
+    if [ -z "$1" ]; then
+        echo "rule config is empty"
         return 1
     fi
 
-    NAME_RULE="$(sed -n '/name_rule/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+    NAME_RULE="$(echo "$1" | sed -n '/name_rule/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$NAME_RULE" ]; then
         echo "'name_rule' is empty"
         return 2
     fi
 
-    PATH_CMD="$(sed -n '/path_cmd/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+    PATH_CMD="$(echo "$1" | sed -n '/path_cmd/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$PATH_CMD" ]; then
         echo "'path_cmd' is empty"
         return 3
     fi
 
-    TIMEOUT="$(sed -n '/timeout/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+    TIMEOUT="$(echo "$1" | sed -n '/timeout/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$TIMEOUT" ]; then
         echo "'timeout' is empty"
         return 4
     fi
 
-    LIST_MEDIA="$(sed -n '/media_types/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+    LIST_MEDIA="$(echo "$1" | sed -n '/media_types/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_MEDIA" ]; then
         echo "'media_types' is empty"
         return 5
     fi
 
-    LIST_CODE="$(sed -n '/return_codes/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+    LIST_CODE="$(echo "$1" | sed -n '/return_codes/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_CODE" ]; then
         echo "'return_codes' is empty"
         return 6
     fi
 
-    LIST_DISPOSAL="$(sed -n '/disposal_actions/,/^\s*$/p' $1 | sed '/^\s*$/d' | sed -n '1!p')"
+    LIST_DISPOSAL="$(echo "$1" | sed -n '/disposal_actions/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_DISPOSAL" ]; then
         echo "'disposal_actions' is empty"
@@ -1813,6 +1813,14 @@ create_rule() {
     ACTION_NONE="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/None" -v @uuid -n $LAST_CONFIG)"
     ACTION_REJECT="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Reject" -v @uuid -n $LAST_CONFIG)"
     ACTION_TAG="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/TagAndDeliver" -v @uuid -n $LAST_CONFIG)"
+
+    for DISPOSAL in $(echo "$LIST_DISPOSAL" | awk -F, '{print $2}'); do
+        if ! echo "$DISPOSAL" | grep -E -q '^(drop|ndr|deliver|none|reject|tag)$' && ! grep -q " name=\"$DISPOSAL\" notificationEnabled=" "$FILE_DISPOSAL"; then
+            UUID_DISPOSAL="$(uuidgen)"
+            sed -i "s/<\/DisposalCollection>/<MessageArea auditorNotificationAuditor=\"admin\" auditorNotificationAuditorAddress=\"\" auditorNotificationEnabled=\"false\" auditorNotificationpwdOtherAddress=\"\" auditorNotificationPlainBody=\"A message was released by %RELEASEDBY% which violated the policy %POLICYVIOLATED%. A version of the email has been attached.\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" auditorNotificationSender=\"admin\" auditorNotificationSubject=\"A message which violated policy %POLICYVIOLATED% has been released.\" delayedReleaseDelay=\"15\" expiry=\"30\" name=\"$DISPOSAL\" notificationEnabled=\"false\" notificationOtherAddress=\"\" notificationPlainBody=\"A message you sent has been released by the administrator\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" notificationSender=\"admin\" notificationSubject=\"A message you sent has been released\" notspam=\"true\" pmm=\"false\" releaseRate=\"10000\" releaseScheduleType=\"throttle\" scheduleEnabled=\"false\" system=\"false\" uuid=\"$UUID_DISPOSAL\"><PMMAddressList\/><WeeklySchedule mode=\"ONE_HOUR\"><DailyScheduleList><DailySchedule day=\"1\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"2\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"3\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"4\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"5\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"6\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"7\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><\/DailyScheduleList><\/WeeklySchedule><\/MessageArea><\/DisposalCollection>/" "$FILE_DISPOSAL"
+            LIST_AREA+=$'\n'"$DISPOSAL,$UUID_DISPOSAL"
+        fi
+    done
 
     UUID_RULE="$(uuidgen)"
 
@@ -1905,6 +1913,11 @@ create_rule() {
     sed -i 's/changesMade="false"/changesMade="true"/' "$DIR_CFG/trail.xml"
 
     tomcat_control restart &>/dev/null
+
+    if [ "$?" != 0 ]; then
+        echo 'error restarting Tomcat'
+        return 9
+    fi
 }
 # toggle password check for cs-admin
 # parameters:
@@ -1918,7 +1931,7 @@ import_rule() {
     exec 3>&-
     if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
         if [ -f "$DIALOG_RET" ]; then
-            RESULT="$(create_rule "$DIALOG_RET")"
+            RESULT="$(create_rule "$(cat "$DIALOG_RET")")"
             [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
         else
             $DIALOG --backtitle 'Manage configuration' --title 'File does not exist' --clear --msgbox "File '$DIALOG_RET' does not exist" 0 0
@@ -2636,7 +2649,7 @@ dialog_restrictions() {
 # none
 dialog_clearswift() {
     DIALOG_INSTALL_COMMAND='Install external command'
-    DIALOG_CUSTOM_COMMANDS='Custom commands'
+    DIALOG_EDIT_COMMAND='Edit external command'
     DIALOG_LDAP='LDAP schedule'
     DIALOG_SSH='SSH access'
     DIALOG_SMTP='SMTP block'
@@ -2652,7 +2665,7 @@ dialog_clearswift() {
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
             "$DIALOG_INSTALL_COMMAND" ''                                                           \
-            "$DIALOG_CUSTOM_COMMANDS" ''                                                           \
+            "$DIALOG_EDIT_COMMAND" ''                                                           \
             "$DIALOG_LDAP" ''                                                                      \
             "$DIALOG_SSH" ''                                                                       \
             "$DIALOG_SMTP" ''                                                                      \
@@ -2670,7 +2683,7 @@ dialog_clearswift() {
             case "$DIALOG_RET" in
                 "$DIALOG_INSTALL_COMMAND")
                     install_command;;
-                "$DIALOG_CUSTOM_COMMANDS")
+                "$DIALOG_EDIT_COMMAND")
                     cd $DIR_COMMANDS
                     $TXT_EDITOR .
                     cd -;;
