@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.48.0 for Clearswift SEG >= 4.8
+# menu.sh V1.49.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -30,6 +30,7 @@
 # - automatic daily CS config backup via mail
 # - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
 # - Import 'run external command' policy rules
+# - Install external commands including corresponding policy rules
 #
 # Postfix settings
 # - Postscreen weighted blacklists and bot detection for Postfix
@@ -56,7 +57,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added install feature for external commands to 'Clearswift config' submenu
+# - removed pre-installed external commands
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1437,26 +1438,31 @@ dialog_feature_postfix() {
 # some custom settings
 ###################################################################################################
 install_command() {
-    LIST_COMMAND="$(wget https://github.com/netcon-consulting/cs-menu/external_commands -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
+    LIST_COMMAND="$(wget https://github.com/netcon-consulting/cs-menu/tree/master/external_commands -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
     while true; do
         ARRAY_COMMAND=()
         for NAME_COMMAND in $LIST_COMMAND; do
-            [ -f "$DIR_COMMANDS/$NAME_COMMAND.sh" ] && ARRAY_COMMAND+=("$NAME_COMMAND (installed)" '') || ARRAY_COMMAND+=("$NAME_COMMAND" '')
+            ARRAY_COMMAND+=("$NAME_COMMAND" '')
         done
         exec 3>&1
-        DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN" --title 'External commands' --cancel-label 'Back' --ok-label 'Install' --extra-button --extra-label 'Info'        \
+        DIALOG_RET="$($DIALOG --clear --backtitle 'Manage configuration' --title 'External commands' --cancel-label 'Back' --ok-label 'Install' --extra-button --extra-label 'Info'        \
             --menu 'Install external command' 0 0 0 "${ARRAY_COMMAND[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
-            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.sh" -O "$DIR_COMMANDS/$DIALOG_RET.sh"
+            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.sh" -O "$DIR_COMMANDS/$DIALOG_RET.sh" 2>/dev/null
             chown cs-admin:cs-adm "$DIR_COMMANDS/$DIALOG_RET.sh"
             chmod +x "$DIR_COMMANDS/$DIALOG_RET.sh"
-            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.rule" -O "$DIR_COMMANDS/$DIALOG_RET.rule"
-            create_rule "$DIR_COMMANDS/$DIALOG_RET.rule"
+            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.rule" -O "$DIR_COMMANDS/$DIALOG_RET.rule" 2>/dev/null
+            RESULT="$(create_rule "$DIR_COMMANDS/$DIALOG_RET.rule")"
+            if [ "$?" = 0 ]; then
+                APPLY_NEEDED=1
+            else
+                $DIALOG --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
+            fi
         elif [ $RET_CODE = 3 ]; then
-            INFO_COMMAND="$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/README.md")"
-            [ -z "$INFO_COMMAND" ] || $DIALOG --backtitle "$TITLE_MAIN" --title 'External command info' --clear --msgbox "$INFO_COMMAND" 0 0
+            INFO_COMMAND="$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/README.md" -O - 2>/dev/null)"
+            [ -z "$INFO_COMMAND" ] || $DIALOG --backtitle 'Manage configuration' --title 'External command info' --clear --msgbox "$INFO_COMMAND" 0 0
         else
             break
         fi
@@ -1913,8 +1919,7 @@ import_rule() {
     if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
         if [ -f "$DIALOG_RET" ]; then
             RESULT="$(create_rule "$DIALOG_RET")"
-            RET_CODE=$?
-            [ "$RET_CODE" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
+            [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
         else
             $DIALOG --backtitle 'Manage configuration' --title 'File does not exist' --clear --msgbox "File '$DIALOG_RET' does not exist" 0 0
         fi
@@ -2663,7 +2668,7 @@ dialog_clearswift() {
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
-                "$DIALOG_LDAP")
+                "$DIALOG_INSTALL_COMMAND")
                     install_command;;
                 "$DIALOG_CUSTOM_COMMANDS")
                     cd $DIR_COMMANDS
@@ -4230,180 +4235,9 @@ init_cs() {
     # create alias shortcuts for menu and Mail Logs
     grep -q 'alias pflogs' /root/.bashrc || echo 'alias pflogs="tail -f /var/log/cs-gateway/mail.$(date +%Y-%m-%d).log"' >> /root/.bashrc
     grep -q "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
-    # write custom commands
+    # create custom commands directory
     mkdir -p "$DIR_COMMANDS"
     chown cs-admin:cs-adm "$DIR_COMMANDS"
-    CUSTOM_COMMAND="$DIR_COMMANDS/check_sender_ip.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        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
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
-    CUSTOM_COMMAND="$DIR_COMMANDS/add_external.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        H4sIACFvhlwAA81WbXPaRhD+zq/YyJoIBYSszDgTu7YnnhjaTBsnA3aSjuVkhLRCGsQdPR2xXdv/
-        PXt6ASRkkqYfWmwGdC/7vOzeHjtP7HHM7LGXRq3WDnhB8AVvJArmJb00gg9Oj/5aOzT1ms9vRTyJ
-        JLR9E57vOi/hDOVrzuCCqQ0YzZClYxSeXLAJ/Dob/9aFmIX8FUPpc2bRO10kMmaTns9nWcyThYy4
-        SA/g4hphxGczFF146wkfTmMU0xSZIiVQLgQDnweYHtDzLljAuIQZD+IwxoCG9mho7XF/n54XTKDP
-        vxKhcYKAQnDRasUhXIIVgqY7Glz9AjIiDKDXDoQxCyCVnpDAQ3oSqQRjIPjsAAwSAjjz4gQi9AIU
-        2ZbB8N3bL6Pzk+H5kaa3JwLnYDEwPrvtgXsfumaxNYO6zzaC5dA3fyGJggNW4B6Y2jo60vsfYPfP
-        ThUy3swF6Cs20AG9nWKg2DRPO2bX1WGuldzWuI+Mx7mSqc6SMJWJ8HxZJ5vEDFcM/3hz1lcUl2xW
-        NLp6qeFu/pAzKWJTjp6oLP1drldRqtmqUsjADZji7TUXwXJBtvf3/p8f3w1zn/yIwypiqc4Ha69A
-        roal8ivtXqWb+PaHW6O9sCrR0mk8V5LyaJTJubwFLsBLBLl8C9KbTHBFekN8jkjy4elTyEBrE2X6
-        /gLrKxiae9n/dO5egVGzK2cjBSHyvNrosAtMU1Vfh8fWmDRPUaaVDRnQyenpsD8a1UTn8ITuXU/B
-        mHnSj9r6bhfsw3av86rXcXu9jnlsd8Ez4W4uYibBu3SuHow1d3JOJLmkoo71Fjr56V1aUxDbLI2t
-        ejdW/YzINY3fl7iU6XtMKay4r4g39Spo5x+q7R3t75sbEZudyKrkJpbUAxs4lKU9FxjGN+CpjrcI
-        1dcxhlyg7YXUy7c79X7YH7z5tM0oa7DByyj80Z0H1WBUPzBS+7ObPrPtydoIDehrI1Y/G9TavWem
-        q9muYzd5mzO4GPwLWs9/jFYNHJMU/1OXDyt6jv8/Pj9O7OecDuNa01C/JqRYkMsMr6vXD4T0UN4G
-        3TILbTp/6vBlDdjsgkFt0lDdt7s8imuJqq7e7Iln/Y9HRTEVNwy4ZeutMl8/pnlSi1NaxukcaVAr
-        y/v7htlicyMXWuVq4FZdd48fZ5JnUTFpxCqma54HmKBE4ElQM7zpF0r5ysorfuzqD4qrv4ZEGWnI
-        KzXy78PcrXAe4kIOaWuAydrk3nKoKDH6oP9sbrf1DX7vj3kfCwAA
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
-    CUSTOM_COMMAND="$DIR_COMMANDS/remove_external.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        H4sIAAdvhlwAA5WR3U/CMBTF3/dXHMFQSBhjJCQGQ6IZfvCgPgjGhKIZ425rZK22xY+I/7tlBOKD
-        Gr1pk97TnpNfc6t7wUzIYBab3POq0FSoZ7qnV0taxouWyXETtjqt0Ku620g9vmmR5Rb1pIFOOzzA
-        JdlISYzl2kB5QdLMSMd2KTOcFbPzJoRM1ZEkmyjpu22WCytk1kpUUWYeL22utOlh/EK4VkVBuomL
-        WCcYCNIPhuSGyy61RKLmZHqub8OHVBaFmotU0NxJXSftWu/iajA8HZ4M+ox5IsUEforKfljB9BA2
-        d6Fwtf0v2MntiMHGGVKtCrCR6jEshKTymfNnmh7hP4Hd8fqIryxvqB4qfOJ8fApWRn8JXpehOXwB
-        ZoJvPQEP122w8e5cO+6wlFLxO2gU/QLK6xFfJbzB3zv8gzf+Bfyz14H/idut6ppoOxOQ1kqXI+x3
-        m6CFoa9S25u4xG1MBX2EmKJWA70K64a7Wm1Obe8TJTtzIbMCAAA=
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
-    CUSTOM_COMMAND="$DIR_COMMANDS/wildfire_scan.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        H4sIAJjsnVwAA6VV8W/iNhT+PX/FuzRSYCuEMO2k0lIda+GKrr2doLSbui4yiSFWEyeynePYev/7
-        nk0o4YDTqosUyc+xv+99732Oj954U8a9KZGxZR3BgiXRjAkayJDwpozhzm/6zZZ1hN8usnwp2DxW
-        UAvr0G75J/CRqouMw4QrKjiNU8rllAqiCj6H9+n06hg4VWHGG/jKIlGMz5thlhq4XqHiTHTghogQ
-        LhkVT5JyqKXNqBy/27u3rtMUVBWCQ5hFVHYwbkEDppSzOcfAxyAlyYIIilEbo7kgyzI8OcG44IKG
-        2WfMdJpQoEJkAlH/94MweUKJpMC4pELBMisEZAsOvU9DeKJLiKmgndcg4sbgQ//PrquhApKzAGEC
-        DeO+Bsbg3A+vLwfDUb/rxkrlsuN56642c5JkJFEZVnaRYZF1Qb28mCYsRE7XbB9PfrsZ3nZtp4rl
-        yWKaMuXNWEJts+yuP7ocXuysm1PlYWEjFirbsq5/fx98GvUHwz+67jk+rpkZTwZm5gwf17Juhzf9
-        4L6HnG9bcIQ1BYnd4ZE0hhRMUQkplZLMKagMkmwOOg30qopBxRQiOmOcRuZLLmgDk53N2BfQfSKC
-        pBTdaWziGGusoDYu+kySYmUjjoWxDGOAWLU6/GsBPjSMM7CdjRjHdzY6bDg/x6+D4XU/wFnb+mpZ
-        bAYP0PgHp30bHuH5eR22MTzVSfMK8kTn0wGnhqeQcswXnFbdaAxUZk6ilhasam+2fWEKnWzNmGWt
-        ebsa3DC/0WSzkrtC9iIM7AvCeaYgy/HEmVq6ju/uYq+sEPQ+ju/7IySohYVIoNGQuIUraAzARtug
-        U7tOaWDbTGrI7jvN72wcVberddmCPpSnOzauA8LlggpgEmiaq6V7KNGr3vhKp2nKuk0Bz0AWT+Cm
-        RIVxzWkdg3cmY9L+9e157eHvs8ef62d/eeWEdwwEe58LhiLJg//41d2bvKY7mHpZ4kibL0V7wuoE
-        QYx/2l0Bi1h3QYmCnkKUmc8yoTQH5+V0mMny1L2+JZq2u524UznGWp/G32jcZtqW+Y3Uu9V539+m
-        qlI91mqrSkb98eT6dtO1bd59bSt/L5W+rWcONG6/sBXxd4Xt9LAkwj+HvpG+LzDUF8QuHdswuQ2/
-        5bsoUQ/a68Evbv1lxYFCr+hXF5e7tbhM5PR0Q9I6iLfHFLtgrSqW/2NYfhWr/WNY7QrWTweRJnx9
-        Oaxb537TEXcP9ksBqSShFelb4T9jMhrtKAkAAA==
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
-    CUSTOM_COMMAND="$DIR_COMMANDS/hybrid_scan.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        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
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
-    CUSTOM_COMMAND="$DIR_COMMANDS/decrypt_zip.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        H4sIAFUkG10AA6VUbW/TMBD+nl9xZGFpBUmafdtGB6MvY9JgU9cCEpqqNHEai8YOtrO2Y/x3zk5f
-        sq4gJCJNq332c889z50PXgQTyoJJJDPLOoCExGJZqPEDLXyZwefQD/2WdYCRDi+Wgk4zBY24CUet
-        8Bg+EdXhDEZMEcFIlhMmJ0REqmRTuMgnH14DIyrmzMM/Wc4UZVM/5rmBOy9VxsUJfIxEDF1KxHdJ
-        GDRyP1n9frf3blOTFESVgkHMEyJPcN0CD5AwpHRGQJZxTKRMy9lsuS6HJHgqrJ+KI8a4ggnZHoE5
-        VRlEbAk8BZURKAS/pwkGikjKOReJRJTjY4QpmSAxv8daJ4hFhODCsvqXV73xzfnt7ZfrQbftBrxQ
-        QSy9aaTIPFoGMha0UDKoygqQyXiD66uFci2rezkY974OB+edId5XeREMP96QhRJRrMMmQbf3fnSB
-        0ftIBDM+DeqG4RqPXV1fjG8Gvf7l17Z7hp9rdm5HfbPzBj9XizgXVBEJOWoVTQkoDni9EscIoRVI
-        SEoZCqAjhSBeIMs0pQvA60Ukopyg8cYBR4u7gtoadB/NysohxhmxTMYxYjWa8NMC/EiccbCdLWMn
-        dLZkbTg7w6gpG3dt69d+3gmZlNMN+//hZpB22H1zGglaCK/cl314OXSbd4hYp2YcMeRoCt/Ae8AA
-        HriDx8f18giXp1pRVgMeaUIn4DRw9ghDwuC0mkDYqh21o7qosS7Kru4tqMIGtFK6agZUpa3RTeoX
-        Olu6Sl7LtpEd7E7V9bzAUTNOu07oPseugz3p6n8CXnc1zKhUmOEJwp5sNenB7lbtjNNuuPm+j8WJ
-        HDyhydQGxLby7wkV4BW7+1bnevRp2Bu0Q2ue6SIFiRIEgDWHU0i4YTHo3Y6uhpuRs51GybTq3g1i
-        bmv2kp0UlcZHZ4dhsyrHGG87b21o42N0B4eHKOCquZ8mseERpoJgjh/gUhZzgS+J2mjm1uTdSrzS
-        pr927A9vXDW3G/mdlQ72Dpox7C+n9qu9jhrnWmaJ5ul/a7lRPrIoxAYRXoHWJ8HxgjfPOmnH921t
-        e15m+w8dYLiE1m/Y4LhRwwYAAA==
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
-    CUSTOM_COMMAND="$DIR_COMMANDS/check_qr.sh"
-    if ! [ -f $CUSTOM_COMMAND ]; then
-        PACKED_SCRIPT='
-        H4sIADi9HF0AA21S226bQBB95ysmBGWNVGzjt7iN28q1k0juJU5dVaoii8sAq8AuWZaQi/PvHTAO
-        SMlKSOyZnXPOXI6PRj4XI98rEsM4hiDB4HZ7p4ZFAn/c4WQ4No4Jnsv8UfE40TAIbJiM3VP4gXou
-        BWyERiUwyVAUPipPlyKG88y/+AACdSCFQ19RppqLeBjIrKH7WupEqil891QA3ziq2wIFDLJh2P5/
-        eTfXrh0q1KUSEMgQiyndx+BAzgMCEUKJBQipKSq0xwVcrZuH9MztPWujRS98ekrxUigM5D1V4acI
-        qJRUhrH6eb79tV4sL/+esRkd1iDXm2WDfKLDaluV4prEMywKL0bQElIZQ8SJqOI6AZ2QPYy4wLCJ
-        5AqdUVFGEX8ASs895WVIrWxqsmq3LVVX8r2XlvuahRRoNIpb4hrY8GwAHQwSCabVObZcqzNrwmxG
-        0eXlarEl1DReDINH8A+cJ4JdE25gtztcJ3T9WJsWPeZN7WcK1oC2BQX5BWtsA4pAPeYaw+0Tz+va
-        tnXV5j7vgWvqrRFxwzgIn9XsjfRRrRa14j2118rAnHuinqfMaT+aZjLLZW+5G7Iq4UECT76neBbD
-        yWwU4v1IlGn6PjVrXzJaVAyLemQ+Aq2F9tIUw7ci68X1ZvWb7A8OGo3zSSdkm21LTeuzCWe0mzdw
-        cnKYyz7fhB3ECnNw7oBdrZ05LeCU9Sxu1qta4/2kLoMQr7oFZ9nH2HOuuNBgTV7Yq84C2CDROt9V
-        VWUze19YO2cSM/cmu84wIWsTEMlShKxeil7XmoyuNW7TmeZ3bPwH6crJM0wEAAA=
-        '
-        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > "$CUSTOM_COMMAND"
-        chown cs-admin:cs-adm "$CUSTOM_COMMAND"
-        chmod +x "$CUSTOM_COMMAND"
-    fi
 }
 # print program information in dialog msgbox
 # parameters:

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# decrypt_zip.sh V1.1.0
+# decrypt_zip.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -8,7 +8,8 @@
 
 # return codes:
 # 0 - zip file successfully decrypted
-# 1 - zip file cannot be decrypted with any of the provided passwords
+# 1 - zip file successfully decrypted but virus found
+# 2 - zip file cannot be decrypted with any of the provided passwords
 # 99 - unrecoverable error
 
 FILE_PASSWORD='/opt/cs-gateway/scripts/netcon/zip_passwords.txt'
@@ -64,14 +65,28 @@ COUNTER=1
 while read -r PASSWORD; do
     RESULT_EXTRACT="$(unzip -P "$PASSWORD" -d "$DIR_EXTRACT" "$1" 2>&1)"
     if [ "$?" = 0 ] && ! echo "$RESULT_EXTRACT" | grep -q 'incorrect password'; then
-        write_debug "File '$1' successfully decrypted with password $COUNTER"
+        VIRUS_FOUND=''
+        for FILE in $(find "$DIR_EXTRACT" -type f -exec echo {} \;); do
+            write_debug "Scanning '$FILE'"
+            if /opt/cs-gateway/bin/sophos/savtest -v -f "$FILE" 2>/dev/null | grep -q VIRUS; then
+                VIRUS_FOUND=1
+                write_debug "Virus found in '$FILE'"
+                break
+            fi
+        done
         write_log "password $COUNTER"
         rm -rf "$DIR_EXTRACT"
-        exit 0
+        if [ "$VIRUS_FOUND" = 1 ]; then
+            write_debug "File '$1' successfully decrypted with password $COUNTER but virus found"
+            exit 1
+        else
+            write_debug "File '$1' successfully decrypted with password $COUNTER"
+            exit 0
+        fi
     fi
     COUNTER="$(expr $COUNTER + 1)"
 done < "$FILE_PASSWORD"
 
 write_debug "File '$1' cannot be decrypted"
 rm -rf "$DIR_EXTRACT"
-exit 1
+exit 2

@@ -1,4 +1,4 @@
-NetCon Clearswift Configuration V1.48.0
+NetCon Clearswift Configuration V1.49.0
 =======================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
@@ -27,6 +27,7 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * automatic daily CS config backup via mail
 * Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
 * Import 'run external command' policy rules
+* Install external commands including corresponding policy rules
 
 ### Postfix settings:
 * Postscreen weighted blacklists and bot detection for Postfix
