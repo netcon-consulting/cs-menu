@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.50.0 for Clearswift SEG >= 4.8
+# menu.sh V1.51.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -57,7 +57,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - when installing custom commands also create the corresponding message areas for the disposal actions if necessary
+# - reworked installation of VMware Tools
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -362,9 +362,9 @@ install_auto_update() {
 # none
 install_vmware_tools() {
     clear
-    wget -r --no-parent -nd -A 'vmware-tools-repo-RHEL6-*.el6.x86_64.rpm' https://packages.vmware.com/tools/esx/latest/repos/
-    rpm -Uvh vmware-tools-repo-RHEL6-*.el6.x86_64.rpm
+    echo '[vmware-tools]'$'\n''name=VMware Tools for Red Hat Enterprise Linux $releasever - $basearch'$'\n''baseurl=http://packages.vmware.com/tools/esx/latest/rhel6/$basearch'$'\n''enabled=1'$'\n''gpgcheck=1'$'\n''gpgkey=http://packages.vmware.com/tools/keys/VMWARE-PACKAGING-GPG-RSA-KEY.pub' > /etc/yum.repos.d/VMWare-Tools.repo
     yum install -y vmware-tools-esx-nox
+    cp /etc/vmware-tools/init/vmware-tools-* /etc/init.d/
     get_keypress
 }
 # install local DNS resolver
@@ -374,7 +374,7 @@ install_vmware_tools() {
 # none
 install_local_dns() {
     clear
-    grep -q "dnssec-validation auto;" $CONFIG_BIND || sed -i '/include/a   \ \ dnssec-validation auto;' $CONFIG_BIND
+    grep -q "dnssec-validation auto;" $CONFIG_BIND || sed -i '/include/a\ \ dnssec-validation auto;' $CONFIG_BIND
     grep -q "#include" $CONFIG_BIND || sed -i 's/include/#include/' $CONFIG_BIND
     grep -q "named.ca" $CONFIG_BIND || sed -i 's/db\.cache/named\.ca/' $CONFIG_BIND
     /etc/init.d/named restart
@@ -1912,7 +1912,7 @@ create_rule() {
     echo "$POLICY_RULE" > "$DIR_RULES/$UUID_RULE.xml"
     sed -i 's/changesMade="false"/changesMade="true"/' "$DIR_CFG/trail.xml"
 
-    tomcat_control restart &>/dev/null
+    cs-servicecontrol restart tomcat &>/dev/null
 
     if [ "$?" != 0 ]; then
         echo 'error restarting Tomcat'
