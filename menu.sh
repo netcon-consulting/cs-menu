@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.51.0 for Clearswift SEG >= 4.8
+# menu.sh V1.52.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -57,7 +57,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - reworked installation of VMware Tools
+# - added option for emailing CS sample config to 'Clearswift config' submenu.
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -120,6 +120,7 @@ FILE_PASSWORD='/tmp/TMPpassword'
 EMAIL_DEFAULT='uwe@usommer.de'
 LINK_GITHUB='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
 LINK_UPDATE="$LINK_GITHUB/menu.sh"
+LINK_CONFIG="$LINK_GITHUB/configs/sample_config.bk"
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
 CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
@@ -338,7 +339,7 @@ install_letsencrypt() {
         openssl pkcs12 -export -name tomcat -in "$DIR_CERT/cert" -inkey "$DIR_CERT/privkey" -out keystore.p12 -passout pass:$PASSWORD_KEYSTORE
         keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore keystore.p12 -srcstoretype pkcs12 -deststorepass $PASSWORD_KEYSTORE -srcstorepass $PASSWORD_KEYSTORE
         keytool -list -keystore /var/cs-gateway/keystore -storepass changeit
-        cs-servicecontrol restart tomcat
+        cs-servicecontrol restart tomcat &>/dev/null
     fi
     get_keypress
 }
@@ -1919,7 +1920,7 @@ create_rule() {
         return 9
     fi
 }
-# toggle password check for cs-admin
+# create policy rule from rule config file
 # parameters:
 # none
 # return values:
@@ -1935,6 +1936,30 @@ import_rule() {
             [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
         else
             $DIALOG --backtitle 'Manage configuration' --title 'File does not exist' --clear --msgbox "File '$DIALOG_RET' does not exist" 0 0
+        fi
+    fi
+}
+# email CS sample policy
+# parameters:
+# none
+# return values:
+# none
+email_sample() {
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'Email sample config' --inputbox 'Enter email for sample config' 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        TMP_CONFIG='/tmp/sample_config.bk'
+        wget "$LINK_CONFIG" -O "$TMP_CONFIG" 2>/dev/null
+        DOMAIN_RECIPIENT="$(echo "$DIALOG_RET"| awk -F"@" '{print $2}')"
+        MAIL_RELAY=''
+        [ -f "$TRANSPORT_MAP" ] && MAIL_RELAY="$(grep "^$DOMAIN_RECIPIENT " $TRANSPORT_MAP | awk '{print $2}' | awk -F '[\\[\\]]' '{print $2}')"
+        [ -z "$MAIL_RELAY" ] && MAIL_RELAY="$(dig +short +nodnssec mx $DOMAIN_RECIPIENT | sort -nr | tail -1 | awk '{print $2}')"
+        if [ -z "$MAIL_RELAY" ]; then
+            $DIALOG --backtitle 'Manage configuration' --title 'Error sending sample config' --clear --msgbox 'Cannot determine recipient mail relay' 0 0
+        else
+            echo '[CS-config] Sample CS config' | mail -s '[CS-config] Sample CS config' -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) -a "$TMP_CONFIG" "$DIALOG_RET"
         fi
     fi
 }
@@ -2657,15 +2682,16 @@ dialog_clearswift() {
     DIALOG_IMPORT_KEYSTORE='Import PKCS12 for Tomcat'
     DIALOG_EXPORT_ADDRESS='Export and email address lists'
     DIALOG_RULE='Import policy rule'
+    DIALOG_SAMPLE='Email sample config'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
-    DIALOG_TOGGLE_BACKUP='Email backup'
+    DIALOG_TOGGLE_BACKUP='Email config backup'
     while true; do
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
             "$DIALOG_INSTALL_COMMAND" ''                                                           \
-            "$DIALOG_EDIT_COMMAND" ''                                                           \
+            "$DIALOG_EDIT_COMMAND" ''                                                              \
             "$DIALOG_LDAP" ''                                                                      \
             "$DIALOG_SSH" ''                                                                       \
             "$DIALOG_SMTP" ''                                                                      \
@@ -2673,6 +2699,7 @@ dialog_clearswift() {
             "$DIALOG_IMPORT_KEYSTORE" ''                                                           \
             "$DIALOG_EXPORT_ADDRESS" ''                                                            \
             "$DIALOG_RULE" ''                                                                      \
+            "$DIALOG_SAMPLE" ''                                                                    \
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
             "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
             "$DIALOG_TOGGLE_BACKUP" ''                                                             \
@@ -2701,6 +2728,8 @@ dialog_clearswift() {
                     export_address_list;;
                 "$DIALOG_RULE")
                     import_rule;;
+                "$DIALOG_SAMPLE")
+                    email_sample;;
                 "$DIALOG_TOGGLE_PASSWORD")
                     toggle_password;;
                 "$DIALOG_TOGGLE_CLEANUP")
