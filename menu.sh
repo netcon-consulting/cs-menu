@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.52.0 for Clearswift SEG >= 4.8
+# menu.sh V1.53.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -31,6 +31,7 @@
 # - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
 # - Import 'run external command' policy rules
 # - Install external commands including corresponding policy rules
+# - Generate base policy configuration
 #
 # Postfix settings
 # - Postscreen weighted blacklists and bot detection for Postfix
@@ -57,7 +58,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added option for emailing CS sample config to 'Clearswift config' submenu.
+# - added option for generating base policy configuration to 'Clearswift config' submenu.
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -121,6 +122,7 @@ EMAIL_DEFAULT='uwe@usommer.de'
 LINK_GITHUB='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
 LINK_UPDATE="$LINK_GITHUB/menu.sh"
 LINK_CONFIG="$LINK_GITHUB/configs/sample_config.bk"
+LINK_TEMPLATE="$LINK_GITHUB/configs/template_config.xml"
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
 CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
@@ -1963,6 +1965,229 @@ email_sample() {
         fi
     fi
 }
+# create base policy config
+# parameters:
+# none
+# return values:
+# none
+create_config() {
+    DEPLOYMENT_HISTORY='/var/cs-gateway/deployments/deploymenthistory.xml'
+    TEMPLATE_CONFIG='/tmp/TMPtemplate_config.xml'
+
+    wget "$LINK_TEMPLATE" -O "$TEMPLATE_CONFIG" 2>/dev/null
+
+    if ! [ -f "$TEMPLATE_CONFIG" ]; then
+        echo 'Cannot open config template'
+        return 1
+    fi
+
+    LIST_ADDRESS="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name='My Company']/Address" -v . -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$LIST_ADDRESS" ]; then
+        echo 'Address list is empty'
+        return 2
+    fi
+
+    INFO_VPN="$(xmlstarlet sel -t -m "Configuration/WebSettings/VPNSettings" -v @allow_grace_period_renewal -o ',' -v @block_internet_access -o ',' -v @external_address -o ',' -v @feature_enabled -o ',' -v @grace_period -o ',' -v @max_grace_period_renewal_times -o ',' -v @network_adapter_uuid -o ',' -v @psk -o ',' -v @remote_connector_port -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$INFO_VPN" ]; then
+        echo 'VPN info is empty'
+        return 3
+    fi
+
+    LIST_NAME="$(xmlstarlet sel -t -m "Configuration/TLSEndPointCollection/TLSEndPoint" -v @name -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$LIST_NAME" ]; then
+        echo 'Name list is empty'
+        return 4
+    fi
+
+    LIST_ENDPOINT=''
+    while read NAME; do
+        LIST_ENDPOINT+="$(xmlstarlet sel -t -m "Configuration/TLSEndPointCollection/TLSEndPoint[@name = '$NAME']" -v @name -o ',' -v @relayControl -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/TLSEndPointCollection/TLSEndPoint[@name = '$NAME']/Outbound" -v @certificateValidation -o ',' -v @certificateValidationUserString -o ',' -v @cipherStrength -o ',' -v @enableMandatoryTls -o ',' -v @useGlobalCipherStrength -o ',' -v @useGlobalTlsVersion -o ',' -v @useTls10 -o ',' -v @useTls11 -o ',' -v @useTls12 -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/TLSEndPointCollection/TLSEndPoint[@name = '$NAME']/Inbound" -v @certificateCnMatch -o ',' -v @certificateIssuerCnMatch -o ',' -v @checkCertCn -o ',' -v @checkCertIssuerCn -o ',' -v @enableMandatoryTls -o ',' -v @encryptionStrengthBits -o ',' -v @requireValidCertificate -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/TLSEndPointCollection/TLSEndPoint[@name = '$NAME']/HostList/Host" -v . -n "$LAST_CONFIG" 2>/dev/null | xargs)"$'\n'
+    done < <(echo "$LIST_NAME")
+    LIST_ENDPOINT="$(echo "$LIST_ENDPOINT" | sed '/^$/d')"
+
+    if [ -z "$LIST_ENDPOINT" ]; then
+        echo 'Endpoint list is empty'
+        return 5
+    fi
+
+    ADMIN="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/Administrator" -v . -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$ADMIN" ]; then
+        echo 'Admin is empty'
+        return 6
+    fi
+
+    WELCOME="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/Welcome" -v . -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$WELCOME" ]; then
+        echo 'Welcome is empty'
+        return 7
+    fi
+
+    LIST_DOMAIN="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/ManagedDomains/Domain" -v . -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$LIST_DOMAIN" ]; then
+        echo 'Domain list is empty'
+        return 8
+    fi
+
+    COUNT_ROUTE="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable" -v @count -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$COUNT_ROUTE" ]; then
+        echo 'Route count is empty'
+        return 9
+    fi
+
+    LIST_ROUTE=''
+    for DOMAIN in $(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain != '*']" -v @domain -n "$LAST_CONFIG" 2>/dev/null); do
+        LIST_ROUTE+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']" -v @domain -o ',' -v @routingType -o ',' -v @tlsEndpointUuid -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']/Server" -v @address -n "$LAST_CONFIG" 2>/dev/null)"$'\n'
+    done
+    LIST_ROUTE="$(echo "$LIST_ROUTE" | sed '/^$/d')"
+
+    if [ -z "$LIST_ROUTE" ]; then
+        echo 'Route list is empty'
+        return 10
+    fi
+
+    INFO_NETWORK="$(xmlstarlet sel -t -m "Configuration/System/Network" -v @hostname -o ',' -v @uiAddress -n "$LAST_CONFIG" 2>/dev/null)"
+    INFO_NETWORK+=",$(xmlstarlet sel -t -m "Configuration/System/Network/Ethernet/Adapter" -v @dev -o ',' -v @gateway -o ',' -v @name -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null)"
+    INFO_NETWORK+=",$(xmlstarlet sel -t -m "Configuration/System/Network/Ethernet/Adapter/Address" -v . -n "$LAST_CONFIG" 2>/dev/null)"
+    INFO_NETWORK+=",$(xmlstarlet sel -t -m "Configuration/System/Network/DNS/Server" -v . -n "$LAST_CONFIG" 2>/dev/null | xargs)"
+
+    if [ -z "$INFO_NETWORK" ]; then
+        echo 'Network info is empty'
+        return 11
+    fi
+
+    INFO_EMAIL="$(xmlstarlet sel -t -m "Configuration/System/EmailIdentities" -v @admin -o ',' -v @messageManagement -o ',' -v @server -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$INFO_EMAIL" ]; then
+        echo 'Email info is empty'
+        return 12
+    fi
+
+    INFO_ALERT="$(xmlstarlet sel -t -m "Configuration/System/EngineAlerts" -v @recipient -o ',' -v @sender -o ',' -v @subject -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$INFO_ALERT" ]; then
+        echo 'Alert info is empty'
+        return 13
+    fi
+
+    KEYMAP="$(xmlstarlet sel -t -m "Configuration/System/OS" -v @keymap -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$KEYMAP" ]; then
+        echo 'Keymap is empty'
+        return 14
+    fi
+
+    LIST_PEER="$(xmlstarlet sel -t -m "Configuration/System/PeerAppliances/Peer" -v @address -o ',' -v @name -o ',' -v @password -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$LIST_PEER" ]; then
+        echo 'Peer list is empty'
+        return 15
+    fi
+
+    COUNT_SCANNER="$(xmlstarlet sel -t -m "Configuration/ScannerSelection" -v @count -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$COUNT_SCANNER" ]; then
+        echo 'Scanner count is empty'
+        return 16
+    fi
+
+    LIST_SCANNER="$(xmlstarlet sel -t -m "Configuration/ScannerSelection/Scanner" -v @behavioural -o ',' -v @cloud -o ',' -v @enabled -o ',' -v @heuristic -o ',' -v @mnemonic -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$LIST_SCANNER" ]; then
+        echo 'Scanner list is empty'
+        return 17
+    fi
+
+    INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$INFO_DEPLOYMENT" ]; then
+        echo 'Deployment info is empty'
+        return 18
+    fi
+
+    COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY")"
+
+    if [ -z "$COUNT_DEPLOYMENT" ]; then
+        echo 'Deployment count is empty'
+        return 19
+    fi
+
+    while read ADDRESS; do
+        sed -i "/^  <AddressList color=\"#bcda6a\" name=\"My Company\"/a\ \ \ <Address>$ADDRESS</Address>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_ADDRESS")
+
+    sed -i "/^  <IcapSettings port=\"1344\"/i\ \ <VPNSettings allow_grace_period_renewal=\"$(echo $INFO_VPN | awk -F, '{print $1}')\" block_internet_access=\"$(echo $INFO_VPN | awk -F, '{print $2}')\" external_address=\"$(echo $INFO_VPN | awk -F, '{print $3}')\" feature_enabled=\"$(echo $INFO_VPN | awk -F, '{print $4}')\" grace_period=\"$(echo $INFO_VPN | awk -F, '{print $5}')\" max_grace_period_renewal_times=\"$(echo $INFO_VPN | awk -F, '{print $6}')\" network_adapter_uuid=\"$(echo $INFO_VPN | awk -F, '{print $7}')\" psk=\"$(echo $INFO_VPN | awk -F, '{print $8}')\" remote_connector_port=\"$(echo $INFO_VPN | awk -F, '{print $9}')\"/>" "$TEMPLATE_CONFIG"
+
+    while read ENDPOINT; do
+        sed -i "/^ <\/TLSEndPointCollection>/i\ \ <TLSEndPoint name=\"$(echo $ENDPOINT | awk -F, '{print $1}')\" relayControl=\"$(echo $ENDPOINT | awk -F, '{print $2}')\" useclientforserver=\"false\" uuid=\"$(echo $ENDPOINT | awk -F, '{print $3}')\">\n\ \ \ <Outbound certificateValidation=\"$(echo $ENDPOINT | awk -F, '{print $4}')\" certificateValidationUserString=\"$(echo $ENDPOINT | awk -F, '{print $5}')\" cipherStrength=\"$(echo $ENDPOINT | awk -F, '{print $6}')\" enableMandatoryTls=\"$(echo $ENDPOINT | awk -F, '{print $7}')\" useGlobalCipherStrength=\"$(echo $ENDPOINT | awk -F, '{print $8}')\" useGlobalTlsVersion=\"$(echo $ENDPOINT | awk -F, '{print $9}')\" useTls10=\"$(echo $ENDPOINT | awk -F, '{print $10}')\" useTls11=\"$(echo $ENDPOINT | awk -F, '{print $11}')\" useTls12=\"$(echo $ENDPOINT | awk -F, '{print $12}')\" uuid=\"$(uuidgen)\"/>\n\ \ \ <Inbound certificateCnMatch=\"$(echo $ENDPOINT | awk -F, '{print $13}')\" certificateIssuerCnMatch=\"$(echo $ENDPOINT | awk -F, '{print $14}')\" checkCertCn=\"$(echo $ENDPOINT | awk -F, '{print $15}')\" checkCertIssuerCn=\"$(echo $ENDPOINT | awk -F, '{print $16}')\" enableMandatoryTls=\"$(echo $ENDPOINT | awk -F, '{print $17}')\" encryptionStrengthBits=\"$(echo $ENDPOINT | awk -F, '{print $18}')\" requireValidCertificate=\"$(echo $ENDPOINT | awk -F, '{print $19}')\" uuid=\"$(uuidgen)\"/>\n\ \ \ <Auth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"/>\ \ \ \n\ \ \ <HostList enable=\"false\">" "$TEMPLATE_CONFIG"
+        for HOST in $(echo "$ENDPOINT" | awk -F, '{print $20}'); do
+            sed -i "/^ <\/TLSEndPointCollection>/i\ \ \ \ <Host>$HOST</Host>" "$TEMPLATE_CONFIG"
+        done
+        sed -i "/^ <\/TLSEndPointCollection>/i\ \ \ </HostList>\n\ \ \ <DomainList/>\n\ \ </TLSEndPoint>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_ENDPOINT")
+
+    sed -i "/^ <SmtpSettings>/a\ \ <Administrator>$ADMIN</Administrator>\n\ \ <Welcome>$WELCOME</Welcome>" "$TEMPLATE_CONFIG"
+
+    while read DOMAIN; do
+        sed -i "/^  <\/ManagedDomains>/i\ \ \ <Domain dkim_enabled=\"false\" dkim_formattedKey=\"\" dkim_keyAlias=\"\" dkim_keySelector=\"\" dkim_privateKey=\"\" dkim_publicKey=\"\" name=\"\" uuid=\"$(echo $DOMAIN | awk -F, '{print $2}')\">$(echo $DOMAIN | awk -F, '{print $1}')</Domain>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_DOMAIN")
+
+    sed -i "/^  <InternalHosts enable=\"false\"\/>/a\ \ <RoutingTable count=\"$(expr $COUNT_ROUTE + 2)\">" "$TEMPLATE_CONFIG"
+
+    while read ROUTE; do
+        sed -i "/^  <RoutingTable count=/a\ \ \ <Route domain=\"$(echo $ROUTE | awk -F, '{print $1}')\" routingType=\"$(echo $ROUTE | awk -F, '{print $2}')\" tlsEndpointUuid=\"$(echo $ROUTE | awk -F, '{print $3}')\">\n\ \ \ \ <SmptAuth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <Server address=\"\" allowUntrusted=\"true\" name=\"\" port=\"25\" requireSecure=\"false\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <MtaGroup mtaGroupUuid=\"00000000-0000-0000-0000-000000000000\" port=\"25\"/>\n\ \ \ </Route>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_ROUTE")
+
+    sed -i "/^  <\/Network>/i\ <System uuid=\"$(uuidgen)\">\n\ \ <Network hostname=\"$(echo $INFO_NETWORK | awk -F, '{print $1}')\" uiAddress=\"$(echo $INFO_NETWORK | awk -F, '{print $2}')\">\n\ \ \ <Ethernet>\n\ \ \ \ <Adapter dev=\"$(echo $INFO_NETWORK | awk -F, '{print $3}')\" gateway=\"$(echo $INFO_NETWORK | awk -F, '{print $4}')\" name=\"$(echo $INFO_NETWORK | awk -F, '{print $5}')\" uuid=\"$(echo $INFO_NETWORK | awk -F, '{print $6}')\">\n\ \ \ \ \ <Address>$(echo $INFO_NETWORK | awk -F, '{print $7}')</Address>\n\ \ \ \ </Adapter>\n\ \ \ </Ethernet>\n\ \ \ <DNS dnsType=\"1\" searchPath=\"\" useroot=\"false\">" "$TEMPLATE_CONFIG"
+    for DNS_SERVER in $(echo $INFO_NETWORK | awk -F, '{print $8}'); do
+        sed -i "/^  <\/Network>/i\ \ \ \ <Server>$DNS_SERVER</Server>\n\ \ \ \ <StaticHosts/>" "$TEMPLATE_CONFIG"
+    done
+    sed -i "/^  <\/Network>/i\ \ \ </DNS>\n\ \ \ <StaticRoutes/>" "$TEMPLATE_CONFIG"
+
+    sed -i "/^  <MessageAuditing enabled=\"true\"\/>/i\ \ <EmailIdentities admin=\"$(echo $INFO_EMAIL | awk -F, '{print $1}')\" messageManagement=\"$(echo $INFO_EMAIL | awk -F, '{print $2}')\" server=\"$(echo $INFO_EMAIL | awk -F, '{print $3}')\"/>\n\ \ <EngineAlerts enabled=\"true\" recipient=\"$(echo $INFO_ALERT | awk -F, '{print $1}')\" sender=\"$(echo $INFO_ALERT | awk -F, '{print $2}')\" subject=\"$(echo $INFO_ALERT | awk -F, '{print $3}')\"/>" "$TEMPLATE_CONFIG"
+
+    sed -i "/^  <\/LexicalDataImportSettings>/a\ \ <OS keymap=\"$KEYMAP\"/>" "$TEMPLATE_CONFIG"
+
+    while read PEER; do
+        sed -i "/^  <PeerAppliances>/a\ \ \ <Peer address=\"$(echo $PEER | awk -F, '{print $1}')\" name=\"$(echo $PEER | awk -F, '{print $2}')\" password=\"$(echo $PEER | awk -F, '{print $3}')\" pushStatus=\"Unknown\" uuid=\"$(echo $PEER | awk -F, '{print $4}')\">\n\ \ \ \ <WhatAmI manufacturer=\"Clearswift\" productParentType=\"None\" productType=\"Smtp\" whatAmIType=\"EmailGateway\"/>\n\ \ \ \ <PMMPeer authenticationMethod=\"ntlm\" digestGenerator=\"false\" mobileAuthTimeout=\"6\" mobileEnabled=\"false\" mobilePort=\"443\" portalEnabled=\"false\" protocol=\"http\">\n\ \ \ \ \ <PortalAdapter dev=\"\" gateway=\"\" name=\"\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ </PMMPeer>\n\ \ \ \ <ManagementRoles emailAudit=\"false\" icapAudit=\"false\" webAudit=\"false\" webAuditV4=\"false\"/>\n\ \ \ </Peer>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_PEER")
+
+    sed -i "/^ <\/ScannerSelection>/i\ <ScannerSelection count=\"$COUNT_SCANNER\">" "$TEMPLATE_CONFIG"
+    while read SCANNER; do
+        sed -i "/^ <\/ScannerSelection>/i\ \ <Scanner behavioural=\"$(echo $SCANNER | awk -F, '{print $1}')\" cloud=\"$(echo $SCANNER | awk -F, '{print $2}')\" enabled=\"$(echo $SCANNER | awk -F, '{print $3}')\" heuristic=\"$(echo $SCANNER | awk -F, '{print $4}')\" mnemonic=\"$(echo $SCANNER | awk -F, '{print $5}')\"/>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_SCANNER")
+
+    CONFIG_UUID="$(uuidgen)"
+    CONFIG_WHEN="$(date +%s)000"
+    CONFIG_WHENDESC="$(date +'%d %B %Y %T %Z')"
+
+    sed -i "/^ <AuditDB changesMade=/a\ <Deployment admin=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $1}')\" adminName=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $2}')\" deployed=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $3}')\" file=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $4}')\" host=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $5}')\" ip=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $6}')\" planned=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $7}')\" pushSummaryStatus=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $8}')\" reason=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $9}')\" remote=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $10}')\" sourceHost=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $11}')\" state=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $12}')\" uuid=\"$CONFIG_UUID\" when=\"$CONFIG_WHEN\" whenDesc=\"$CONFIG_WHENDESC\"><Detail>Generated with create_config.sh</Detail>" "$TEMPLATE_CONFIG"
+
+    FILE_CONFIG="/var/cs-gateway/deployments/$CONFIG_UUID.xml"
+
+    mv -f "$TEMPLATE_CONFIG" "$FILE_CONFIG"
+    chown cs-tomcat:cs-adm "$FILE_CONFIG"
+    chmod g+w "$FILE_CONFIG"
+
+    sed -i "s/<DeploymentRecords count=\"$COUNT_DEPLOYMENT\">/<DeploymentRecords count=\"$(expr $COUNT_DEPLOYMENT + 1)\"><Deployment admin=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $1}')\" adminName=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $2}')\" deployed=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $3}')\" file=\"$(echo $FILE_CONFIG | sed 's/\//\\\//g')\" host=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $5}')\" ip=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $6}')\" planned=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $7}')\" pushSummaryStatus=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $8}')\" reason=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $9}')\" remote=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $10}')\" sourceHost=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $11}')\" state=\"$(echo $INFO_DEPLOYMENT | awk -F, '{print $12}')\" uuid=\"$CONFIG_UUID\" when=\"$CONFIG_WHEN\" whenDesc=\"$CONFIG_WHENDESC\"><Progress current=\"89\" total=\"90\"\/><Log>log<\/Log><Detail>Generated with create_config.sh<\/Detail><PeerAppliances\/><ReferencePeers imageManager=\"none\" trustedSenders=\"none\"\/><SelectedAreas maintenance=\"false\" network=\"false\" peers=\"false\" pmm=\"false\" policy=\"false\" proxy=\"false\" reports=\"false\" systemConfig=\"false\" tlsCertificates=\"false\" users=\"false\"\/><\/Deployment>/" "$DEPLOYMENT_HISTORY"
+
+    cs-servicecontrol restart tomcat &>/dev/null
+}
+# generate base policy
+# parameters:
+# none
+# return values:
+# none
+generate_policy() {
+    RESULT="$(create_config)"
+    [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error generating base policy' --clear --msgbox "Error: $RESULT" 0 0
+}
 # toggle password check for cs-admin
 # parameters:
 # none
@@ -2683,6 +2908,7 @@ dialog_clearswift() {
     DIALOG_EXPORT_ADDRESS='Export and email address lists'
     DIALOG_RULE='Import policy rule'
     DIALOG_SAMPLE='Email sample config'
+    DIALOG_POLICY='Generate base policy'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
     DIALOG_TOGGLE_BACKUP='Email config backup'
@@ -2700,6 +2926,7 @@ dialog_clearswift() {
             "$DIALOG_EXPORT_ADDRESS" ''                                                            \
             "$DIALOG_RULE" ''                                                                      \
             "$DIALOG_SAMPLE" ''                                                                    \
+            "$DIALOG_POLICY" ''                                                                    \
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
             "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
             "$DIALOG_TOGGLE_BACKUP" ''                                                             \
@@ -2730,6 +2957,8 @@ dialog_clearswift() {
                     import_rule;;
                 "$DIALOG_SAMPLE")
                     email_sample;;
+                "$DIALOG_POLICY")
+                    generate_policy;;
                 "$DIALOG_TOGGLE_PASSWORD")
                     toggle_password;;
                 "$DIALOG_TOGGLE_CLEANUP")
