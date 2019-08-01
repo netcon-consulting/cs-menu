@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# check_qr.sh V1.2.0
+# check_qr.sh V1.3.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
 # return codes:
-# 0 - picture does not contain QR code
-# 1 - picture contains QR code
+# 0 - picture does not contain QR code with URL link
+# 1 - picture contains QR code with URL link
 # 99 - unrecoverable error
 
 LOG_PREFIX='>>>>'
@@ -44,8 +44,10 @@ RESULT="$(zbarimg "$1" 2>/dev/null)"
 
 if [ "$?" = 0 ] && echo "$RESULT" | grep -q 'QR-Code:'; then
     URL="$(echo "$RESULT" | grep 'QR-Code:' | awk -F 'QR-Code:' '{print $2}' | grep -E '(http|www)')"
-    [ -z "$URL" ] && write_log 'no URL found' || write_log "$URL"
-    exit 1
+    if ! [ -z "$URL" ]; then
+        write_log "$URL"
+        exit 1
+    fi
 fi
 
 exit 0

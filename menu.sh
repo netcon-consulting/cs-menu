@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.53.0 for Clearswift SEG >= 4.8
+# menu.sh V1.54.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,8 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - added option for generating base policy configuration to 'Clearswift config' submenu.
+# - for external commands automatically install optional dependencies as defined in the corresponding rule configs
+# - updated 'check_qr' external command
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1766,44 +1767,56 @@ create_rule() {
         return 2
     fi
 
+    LIST_DEPENDENCY="$(echo "$1" | sed -n '/dependencies/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if ! [ -z "$LIST_DEPENDENCY" ]; then
+        for DEPENDENCY in $LIST_DEPENDENCY; do
+            yum install -y "$DEPENDENCY" &>/dev/null
+            if [ "$?" != 0 ]; then
+                echo "cannot install '$DEPENDENCY'"
+                return 3
+            fi
+        done
+    fi
+
     PATH_CMD="$(echo "$1" | sed -n '/path_cmd/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$PATH_CMD" ]; then
         echo "'path_cmd' is empty"
-        return 3
+        return 4
     fi
 
     TIMEOUT="$(echo "$1" | sed -n '/timeout/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$TIMEOUT" ]; then
         echo "'timeout' is empty"
-        return 4
+        return 5
     fi
 
     LIST_MEDIA="$(echo "$1" | sed -n '/media_types/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_MEDIA" ]; then
         echo "'media_types' is empty"
-        return 5
+        return 6
     fi
 
     LIST_CODE="$(echo "$1" | sed -n '/return_codes/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_CODE" ]; then
         echo "'return_codes' is empty"
-        return 6
+        return 7
     fi
 
     LIST_DISPOSAL="$(echo "$1" | sed -n '/disposal_actions/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_DISPOSAL" ]; then
         echo "'disposal_actions' is empty"
-        return 7
+        return 8
     fi
 
     if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
         echo "rule '$NAME_RULE' already exists"
-        return 8
+        return 9
     fi
 
     LIST_TYPE="$(xmlstarlet sel -t -m "Configuration/MediaTypes/MediaTypeGroup/MediaType[@name!='New']" -v @mnemonic -o "," -v @uuid -o "," -v @encrypted -o "," -v @signed -o "," -v @signedAndEncrypted -o "," -v @drm -o "," -v @notProtected -n $LAST_CONFIG)"
@@ -1919,7 +1932,7 @@ create_rule() {
 
     if [ "$?" != 0 ]; then
         echo 'error restarting Tomcat'
-        return 9
+        return 10
     fi
 }
 # create policy rule from rule config file

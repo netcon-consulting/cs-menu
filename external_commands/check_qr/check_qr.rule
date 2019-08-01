@@ -1,6 +1,9 @@
 name_rule
 Detect QR-code
- 
+
+dependencies
+zbar
+
 path_cmd
 /opt/cs-gateway/scripts/netcon/check_qr.sh
 
@@ -37,8 +40,8 @@ PNG
 PBM
 
 return_codes
-0,none,No QR-code detected
-1,detected,QR-code detected (%LOGTEXT%)
+0,none,No QR-code with URL detected
+1,detected,QR-code with URL detected (%LOGTEXT%)
 99,not_checked,Error (%LOGTEXT%)
 
 disposal_actions
