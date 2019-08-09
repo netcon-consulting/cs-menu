@@ -1,20 +1,21 @@
 #!/bin/bash
 
-# check_qr.sh V1.4.0
+# check_qr.sh V1.5.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
 # return codes:
-# 0 - picture does not contain QR code with non-whitelisted URL link
-# 1 - picture contains QR code with non-whitelisted URL link
+# 0 - picture does not contain QR code with non-whitelisted URL link with a domain listed at multi.surbl.org
+# 1 - picture contains QR code with non-whitelisted URL link with a domain listed at multi.surbl.org
 # 99 - unrecoverable error
 
 LOG_PREFIX='>>>>'
 LOG_SUFFIX='<<<<'
 
-FILE_WHITELIST='/opt/cs-gateway/scripts/netcon/whitelist_qr.txt'
+DIR_URL='/var/cs-gateway/uicfg/policy/urllists'
+NAME_WHITELIST='Whitelist QR-Code'
 
 # writes message to log file with the defined log pre-/suffix 
 # parameters:
@@ -47,9 +48,13 @@ RESULT="$(zbarimg "$1" 2>/dev/null)"
 if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
     URL="$(echo $RESULT | awk 'match($0, /((https?:\/\/|www\.)[^ ]+)/, a) {print a[1]}')"
     if ! [ -z "$URL" ]; then
-        if ! [ -f "$FILE_WHITELIST" ] || ! grep -q "^$URL$" "$FILE_WHITELIST"; then
-            write_log "$URL"
-            exit 1
+        FILE_URL="$(grep -l "UrlList name=\"$NAME_WHITELIST\"" $DIR_URL/*.xml)"
+        if [ -z "$FILE_URL" ] || ! xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_URL" | sed 's/^\*:\/\///' | grep -q "^$URL$"; then
+            NAME_DOMAIN="$(echo "$URL" | awk 'match($0, /(https?:\/\/)?([^ \/]+)/, a) {print a[2]}')"
+            if ! [ -z "$(dig +short $NAME_DOMAIN.multi.surbl.org)" ]; then
+                write_log "$URL"
+                exit 1
+            fi
         fi
     fi
 fi

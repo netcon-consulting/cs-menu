@@ -1,6 +1,6 @@
-check_qr.sh V1.4.0
+check_qr.sh V1.5.0
 ==================
 
-Checks images for included QR-codes and prints encoded URLs.
+Detects QR-codes with URLs in images and checks the corresponding domains against multi.surbl.org blacklist. 
 
-Trusted URLs can be whitelisted in the file '/opt/cs-gateway/scripts/netcon/whitelist_qr.txt'.
+Trusted URLs can be whitelisted in CS web interface using the URL list 'Whitelist QR-Code'.
