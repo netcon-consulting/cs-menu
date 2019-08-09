@@ -4,6 +4,9 @@ Detect QR-code
 dependencies
 zbar
 
+extra_commands
+UUID_WHITELIST="$(uuidgen)"; echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"Whitelist QR-Code\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>http://isdoll.de</Url></UrlList>" > "$UUID_WHITELIST.xml"; chown cs-tomcat:cs-adm "$UUID_WHITELIST.xml"; chmod g+w "$UUID_WHITELIST.xml"
+
 path_cmd
 /opt/cs-gateway/scripts/netcon/check_qr.sh
 
