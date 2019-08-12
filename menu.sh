@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.56.0 for Clearswift SEG >= 4.8
+# menu.sh V1.57.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - for external commands added option in the rules config for creating URL list
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1811,7 +1811,7 @@ create_rule() {
 
     if ! [ -z "$LIST_DEPENDENCY" ]; then
         for DEPENDENCY in $LIST_DEPENDENCY; do
-            yum install -y "$DEPENDENCY" --enablerepo=* &>/dev/null
+            yum install -y "$DEPENDENCY" --enablerepo=cs-* &>/dev/null
             if [ "$?" != 0 ]; then
                 echo "cannot install '$DEPENDENCY'"
                 return 9
@@ -1822,14 +1822,15 @@ create_rule() {
     LIST_URL="$(echo "$1" | sed -n '/url_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if ! [ -z "$LIST_URL" ]; then
-        for NAME_LIST in $LIST_URL; do
+        while read NAME_LIST; do
             if ! grep -q "UrlList name=\"$NAME_LIST\"" "$DIR_URL/*.xml"; then
                 UUID_WHITELIST="$(uuidgen)"
                 FILE_WHITELIST="$DIR_URL/$UUID_WHITELIST.xml"
                 echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>http://isdoll.de</Url></UrlList>" > "$FILE_WHITELIST"
                 chown cs-tomcat:cs-adm "$FILE_WHITELIST"
                 chmod g+w "$FILE_WHITELIST"
-        done
+            fi
+        done < <(echo "$LIST_URL")
     fi
 
     LIST_TYPE="$(xmlstarlet sel -t -m "Configuration/MediaTypes/MediaTypeGroup/MediaType[@name!='New']" -v @mnemonic -o "," -v @uuid -o "," -v @encrypted -o "," -v @signed -o "," -v @signedAndEncrypted -o "," -v @drm -o "," -v @notProtected -n $LAST_CONFIG)"
@@ -1945,7 +1946,7 @@ create_rule() {
 
     if [ "$?" != 0 ]; then
         echo 'error restarting Tomcat'
-        return 11
+        return 10
     fi
 }
 # create policy rule from rule config file
