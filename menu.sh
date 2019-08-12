@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.55.0 for Clearswift SEG >= 4.8
+# menu.sh V1.56.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - for external commands added option in the rules config for extra commands that are executed during installation
+# - for external commands added option in the rules config for creating URL list
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1752,6 +1752,7 @@ export_address_list() {
 create_rule() {
     DIR_CFG='/var/cs-gateway/uicfg'
     DIR_RULES="$DIR_CFG/policy/rules"
+    DIR_URL="$DIR_CFG/policy/urllists"
     FILE_DISPOSAL="$DIR_CFG/policy/disposals.xml"
 
     if [ -z "$1" ]; then
@@ -1818,15 +1819,16 @@ create_rule() {
         done
     fi
 
-    LIST_COMMANDS="$(echo "$1" | sed -n '/extra_commands/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+    LIST_URL="$(echo "$1" | sed -n '/url_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
-    if ! [ -z "$LIST_COMMANDS" ]; then
-        for COMMAND in $LIST_COMMANDS; do
-            eval "$COMMMAND"
-            if [ "$?" != 0 ]; then
-                echo "error executing command '$COMMAND'"
-                return 10
-            fi
+    if ! [ -z "$LIST_URL" ]; then
+        for NAME_LIST in $LIST_URL; do
+            if ! grep -q "UrlList name=\"$NAME_LIST\"" "$DIR_URL/*.xml"; then
+                UUID_WHITELIST="$(uuidgen)"
+                FILE_WHITELIST="$DIR_URL/$UUID_WHITELIST.xml"
+                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>http://isdoll.de</Url></UrlList>" > "$FILE_WHITELIST"
+                chown cs-tomcat:cs-adm "$FILE_WHITELIST"
+                chmod g+w "$FILE_WHITELIST"
         done
     fi
 

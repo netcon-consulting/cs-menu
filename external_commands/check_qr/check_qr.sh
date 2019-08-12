@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.5.0
+# check_qr.sh V1.6.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -27,7 +27,7 @@ write_log() {
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $(basename $0) encrypted_zip log_file"
+    echo "Usage: $(basename $0) image_file log_file"
     exit 99
 fi
 
@@ -46,16 +46,19 @@ fi
 RESULT="$(zbarimg "$1" 2>/dev/null)"
 
 if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
-    URL="$(echo $RESULT | awk 'match($0, /((https?:\/\/|www\.)[^ ]+)/, a) {print a[1]}')"
-    if ! [ -z "$URL" ]; then
+    LIST_URL="$(echo $RESULT | awk '{pattern="((https?://|www.)[^ ]+)"; while (match($0, pattern, arr)) {val = arr[1]; print val; sub(pattern, "")}}')"
+    if ! [ -z "$LIST_URL" ]; then
         FILE_URL="$(grep -l "UrlList name=\"$NAME_WHITELIST\"" $DIR_URL/*.xml)"
-        if [ -z "$FILE_URL" ] || ! xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_URL" | sed 's/^\*:\/\///' | grep -q "^$URL$"; then
-            NAME_DOMAIN="$(echo "$URL" | awk 'match($0, /(https?:\/\/)?([^ \/]+)/, a) {print a[2]}')"
-            if ! [ -z "$(dig +short $NAME_DOMAIN.multi.surbl.org)" ]; then
-                write_log "$URL"
-                exit 1
+        [ -z "$FILE_URL" ] || LIST_WHITELIST="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_URL" | sed 's/^\*:\/\///')"
+        for URL in $LIST_URL; do
+            if ! echo "$LIST_WHITELIST" | grep -q "^$URL$"; then
+                NAME_DOMAIN="$(echo "$URL" | awk 'match($0, /(https?:\/\/)?([^ \/]+)/, a) {print a[2]}')"
+                if ! [ -z "$(dig +short $NAME_DOMAIN.multi.surbl.org)" ]; then
+                    write_log "$URL"
+                    exit 1
+                fi
             fi
-        fi
+        done
     fi
 fi
 
