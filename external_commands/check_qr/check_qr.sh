@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.7.0
+# check_qr.sh V1.8.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -60,7 +60,7 @@ if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
 
                 FILE_BLACK="$(grep -l "UrlList name=\"$NAME_BLACKLIST\"" $DIR_URL/*.xml)"
                 [ -z "$FILE_BLACK" ] || LIST_BLACK="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_BLACK" | sed 's/^\*:\/\///')"
-                if ! [ -z "$LIST_BLACK" ] && echo "$LIST_BLACK" | grep -q "^$URL$"; then
+                if ! [ -z "$LIST_BLACK" ] && echo "$LIST_BLACK" | grep -q "^$NAME_DOMAIN$"; then
                     write_log "$URL"
                     exit 1
                 fi

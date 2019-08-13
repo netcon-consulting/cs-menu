@@ -1,4 +1,4 @@
-check_qr.sh V1.7.0
+check_qr.sh V1.8.0
 ==================
 
 Detects QR-codes with URLs in images and checks the corresponding domains against surbl.org and uribl.com URL blacklists. 
