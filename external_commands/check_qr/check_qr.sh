@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.6.0
+# check_qr.sh V1.7.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -16,6 +16,8 @@ LOG_SUFFIX='<<<<'
 
 DIR_URL='/var/cs-gateway/uicfg/policy/urllists'
 NAME_WHITELIST='Whitelist QR-Code'
+NAME_BLACKLIST='Blacklist URL'
+LIST_URLBL='surbl.org uribl.com'
 
 # writes message to log file with the defined log pre-/suffix 
 # parameters:
@@ -47,16 +49,28 @@ RESULT="$(zbarimg "$1" 2>/dev/null)"
 
 if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
     LIST_URL="$(echo $RESULT | awk '{pattern="((https?://|www.)[^ ]+)"; while (match($0, pattern, arr)) {val = arr[1]; print val; sub(pattern, "")}}')"
+
     if ! [ -z "$LIST_URL" ]; then
-        FILE_URL="$(grep -l "UrlList name=\"$NAME_WHITELIST\"" $DIR_URL/*.xml)"
-        [ -z "$FILE_URL" ] || LIST_WHITELIST="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_URL" | sed 's/^\*:\/\///')"
+        FILE_WHITE="$(grep -l "UrlList name=\"$NAME_WHITELIST\"" $DIR_URL/*.xml)"
+        [ -z "$FILE_WHITE" ] || LIST_WHITE="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_WHITE" | sed 's/^\*:\/\///')"
+
         for URL in $LIST_URL; do
-            if ! echo "$LIST_WHITELIST" | grep -q "^$URL$"; then
+            if [ -z "$LIST_WHITE" ] || ! echo "$LIST_WHITE" | grep -q "^$URL$"; then
                 NAME_DOMAIN="$(echo "$URL" | awk 'match($0, /(https?:\/\/)?([^ \/]+)/, a) {print a[2]}')"
-                if ! [ -z "$(dig +short $NAME_DOMAIN.multi.surbl.org)" ]; then
+
+                FILE_BLACK="$(grep -l "UrlList name=\"$NAME_BLACKLIST\"" $DIR_URL/*.xml)"
+                [ -z "$FILE_BLACK" ] || LIST_BLACK="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_BLACK" | sed 's/^\*:\/\///')"
+                if ! [ -z "$LIST_BLACK" ] && echo "$LIST_BLACK" | grep -q "^$URL$"; then
                     write_log "$URL"
                     exit 1
                 fi
+
+                for BLACKLIST in $LIST_URLBL; do
+                    if ! [ -z "$(dig +short $NAME_DOMAIN.multi.$BLACKLIST)" ]; then
+                        write_log "$URL"
+                        exit 1
+                    fi
+                done
             fi
         done
     fi

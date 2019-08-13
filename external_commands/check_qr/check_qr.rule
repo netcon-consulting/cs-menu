@@ -6,6 +6,7 @@ zbar
 
 url_lists
 Whitelist QR-Code
+Blacklist URL
 
 path_cmd
 /opt/cs-gateway/scripts/netcon/check_qr.sh

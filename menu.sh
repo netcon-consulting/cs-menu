@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.57.0 for Clearswift SEG >= 4.8
+# menu.sh V1.58.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -1823,7 +1823,7 @@ create_rule() {
 
     if ! [ -z "$LIST_URL" ]; then
         while read NAME_LIST; do
-            if ! grep -q "UrlList name=\"$NAME_LIST\"" "$DIR_URL/*.xml"; then
+            if ! grep -q "UrlList name=\"$NAME_LIST\"" "$DIR_URL/*.xml" 2>/dev/null; then
                 UUID_WHITELIST="$(uuidgen)"
                 FILE_WHITELIST="$DIR_URL/$UUID_WHITELIST.xml"
                 echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>http://isdoll.de</Url></UrlList>" > "$FILE_WHITELIST"
@@ -2816,7 +2816,7 @@ write_examples() {
         echo '############################' >> "$SENDER_ROUTING"
         echo '# sender dependent routing #' >> "$SENDER_ROUTING"
         echo '############################' >> "$SENDER_ROUTING"
-        echo '#mueller.isdoll.de     smtp:[127.0.0.1]:10026' >> "$SENDER_ROUTING"
+        echo '#mueller@isdoll.de     smtp:[127.0.0.1]:10026' >> "$SENDER_ROUTING"
         echo '#@isdoll.de            smtp:[127.0.0.1]:10026' >> "$SENDER_ROUTING"
         postmap "$SENDER_ROUTING"
     fi
