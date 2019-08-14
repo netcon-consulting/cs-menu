@@ -1,6 +1,6 @@
-check_qr.sh V1.8.0
+check_qr.sh V1.9.0
 ==================
 
-Detects QR-codes with URLs in images and checks the corresponding domains against surbl.org and uribl.com URL blacklists. 
+Detects QR-codes with URLs in images and checks the corresponding domains against multi.surbl.org, multi.uribl.com and dnsbl7.mailshell.net blacklists.
 
-Malicious domains can be blacklisted in the CS web interface using the URL list 'Blacklist URL' and trusted URLs whitelisted using 'Whitelist QR-Code'.
+Malicious domains can be blacklisted in the CS web interface using the URL list 'Blacklist Domain' and trusted URLs whitelisted using 'Whitelist Link'.
