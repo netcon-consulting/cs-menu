@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.58.0 for Clearswift SEG >= 4.8
+# menu.sh V1.59.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -1826,7 +1826,7 @@ create_rule() {
             if ! grep -q "UrlList name=\"$NAME_LIST\"" "$DIR_URL/*.xml" 2>/dev/null; then
                 UUID_WHITELIST="$(uuidgen)"
                 FILE_WHITELIST="$DIR_URL/$UUID_WHITELIST.xml"
-                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>http://isdoll.de</Url></UrlList>" > "$FILE_WHITELIST"
+                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>isdoll.de</Url></UrlList>" > "$FILE_WHITELIST"
                 chown cs-tomcat:cs-adm "$FILE_WHITELIST"
                 chmod g+w "$FILE_WHITELIST"
             fi

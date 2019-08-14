@@ -5,8 +5,8 @@ dependencies
 zbar
 
 url_lists
-Whitelist QR-Code
-Blacklist URL
+Whitelist Link
+Blacklist Domain
 
 path_cmd
 /opt/cs-gateway/scripts/netcon/check_qr.sh
