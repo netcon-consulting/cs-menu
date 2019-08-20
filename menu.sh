@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.60.0 for Clearswift SEG >= 4.8
+# menu.sh V1.61.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - for installation of external commands always install dependencies even if the rule already exists
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1801,6 +1801,8 @@ create_rule() {
         echo "'disposal_actions' is empty"
         return 7
     fi
+
+    LIST_DEPENDENCY="$(echo "$1" | sed -n '/dependencies/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if ! [ -z "$LIST_DEPENDENCY" ]; then
         install_epel &>/dev/null
