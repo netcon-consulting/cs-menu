@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.59.0 for Clearswift SEG >= 4.8
+# menu.sh V1.60.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - bugfix
+# - for installation of external commands always install dependencies even if the rule already exists
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1802,21 +1802,20 @@ create_rule() {
         return 7
     fi
 
-    if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
-        echo "rule '$NAME_RULE' already exists"
-        return 8
-    fi
-
-    LIST_DEPENDENCY="$(echo "$1" | sed -n '/dependencies/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
-
     if ! [ -z "$LIST_DEPENDENCY" ]; then
+        install_epel &>/dev/null
         for DEPENDENCY in $LIST_DEPENDENCY; do
             yum install -y "$DEPENDENCY" --enablerepo=cs-* &>/dev/null
             if [ "$?" != 0 ]; then
                 echo "cannot install '$DEPENDENCY'"
-                return 9
+                return 8
             fi
         done
+    fi
+
+    if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
+        echo "rule '$NAME_RULE' already exists"
+        return 9
     fi
 
     LIST_URL="$(echo "$1" | sed -n '/url_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
