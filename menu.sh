@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.61.0 for Clearswift SEG >= 4.8
+# menu.sh V1.62.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -88,7 +88,7 @@ CONFIG_ELASTIC='/etc/rspamd/local.d/elastic.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
-DIR_CERT='/var/lib/acme/live/$(hostname)'
+DIR_CERT="/var/lib/acme/live/$(hostname)"
 DIR_COMMANDS='/opt/cs-gateway/scripts/netcon'
 DIR_MAPS='/etc/postfix/maps'
 DIR_ADDRLIST='/tmp/TMPaddresslist'
@@ -324,23 +324,23 @@ install_letsencrypt() {
     TMP_REPONSE="/tmp/TMPreponse"
     clear
     install_epel
-    if [ ! -f $CONFIG_FW ] || ! grep -q '\-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' $CONFIG_FW; then
-        echo '-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' >> $CONFIG_FW
+    if ! [ -f "$CONFIG_FW" ] || ! grep -q '\-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' "$CONFIG_FW"; then
+        echo '-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' >> "$CONFIG_FW"
         iptables -I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT
     fi
     yum-config-manager --add-repo https://copr.fedorainfracloud.org/coprs/hlandau/acmetool/repo/epel-6/hlandau-acmetool-epel-6.repo
     yum install -y acmetool
-    echo '"acmetool-quickstart-choose-server": https://acme-v01.api.letsencrypt.org/directory' > $TMP_REPONSE
-    echo '"acmetool-quickstart-choose-method": listen' >> $TMP_REPONSE
-    acmetool quickstart --response-file $TMP_REPONSE
-    acmetool want $(hostname)
+    echo '"acmetool-quickstart-choose-server": https://acme-v01.api.letsencrypt.org/directory' > "$TMP_REPONSE"
+    echo '"acmetool-quickstart-choose-method": listen' >> "$TMP_REPONSE"
+    acmetool quickstart --response-file "$TMP_REPONSE"
+    acmetool want "$(hostname)"
     if [ $? = 0 ]; then
         # import cert and key into CS keystore
         mv -f /var/cs-gateway/keystore /var/cs-gateway/keystore.old
         cd /home/cs-admin
-        openssl pkcs12 -export -name tomcat -in "$DIR_CERT/cert" -inkey "$DIR_CERT/privkey" -out keystore.p12 -passout pass:$PASSWORD_KEYSTORE
-        keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore keystore.p12 -srcstoretype pkcs12 -deststorepass $PASSWORD_KEYSTORE -srcstorepass $PASSWORD_KEYSTORE
-        keytool -list -keystore /var/cs-gateway/keystore -storepass changeit
+        openssl pkcs12 -export -name tomcat -in "$DIR_CERT/cert" -inkey "$DIR_CERT/privkey" -out keystore.p12 -passout "pass:$PASSWORD_KEYSTORE"
+        keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore keystore.p12 -srcstoretype pkcs12 -deststorepass "$PASSWORD_KEYSTORE" -srcstorepass "$PASSWORD_KEYSTORE"
+        keytool -list -keystore /var/cs-gateway/keystore -storepass "$PASSWORD_KEYSTORE"
         cs-servicecontrol restart tomcat &>/dev/null
     fi
     get_keypress
@@ -637,7 +637,7 @@ disable_rspamd() {
 # return values:
 # none
 enable_letsencrypt() {
-    if [ -f $DIR_CERT/privkey ] && [ -f $DIR_CERT/fullchain ]; then
+    if [ -f "$DIR_CERT/privkey" ] && [ -f "$DIR_CERT/fullchain" ]; then
         for OPTION in                                       \
             "smtpd_tls_key_file=$DIR_CERT/privkey"          \
             "smtpd_tls_cert_file=$DIR_CERT/fullchain"; do
@@ -1063,7 +1063,7 @@ check_enabled_letsencrypt() {
     if [ -f "$PF_IN" ]                                                          \
         && grep -q "smtpd_tls_key_file=$DIR_CERT/privkey" "$PF_IN"              \
         && grep -q "smtpd_tls_cert_file=$DIR_CERT/fullchain" "$PF_IN"           \
-        && [ -f "$PF_out" ]                                                     \
+        && [ -f "$PF_OUT" ]                                                     \
         && grep -q "smtp_tls_key_file=$DIR_CERT/privkey" "$PF_OUT"              \
         && grep -q "smtp_tls_cert_file=$DIR_CERT/fullchain" "$PF_OUT"; then
         echo on
@@ -4519,6 +4519,8 @@ init_cs() {
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     # install vim editor
     which vim &>/dev/null || yum install -y vim --enablerepo=cs-* &>/dev/null
+    # install dialog
+    which dialog &>/dev/null || yum install -y dialog --enablerepo=cs-* &>/dev/null
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch $CONFIG_PF

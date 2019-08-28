@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.9.0
+# check_qr.sh V1.10.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -17,7 +17,7 @@ LOG_SUFFIX='<<<<'
 DIR_URL='/var/cs-gateway/uicfg/policy/urllists'
 NAME_WHITELIST='Whitelist Link'
 NAME_BLACKLIST='Blacklist Domain'
-LIST_URLBL='surbl.org uribl.com'
+LIST_MULTI='surbl.org uribl.com'
 
 # writes message to log file with the defined log pre-/suffix 
 # parameters:
@@ -65,13 +65,15 @@ if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
                     exit 1
                 fi
 
-                if [ "$(dig +short $NAME_DOMAIN.dnsbl7.mailshell.net | awk -F. '{print $4}')" != '100' ]; then
+                RESULT="$(dig +short $NAME_DOMAIN.dnsbl7.mailshell.net | grep -v '^;;')"
+
+                if ! [ -z "$RESULT" ] && [ "$(echo "$RESULT" | awk -F. '{print $4}')" != '100' ]; then
                     write_log "$URL"
                     exit 1
                 fi
 
-                for BLACKLIST in $LIST_URLBL; do
-                    if ! [ -z "$(dig +short $NAME_DOMAIN.multi.$BLACKLIST)" ]; then
+                for BLACKLIST in $LIST_MULTI; do
+                    if ! [ -z "$(dig txt +short $NAME_DOMAIN.multi.$BLACKLIST | grep -v '^;;')" ]; then
                         write_log "$URL"
                         exit 1
                     fi
