@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.10.0
+# check_qr.sh V1.11.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -65,15 +65,19 @@ if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
                     exit 1
                 fi
 
-                RESULT="$(dig +short $NAME_DOMAIN.dnsbl7.mailshell.net | grep -v '^;;')"
+                RESULT="$(dig +short $NAME_DOMAIN.dnsbl7.mailshell.net)"
+                RET_CODE="$?"
 
-                if ! [ -z "$RESULT" ] && [ "$(echo "$RESULT" | awk -F. '{print $4}')" != '100' ]; then
+                if [ "$RET_CODE" = 0 ] && [ "$(echo "$RESULT" | awk -F. '{print $4}')" != '100' ]; then
                     write_log "$URL"
                     exit 1
                 fi
 
                 for BLACKLIST in $LIST_MULTI; do
-                    if ! [ -z "$(dig txt +short $NAME_DOMAIN.multi.$BLACKLIST | grep -v '^;;')" ]; then
+                    RESULT="$(dig txt +short $NAME_DOMAIN.multi.$BLACKLIST)"
+                    RET_CODE="$?"
+
+                    if [ "$RET_CODE" = 0 ] && ! [ -z "$RESULT" ]; then
                         write_log "$URL"
                         exit 1
                     fi
