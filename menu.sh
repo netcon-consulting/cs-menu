@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.62.0 for Clearswift SEG >= 4.8
+# menu.sh V1.63.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,7 @@
 # - integration of Elasticsearch logging
 #
 # Changelog:
-# - bugfix
+# - added option to change the CS WebUI timeout to 'Clearswift config' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2216,6 +2216,33 @@ generate_policy() {
     RESULT="$(create_config)"
     [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error generating base policy' --clear --msgbox "Error: $RESULT" 0 0
 }
+# adjust WebGUI timeout
+# parameters:
+# none
+# return values:
+# none
+gui_timeout() {
+    DIR_APPLIANCE='/tmp/TMPappliance'
+    FILE_APPLIANCE='WEB-INF/web.xml'
+    FILE_ZIP='/opt/tomcat/webapps/Appliance.war'
+
+    rm -rf "$DIR_APPLIANCE"
+    mkdir -p "$DIR_APPLIANCE"
+    unzip "$FILE_ZIP" -d "$DIR_APPLIANCE" "$FILE_APPLIANCE" &>/dev/null
+    TIMEOUT_CURRENT="$(awk 'match($0, /<session-timeout>([0-9]+)<\/session-timeout>/, a) {print a[1]}' "$DIR_APPLIANCE/$FILE_APPLIANCE")"
+    
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'WebUI Timeout' --inputbox 'Enter timeout for WebUI (in minutes)' 0 50 $TIMEOUT_CURRENT 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] & [ "$DIALOG_RET" != "$TIMEOUT_CURRENT" ]; then
+        sed -i "s/<session-timeout>$TIMEOUT_CURRENT<\/session-timeout>/<session-timeout>$DIALOG_RET<\/session-timeout>/" "$DIR_APPLIANCE/$FILE_APPLIANCE"
+        cd "$DIR_APPLIANCE"
+        zip -r "$FILE_ZIP" "$FILE_APPLIANCE" &>/dev/null
+        cs-servicecontrol restart tomcat &>/dev/null
+    fi
+    rm -rf "$DIR_APPLIANCE"
+}
 # toggle password check for cs-admin
 # parameters:
 # none
@@ -2937,6 +2964,7 @@ dialog_clearswift() {
     DIALOG_RULE='Import policy rule'
     DIALOG_SAMPLE='Email sample config'
     DIALOG_POLICY='Generate base policy'
+    DIALOG_TIMEOUT='WebGUI timeout'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
     DIALOG_TOGGLE_BACKUP='Email config backup'
@@ -2955,6 +2983,7 @@ dialog_clearswift() {
             "$DIALOG_RULE" ''                                                                      \
             "$DIALOG_SAMPLE" ''                                                                    \
             "$DIALOG_POLICY" ''                                                                    \
+            "$DIALOG_TIMEOUT" ''                                                                   \
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
             "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
             "$DIALOG_TOGGLE_BACKUP" ''                                                             \
@@ -2987,6 +3016,8 @@ dialog_clearswift() {
                     email_sample;;
                 "$DIALOG_POLICY")
                     generate_policy;;
+                "$DIALOG_TIMEOUT")
+                    gui_timeout;;
                 "$DIALOG_TOGGLE_PASSWORD")
                     toggle_password;;
                 "$DIALOG_TOGGLE_CLEANUP")
@@ -4521,6 +4552,8 @@ init_cs() {
     which vim &>/dev/null || yum install -y vim --enablerepo=cs-* &>/dev/null
     # install dialog
     which dialog &>/dev/null || yum install -y dialog --enablerepo=cs-* &>/dev/null
+    # install zip
+    which zip &>/dev/null || yum install -y zip --enablerepo=cs-* &>/dev/null
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch $CONFIG_PF
