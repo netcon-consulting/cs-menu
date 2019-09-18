@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.63.0 for Clearswift SEG >= 4.8
+# menu.sh V1.64.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -56,9 +56,10 @@
 # - integration of Pyzor and Razor
 # - automatic Rspamd updates
 # - integration of Elasticsearch logging
+# - management of various white-/blacklists
 #
 # Changelog:
-# - added option to change the CS WebUI timeout to 'Clearswift config' submenu
+# - for Rspamd added support for recipient to whitelist and country blacklist
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -105,6 +106,8 @@ HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
 WHITELIST_IP='/var/lib/rspamd/whitelist_sender_ip'
 WHITELIST_DOMAIN='/var/lib/rspamd/whitelist_sender_domain'
 WHITELIST_FROM='/var/lib/rspamd/whitelist_sender_from'
+WHITELIST_TO='/var/lib/rspamd/whitelist_recipient_to'
+BLACKLIST_COUNTRY='/var/lib/rspamd/blacklist_sender_country'
 MAP_CLIENT='/etc/postfix-inbound/client.map'
 MAP_OFFICE365='/etc/postfix-inbound/office365.map'
 LIST_OFFICE365='40.92.0.0/15 40.107.0.0/16 52.100.0.0/14 104.47.0.0/17'
@@ -270,9 +273,11 @@ install_rspamd() {
     yum install -y redis rspamd
     rspamadm configwizard
     CONFIG_MULTIMAP='/etc/rspamd/local.d/multimap.conf'
-    echo 'IP_WHITELIST {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_IP\";"$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
-    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"$WHITELIST_DOMAIN\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
-    echo $'\n''SENDER_FROM_WHITELIST_USER {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"$WHITELIST_FROM\";"$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo 'WHITELIST_SENDER_IP {'$'\n\t''type = "ip";'$'\n\t''prefilter = "true";'$'\n\t'"map = \"$WHITELIST_IP\";"$'\n\t''description = "Whitelisted sender IP";'$'\n\t''action = "accept";'$'\n''}' > "$CONFIG_MULTIMAP"
+    echo $'\n''WHITELIST_SENDER_DOMAIN {'$'\n\t''type = "from";'$'\n\t''filter = "email:domain";'$'\n\t'"map = \"$WHITELIST_DOMAIN\";"$'\n\t''description = "Whitelisted sender domain";'$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo $'\n''WHITELIST_SENDER_FROM {'$'\n\t''type = "from";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"$WHITELIST_FROM\";"$'\n\t''description = "Whitelisted sender from";'$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo $'\n''WHITELIST_RECIPIENT_TO {'$'\n\t''type = "rcpt";'$'\n\t''filter = "email:addr";'$'\n\t'"map = \"$WHITELIST_TO\";"$'\n\t''description = "Whitelisted recipient to";'$'\n\t''score = -10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
+    echo $'\n''BLACKLIST_COUNTRY {'$'\n\t''type = "country";'$'\n\t'"map = \"$BLACKLIST_COUNTRY\";"$'\n\t''description = "Blacklisted sender country";'$'\n\t''score = 10.0;'$'\n''}' >> "$CONFIG_MULTIMAP"
     echo 'extended_spam_headers = true;' > "$CONFIG_HEADERS"
     echo 'autolearn = true;' > "$CONFIG_BAYES"
     echo 'reject = null;' > "$CONFIG_ACTIONS"
@@ -4050,6 +4055,8 @@ dialog_config_rspamd() {
     DIALOG_IP='Whitelist sender IP'
     DIALOG_DOMAIN='Whitelist sender domain'
     DIALOG_FROM='Whitelist sender from'
+    DIALOG_TO='Whitelist recipient to'
+    DIALOG_COUNTRY='Blacklist country'
     DIALOG_PYZORRAZOR='Install Pyzor & Razor plugins'
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_WEBUI='Rspamd web UI access'
@@ -4064,6 +4071,8 @@ dialog_config_rspamd() {
         ARRAY_RSPAMD+=("$DIALOG_IP" '')
         ARRAY_RSPAMD+=("$DIALOG_DOMAIN" '')
         ARRAY_RSPAMD+=("$DIALOG_FROM" '')
+        ARRAY_RSPAMD+=("$DIALOG_TO" '')
+        ARRAY_RSPAMD+=("$DIALOG_COUNTRY" '')
         ARRAY_RSPAMD+=("$DIALOG_PYZORRAZOR_INSTALLED" '')
         ARRAY_RSPAMD+=("$DIALOG_BAYES" '')
         ARRAY_RSPAMD+=("$DIALOG_WEBUI" '')
@@ -4085,6 +4094,10 @@ dialog_config_rspamd() {
                     "$TXT_EDITOR" "$WHITELIST_DOMAIN";;
                 "$DIALOG_FROM")
                     "$TXT_EDITOR" "$WHITELIST_FROM";;
+                "$DIALOG_TO")
+                    "$TXT_EDITOR" "$WHITELIST_TO";;
+                "$DIALOG_COUNTRY")
+                    "$TXT_EDITOR" "$BLACKLIST_COUNTRY";;
                 "$DIALOG_PYZORRAZOR_INSTALLED")
                     install_pyzorrazor;;
                 "$DIALOG_BAYES")
