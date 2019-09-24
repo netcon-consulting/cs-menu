@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# add_external.sh V1.2.0
+# add_external.sh V1.3.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -32,7 +32,7 @@ if ! [ -f "$1" ]; then
     exit 99
 fi
 
-FROM_START="$(grep -n '^\(F\|f\)rom: ' "$1" | head -1 | cut -f1 -d\:)"
+FROM_START="$(grep -n '^\(F\|f\)rom:' "$1" | head -1 | cut -f1 -d\:)"
 
 FROM_END="$(expr $FROM_START + $(sed -n "$(expr $FROM_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:) - 1)"
 

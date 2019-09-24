@@ -1,7 +1,7 @@
 #!/bin/bash
-# menu.sh V1.64.0 for Clearswift SEG >= 4.8
+# menu.sh V1.65.0 for Clearswift SEG >= 4.8
 #
-# Copyright (c) 2018 NetCon Unternehmensberatung GmbH
+# Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
 #
 # Authors:
@@ -59,7 +59,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - for Rspamd added support for recipient to whitelist and country blacklist
+# - adjusted copyright statement
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
