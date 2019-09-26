@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.68.0 for Clearswift SEG >= 4.8
+# menu.sh V1.69.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -2092,11 +2092,13 @@ create_config() {
         return 11
     fi
 
-    LIST_MTA=''
-    while read MTA_GROUP; do
-        LIST_MTA+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']" -v @name -o ',' -v @uuid "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']/HostPriority" -v @priority -o '#' -v . -o '|' "$LAST_CONFIG" 2>/dev/null)"$'\n'
-    done < <(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup" -v @name -n "$LAST_CONFIG" 2>/dev/null | sed '/^$/d')
-    LIST_MTA="$(echo "$LIST_MTA" | sed '/^$/d')"
+    if [ "$COUNT_MTA" != 0 ]; then
+        LIST_MTA=''
+        while read MTA_GROUP; do
+            LIST_MTA+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']" -v @name -o ',' -v @uuid "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']/HostPriority" -v @priority -o '#' -v . -o '|' "$LAST_CONFIG" 2>/dev/null)"$'\n'
+        done < <(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup" -v @name -n "$LAST_CONFIG" 2>/dev/null | sed '/^$/d')
+        LIST_MTA="$(echo "$LIST_MTA" | sed '/^$/d')"
+    fi
 
     if [ "$COUNT_MTA" != 0 ] && [ -z "$LIST_MTA" ]; then
         echo 'MTA group list is empty'
@@ -2195,17 +2197,21 @@ create_config() {
         sed -i "/^  <RoutingTable count=/a\ \ \ <Route domain=\"$(echo $ROUTE | awk -F, '{print $1}')\" routingType=\"$(echo $ROUTE | awk -F, '{print $2}')\" tlsEndpointUuid=\"$(echo $ROUTE | awk -F, '{print $3}')\">\n\ \ \ \ <SmptAuth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <Server address=\"$(echo $ROUTE | awk -F, '{print $4}')\" allowUntrusted=\"true\" name=\"\" port=\"25\" requireSecure=\"false\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <MtaGroup mtaGroupUuid=\"$(echo $ROUTE | awk -F, '{print $5}')\" port=\"25\"/>\n\ \ \ </Route>" "$TEMPLATE_CONFIG"
     done < <(echo "$LIST_ROUTE")
 
-    sed -i "/^  <\/SmtpTransactionSettings>/a\ \ <MtaGroups count=\"$COUNT_MTA\">" "$TEMPLATE_CONFIG"
+    if [ "$COUNT_MTA" = 0 ]; then
+        sed -i "/^  <\/SmtpTransactionSettings>/a\ \ <MtaGroups count=\"0\"\/>" "$TEMPLATE_CONFIG"
+    else
+        sed -i "/^  <\/SmtpTransactionSettings>/a\ \ <MtaGroups count=\"$COUNT_MTA\">" "$TEMPLATE_CONFIG"
 
-    while read MTA_GROUP; do
-        sed -i "/^\ <\/SmtpSettings>/i\ \ \ <MtaGroup name=\"$(echo $MTA_GROUP | awk -F, '{print $1}')\" uuid=\"$(echo $MTA_GROUP | awk -F, '{print $2}')\">" "$TEMPLATE_CONFIG"
-        for MTA_SERVER in $(echo "$MTA_GROUP" | awk -F, '{print $3}' | sed 's/|/ /g'); do
-            sed -i "/^\ <\/SmtpSettings>/i\ \ \ \ <HostPriority priority=\"$(echo $MTA_SERVER | awk -F# '{print $1}')\">$(echo $MTA_SERVER | awk -F# '{print $2}')<\/HostPriority>" "$TEMPLATE_CONFIG"
-        done
-        sed -i "/^\ <\/SmtpSettings>/i\ \ \ <\/MtaGroup>" "$TEMPLATE_CONFIG"
-    done < <(echo "$LIST_MTA")
+        while read MTA_GROUP; do
+            sed -i "/^\ <\/SmtpSettings>/i\ \ \ <MtaGroup name=\"$(echo $MTA_GROUP | awk -F, '{print $1}')\" uuid=\"$(echo $MTA_GROUP | awk -F, '{print $2}')\">" "$TEMPLATE_CONFIG"
+            for MTA_SERVER in $(echo "$MTA_GROUP" | awk -F, '{print $3}' | sed 's/|/ /g'); do
+                sed -i "/^\ <\/SmtpSettings>/i\ \ \ \ <HostPriority priority=\"$(echo $MTA_SERVER | awk -F# '{print $1}')\">$(echo $MTA_SERVER | awk -F# '{print $2}')<\/HostPriority>" "$TEMPLATE_CONFIG"
+            done
+            sed -i "/^\ <\/SmtpSettings>/i\ \ \ <\/MtaGroup>" "$TEMPLATE_CONFIG"
+        done < <(echo "$LIST_MTA")
 
-    sed -i "/^\ <\/SmtpSettings>/i\ \ <\/MtaGroups>" "$TEMPLATE_CONFIG"
+        sed -i "/^\ <\/SmtpSettings>/i\ \ <\/MtaGroups>" "$TEMPLATE_CONFIG"
+    fi
 
     sed -i "/^  <\/Network>/i\ <System uuid=\"$(uuidgen)\">\n\ \ <Network hostname=\"$(echo $INFO_NETWORK | awk -F, '{print $1}')\" uiAddress=\"$(echo $INFO_NETWORK | awk -F, '{print $2}')\">\n\ \ \ <Ethernet>\n\ \ \ \ <Adapter dev=\"$(echo $INFO_NETWORK | awk -F, '{print $3}')\" gateway=\"$(echo $INFO_NETWORK | awk -F, '{print $4}')\" name=\"$(echo $INFO_NETWORK | awk -F, '{print $5}')\" uuid=\"$(echo $INFO_NETWORK | awk -F, '{print $6}')\">\n\ \ \ \ \ <Address>$(echo $INFO_NETWORK | awk -F, '{print $7}')</Address>\n\ \ \ \ </Adapter>\n\ \ \ </Ethernet>\n\ \ \ <DNS dnsType=\"1\" searchPath=\"\" useroot=\"false\">" "$TEMPLATE_CONFIG"
     for DNS_SERVER in $(echo $INFO_NETWORK | awk -F, '{print $8}'); do
