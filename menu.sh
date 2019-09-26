@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.65.0 for Clearswift SEG >= 4.8
+# menu.sh V1.66.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -59,7 +59,8 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - adjusted copyright statement
+# - for generating a base policy take MTA groups into account
+# - updated CS config template
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -125,7 +126,6 @@ EMAIL_DEFAULT='uwe@usommer.de'
 LINK_GITHUB='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
 LINK_UPDATE="$LINK_GITHUB/menu.sh"
 LINK_CONFIG="$LINK_GITHUB/configs/sample_config.bk"
-LINK_TEMPLATE="$LINK_GITHUB/configs/template_config.xml"
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
 CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
@@ -2005,6 +2005,7 @@ email_sample() {
 # none
 create_config() {
     DEPLOYMENT_HISTORY='/var/cs-gateway/deployments/deploymenthistory.xml'
+    LINK_TEMPLATE="$LINK_GITHUB/configs/template_config.xml"
     TEMPLATE_CONFIG='/tmp/TMPtemplate_config.xml'
 
     wget "$LINK_TEMPLATE" -O "$TEMPLATE_CONFIG" 2>/dev/null
@@ -2017,7 +2018,7 @@ create_config() {
     LIST_ADDRESS="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name='My Company']/Address" -v . -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$LIST_ADDRESS" ]; then
-        echo 'Address list is empty'
+        echo "'My Company' address list is empty"
         return 2
     fi
 
@@ -2076,13 +2077,31 @@ create_config() {
 
     LIST_ROUTE=''
     for DOMAIN in $(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain != '*']" -v @domain -n "$LAST_CONFIG" 2>/dev/null); do
-        LIST_ROUTE+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']" -v @domain -o ',' -v @routingType -o ',' -v @tlsEndpointUuid -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']/Server" -v @address -n "$LAST_CONFIG" 2>/dev/null)"$'\n'
+        LIST_ROUTE+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']" -v @domain -o ',' -v @routingType -o ',' -v @tlsEndpointUuid -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']/Server" -v @address -n "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$DOMAIN']/MtaGroup" -v @mtaGroupUuid -n "$LAST_CONFIG" 2>/dev/null)"$'\n'
     done
     LIST_ROUTE="$(echo "$LIST_ROUTE" | sed '/^$/d')"
 
     if [ -z "$LIST_ROUTE" ]; then
         echo 'Route list is empty'
         return 10
+    fi
+
+    COUNT_MTA="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups" -v @count -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$COUNT_MTA" ]; then
+        echo 'MTA group count is empty'
+        return 11
+    fi
+
+    LIST_MTA=''
+    while read MTA_GROUP; do
+        LIST_MTA+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']" -v @name -o ',' -v @uuid "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']/HostPriority" -v @priority -o '#' -v . -o '|' "$LAST_CONFIG" 2>/dev/null)"$'\n'
+    done < <(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup" -v @name -n "$LAST_CONFIG" 2>/dev/null)
+    LIST_MTA="$(echo "$LIST_MTA" | sed '/^$/d')"
+
+    if [ "$COUNT_MTA" != 0 ] && [ -z "$LIST_MTA" ]; then
+        echo 'MTA group list is empty'
+        return 12
     fi
 
     INFO_NETWORK="$(xmlstarlet sel -t -m "Configuration/System/Network" -v @hostname -o ',' -v @uiAddress -n "$LAST_CONFIG" 2>/dev/null)"
@@ -2092,63 +2111,63 @@ create_config() {
 
     if [ -z "$INFO_NETWORK" ]; then
         echo 'Network info is empty'
-        return 11
+        return 13
     fi
 
     INFO_EMAIL="$(xmlstarlet sel -t -m "Configuration/System/EmailIdentities" -v @admin -o ',' -v @messageManagement -o ',' -v @server -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_EMAIL" ]; then
         echo 'Email info is empty'
-        return 12
+        return 14
     fi
 
     INFO_ALERT="$(xmlstarlet sel -t -m "Configuration/System/EngineAlerts" -v @recipient -o ',' -v @sender -o ',' -v @subject -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_ALERT" ]; then
         echo 'Alert info is empty'
-        return 13
+        return 15
     fi
 
     KEYMAP="$(xmlstarlet sel -t -m "Configuration/System/OS" -v @keymap -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$KEYMAP" ]; then
         echo 'Keymap is empty'
-        return 14
+        return 16
     fi
 
     LIST_PEER="$(xmlstarlet sel -t -m "Configuration/System/PeerAppliances/Peer" -v @address -o ',' -v @name -o ',' -v @password -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$LIST_PEER" ]; then
         echo 'Peer list is empty'
-        return 15
+        return 17
     fi
 
     COUNT_SCANNER="$(xmlstarlet sel -t -m "Configuration/ScannerSelection" -v @count -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$COUNT_SCANNER" ]; then
         echo 'Scanner count is empty'
-        return 16
+        return 18
     fi
 
     LIST_SCANNER="$(xmlstarlet sel -t -m "Configuration/ScannerSelection/Scanner" -v @behavioural -o ',' -v @cloud -o ',' -v @enabled -o ',' -v @heuristic -o ',' -v @mnemonic -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$LIST_SCANNER" ]; then
         echo 'Scanner list is empty'
-        return 17
+        return 19
     fi
 
     INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_DEPLOYMENT" ]; then
         echo 'Deployment info is empty'
-        return 18
+        return 20
     fi
 
-    COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY")"
+    COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY" 2>/dev/null)"
 
     if [ -z "$COUNT_DEPLOYMENT" ]; then
         echo 'Deployment count is empty'
-        return 19
+        return 21
     fi
 
     while read ADDRESS; do
@@ -2174,8 +2193,20 @@ create_config() {
     sed -i "/^  <InternalHosts enable=\"false\"\/>/a\ \ <RoutingTable count=\"$(expr $COUNT_ROUTE + 2)\">" "$TEMPLATE_CONFIG"
 
     while read ROUTE; do
-        sed -i "/^  <RoutingTable count=/a\ \ \ <Route domain=\"$(echo $ROUTE | awk -F, '{print $1}')\" routingType=\"$(echo $ROUTE | awk -F, '{print $2}')\" tlsEndpointUuid=\"$(echo $ROUTE | awk -F, '{print $3}')\">\n\ \ \ \ <SmptAuth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <Server address=\"\" allowUntrusted=\"true\" name=\"\" port=\"25\" requireSecure=\"false\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <MtaGroup mtaGroupUuid=\"00000000-0000-0000-0000-000000000000\" port=\"25\"/>\n\ \ \ </Route>" "$TEMPLATE_CONFIG"
+        sed -i "/^  <RoutingTable count=/a\ \ \ <Route domain=\"$(echo $ROUTE | awk -F, '{print $1}')\" routingType=\"$(echo $ROUTE | awk -F, '{print $2}')\" tlsEndpointUuid=\"$(echo $ROUTE | awk -F, '{print $3}')\">\n\ \ \ \ <SmptAuth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <Server address=\"$(echo $ROUTE | awk -F, '{print $4}')\" allowUntrusted=\"true\" name=\"\" port=\"25\" requireSecure=\"false\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ <MtaGroup mtaGroupUuid=\"$(echo $ROUTE | awk -F, '{print $5}')\" port=\"25\"/>\n\ \ \ </Route>" "$TEMPLATE_CONFIG"
     done < <(echo "$LIST_ROUTE")
+
+    sed -i "/^  <\/SmtpTransactionSettings>/a\ \ <MtaGroups count=\"$COUNT_MTA\">" "$TEMPLATE_CONFIG"
+
+    while read MTA_GROUP; do
+        sed -i "/^\ <\/SmtpSettings>/i\ \ \ <MtaGroup name=\"$(echo $MTA_GROUP | awk -F, '{print $1}')\" uuid=\"$(echo $MTA_GROUP | awk -F, '{print $2}')\">" "$TEMPLATE_CONFIG"
+        for MTA_SERVER in $(echo "$MTA_GROUP" | awk -F, '{print $3}' | sed 's/|/ /g'); do
+            sed -i "/^\ <\/SmtpSettings>/i\ \ \ \ <HostPriority priority=\"$(echo $MTA_SERVER | awk -F# '{print $1}')\">$(echo $MTA_SERVER | awk -F# '{print $2}')<\/HostPriority>" "$TEMPLATE_CONFIG"
+        done
+        sed -i "/^\ <\/SmtpSettings>/i\ \ \ <\/MtaGroup>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_MTA")
+
+    sed -i "/^\ <\/SmtpSettings>/i\ \ <\/MtaGroups>" "$TEMPLATE_CONFIG"
 
     sed -i "/^  <\/Network>/i\ <System uuid=\"$(uuidgen)\">\n\ \ <Network hostname=\"$(echo $INFO_NETWORK | awk -F, '{print $1}')\" uiAddress=\"$(echo $INFO_NETWORK | awk -F, '{print $2}')\">\n\ \ \ <Ethernet>\n\ \ \ \ <Adapter dev=\"$(echo $INFO_NETWORK | awk -F, '{print $3}')\" gateway=\"$(echo $INFO_NETWORK | awk -F, '{print $4}')\" name=\"$(echo $INFO_NETWORK | awk -F, '{print $5}')\" uuid=\"$(echo $INFO_NETWORK | awk -F, '{print $6}')\">\n\ \ \ \ \ <Address>$(echo $INFO_NETWORK | awk -F, '{print $7}')</Address>\n\ \ \ \ </Adapter>\n\ \ \ </Ethernet>\n\ \ \ <DNS dnsType=\"1\" searchPath=\"\" useroot=\"false\">" "$TEMPLATE_CONFIG"
     for DNS_SERVER in $(echo $INFO_NETWORK | awk -F, '{print $8}'); do

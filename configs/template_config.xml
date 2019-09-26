@@ -17223,7 +17223,6 @@ public exponent: 10001
   <SmtpTransactionSettings enabled="false" exportEnabled="false" exportTime="23:00">
    <FtpServer allowUntrusted="false" dir="Clearswift_SMTP_Transaction_Logs" host="" password="" port="21" serverType="FTP" user=""/>
   </SmtpTransactionSettings>
-  <MtaGroups count="0"/>
  </SmtpSettings>
  <ConnectionList count="0"/>
  <PMM authenticationMethod="ntlm" mobile="false" mobileAuthTimeout="6" mobilePort="443" pmmMode="Off" portalMode="Lite">
