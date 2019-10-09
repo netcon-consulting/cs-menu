@@ -14,6 +14,7 @@ SMTP,true,true,true,true
 
 return_codes
 0,none,DKIM checked
+1,detected,Should never trigger
 
 disposal_actions
 modified,none,none
