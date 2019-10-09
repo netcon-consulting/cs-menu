@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# remove_external.sh V1.3.0
+# remove_external.sh V1.4.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -10,6 +10,9 @@
 # 0 - email not modified
 # 1 - tag removed from recipient to and/or CC email addresses
 # 99 - unrecoverable error
+
+LOG_PREFIX='>>>>'
+LOG_SUFFIX='<<<<'
 
 # writes message to log file with the defined log pre-/suffix 
 # parameters:

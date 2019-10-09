@@ -1,6 +1,6 @@
 name_rule
 Decrypt ZIP
- 
+
 path_cmd
 /opt/cs-gateway/scripts/netcon/decrypt_zip.sh
 

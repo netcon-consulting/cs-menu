@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# add_external.sh V1.3.0
+# add_external.sh V1.4.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -10,6 +10,9 @@
 # 0 - email not modified
 # 1 - tag added to sender from email address
 # 99 - unrecoverable error
+
+LOG_PREFIX='>>>>'
+LOG_SUFFIX='<<<<'
 
 # writes message to log file with the defined log pre-/suffix 
 # parameters:

@@ -1,6 +1,6 @@
 name_rule
 VMRay Scan
- 
+
 path_cmd
 /opt/cs-gateway/scripts/netcon/vmray_scan.sh
 

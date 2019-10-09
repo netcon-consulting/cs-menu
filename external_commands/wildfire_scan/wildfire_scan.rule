@@ -1,6 +1,6 @@
 name_rule
 Wildfire Scan
- 
+
 path_cmd
 /opt/cs-gateway/scripts/netcon/wildfire_scan.sh
 

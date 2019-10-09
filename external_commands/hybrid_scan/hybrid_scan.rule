@@ -1,6 +1,6 @@
 name_rule
 Hybrid-Analysis Scan
- 
+
 path_cmd
 /opt/cs-gateway/scripts/netcon/hybrid_scan.sh
 
