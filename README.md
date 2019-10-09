@@ -1,4 +1,4 @@
-NetCon Clearswift Configuration V1.69.0
+NetCon Clearswift Configuration V1.70.0
 =======================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
@@ -19,7 +19,6 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * SSH Key authentication for cs-admin
 * removed triple authentication for cs-admin when becoming root
 * reconfigure local DNS Resolver without forwarders and DNSSec support
-* editable DNS A record for mail.intern (mutiple IP destinations)
 * apply configuration in bash to activate customisations
 * aliases for quick log access and menu config (pflogs, menu)
 * sample custom commands for "run external command" content rule

@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.69.0 for Clearswift SEG >= 4.8
+# menu.sh V1.70.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -22,7 +22,6 @@
 # - SSH Key authentication for cs-admin
 # - removed triple authentication for cs-admin when becoming root
 # - reconfigure local DNS Resolver without forwarders and DNSSec support
-# - editable DNS A record for mail.intern (mutiple IP destinations)
 # - apply configuration in bash to activate customisations
 # - aliases for quick log access and menu config (pflogs, menu)
 # - sample custom commands for "run external command" content rule
@@ -59,7 +58,9 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - removed option for mail.intern RoundRobin
+# - added option for monthly DKIM reports to 'Other config' submenu
+# - install EPEL repo and tmux in base setup
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -127,6 +128,8 @@ LINK_UPDATE="$LINK_GITHUB/menu.sh"
 LINK_CONFIG="$LINK_GITHUB/configs/sample_config.bk"
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
+CRON_DKIM='/etc/cron.monthly/dkim_report.sh'
+SCRIPT_DKIM='/root/dkim_report.sh'
 CRON_ANOMALY='/etc/cron.d/anomaly_detect.sh'
 SCRIPT_ANOMALY='/root/check_anomaly.sh'
 CRON_CLEANUP='/etc/cron.daily/cleanup_mqueue.sh'
@@ -226,18 +229,6 @@ show_wait() {
 ###################################################################################################
 # Install Secion
 ###################################################################################################
-# install EPEL repo
-# parameters:
-# none
-# return values:
-# none
-install_epel() {
-    if ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
-        echo 'Installing EPEL...'
-        wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -O /tmp/epel-release-6-8.noarch.rpm
-        rpm -ivh /tmp/epel-release-6-8.noarch.rpm
-    fi
-}
 # install Clearswift from Repo
 # parameters:
 # none
@@ -266,7 +257,6 @@ install_seg() {
 # none
 install_rspamd() {
     clear
-    install_epel
     curl https://rspamd.com/rpm-stable/centos-6/rspamd.repo > /etc/yum.repos.d/rspamd.repo
     rpm --import https://rspamd.com/rpm-stable/gpg.key
     yum install -y redis rspamd
@@ -307,14 +297,14 @@ install_rspamd() {
     osySSltDa4WU0oKczOTEklTb3NSi9FRNBSUVH39nR594Z38/NxfPIP2c/OTEHL0UfYTJ8ekgu/SS
     8/PSlAhbYYBpZH5ZalFRZkoqblNruQCAjCEi0AAAAA==
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/groups.conf
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/groups.conf
     PACKED_SCRIPT='
     H4sIAK1Pq1wAA7WOPQ7CMAyF957CygEYkJgQAyegygabG0xiNU1QbKgK6t0JKmJn4G3vR3qfTEOX
     o8AOng1UmfZ4OljzcW+NxD5oHaxXm+03PZO4wlflnGplXCDXw0Ai6AmEfUK9FRJAj5xEQQNBOz1y
     AZdjxC4XVL4TXDgqFU4eEumYS2+Wj3mhsfu/0Vj8hWZuXk2fo04qAQAA
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/signatures_group.conf
-    printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/signatures_group.conf
+    printf '%s' $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     get_keypress
 }
 # install ACME Tool
@@ -327,7 +317,6 @@ install_letsencrypt() {
     ## letsencrypt validate cert requests
     TMP_REPONSE="/tmp/TMPreponse"
     clear
-    install_epel
     if ! [ -f "$CONFIG_FW" ] || ! grep -q '\-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' "$CONFIG_FW"; then
         echo '-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' >> "$CONFIG_FW"
         iptables -I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT
@@ -356,8 +345,6 @@ install_letsencrypt() {
 # none
 install_auto_update() {
     clear
-    install_epel
-    sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     yum install -y yum-cron
     /etc/init.d/yum-cron start
     get_keypress
@@ -394,7 +381,6 @@ install_local_dns() {
 # none
 install_zbar() {
     clear
-    install_epel
     yum install -y zbar
     get_keypress
 }
@@ -1809,7 +1795,6 @@ create_rule() {
     LIST_DEPENDENCY="$(echo "$1" | sed -n '/dependencies/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if ! [ -z "$LIST_DEPENDENCY" ]; then
-        install_epel &>/dev/null
         for DEPENDENCY in $LIST_DEPENDENCY; do
             yum install -y "$DEPENDENCY" --enablerepo=cs-* &>/dev/null
             if [ "$?" != 0 ]; then
@@ -2331,7 +2316,7 @@ toggle_cleanup() {
     $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle CS mqueue cleanup' --yesno "CS mqueue cleanup is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
     if [ "$?" = 0 ]; then
         if [ $STATUS_CURRENT = 'disabled' ]; then
-            printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_CLEANUP
+            printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $CRON_CLEANUP
             chmod 700 $CRON_CLEANUP
         else
             rm -f $CRON_CLEANUP
@@ -2373,7 +2358,7 @@ toggle_backup() {
             RET_CODE=$?
             exec 3>&-
             if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-                printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_BACKUP
+                printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $CRON_BACKUP
                 sed -i "s/__EMAIL_RECIPIENT__/$DIALOG_RET/" $CRON_BACKUP
                 chmod 700 $CRON_BACKUP
             fi
@@ -2381,74 +2366,6 @@ toggle_backup() {
             rm -f $CRON_BACKUP
         fi
     fi
-}
-# add IP address for mail.intern zone in dialog inputbox
-# parameters:
-# none
-# return values:
-# error code - 0 for added, 1 for cancel
-add_mail() {
-    exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle 'Manage mail.intern access' --title 'Add mail server IP to mail.intern' --inputbox 'Enter mail server IP for mail.intern' 0 50 2>&1 1>&3)"
-    RET_CODE=$?
-    exec 3>&-
-    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
-        if [ ! -f $CONFIG_BIND ] || ! grep -q '^zone "intern" {' $CONFIG_BIND; then
-            echo 'zone "intern" {' >> $CONFIG_BIND
-        	echo '    type master;' >> $CONFIG_BIND
-	        echo '    file "intern.db";' >> $CONFIG_BIND
-            echo '};' >> $CONFIG_BIND
-        fi
-        if [ ! -f $CONFIG_INTERN ]; then
-            echo '$ttl 38400' > $CONFIG_INTERN
-            echo 'intern.  IN SOA		localhost. master.intern. (' >> $CONFIG_INTERN
-            echo '		2017112200' >> $CONFIG_INTERN
-            echo '		10800' >> $CONFIG_INTERN
-            echo '		3600' >> $CONFIG_INTERN
-            echo '		604800' >> $CONFIG_INTERN
-            echo '		38400)' >> $CONFIG_INTERN
-            echo 'intern.			IN	NS	ns1.intern.' >> $CONFIG_INTERN
-            echo 'ns1			IN	A	127.0.0.1' >> $CONFIG_INTERN
-        fi
-        echo "mail	5	IN	A   $DIALOG_RET" >> $CONFIG_INTERN
-        return 0
-    else
-        return 1
-    fi
-}
-# add/remove IP addresses for mail.intern zone in dialog menu
-# parameters:
-# none
-# return values:
-# none
-mail_intern() {
-    while true; do
-        LIST_IP=''
-        [ -f $CONFIG_INTERN ] && LIST_IP=$(grep '^mail' $CONFIG_INTERN | awk '{print $5}')
-        if [ -z "$LIST_IP" ]; then
-            add_mail || break
-        else
-            ARRAY_INTERN=()
-            for IP_ADDRESS in $LIST_IP; do
-                ARRAY_INTERN+=($IP_ADDRESS '')
-            done
-            exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
-                --menu 'Add/remove IPs for mail.intern' 0 0 0 "${ARRAY_INTERN[@]}" 2>&1 1>&3)"
-            RET_CODE=$?
-            exec 3>&-
-            if [ $RET_CODE = 0 ]; then
-                add_mail
-            else
-                if [ $RET_CODE = 3 ]; then
-                    sed -i "/^mail.*$DIALOG_RET/d" $CONFIG_INTERN
-                else
-                    break
-                fi
-            fi
-        fi
-    done
-    rndc reload
 }
 # add zone name and IP in dialog inputbox
 # parameters:
@@ -2570,6 +2487,56 @@ monthly_report() {
             else
                 if [ $RET_CODE = 3 ]; then
                     sed -i "/$(echo "$SCRIPT_STATS $DIALOG_RET" | sed 's/\//\\\//g')/d" $CRON_STATS
+                else
+                    break
+                fi
+            fi
+        fi
+    done
+}
+# add email address for monthly reports in dialog inputbox
+# parameters:
+# none
+# return values:
+# error code - 0 for added, 1 for cancel
+add_dkim() {
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Monthly DKIM reports' --title 'Add recipient email for report' --inputbox 'Enter recipient email for monthly reports' 0 50 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+        echo "$SCRIPT_DKIM $DIALOG_RET" >> $CRON_DKIM
+        return 0
+    else
+        return 1
+    fi
+}
+# add/remove email addresses for monthly reports in dialog menu
+# parameters:
+# none
+# return values:
+# none
+dkim_report() {
+    while true; do
+        LIST_EMAIL=''
+        [ -f $CRON_DKIM ] && LIST_EMAIL=$(grep "^$SCRIPT_DKIM" $CRON_DKIM | awk '{print $2}')
+        if [ -z "$LIST_EMAIL" ]; then
+            add_dkim || break
+        else
+            ARRAY_EMAIL=()
+            for EMAIL_ADDRESS in $LIST_EMAIL; do
+                ARRAY_EMAIL+=("$EMAIL_ADDRESS" '')
+            done
+            exec 3>&1
+            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Email recipients' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove emails for monthly DKIM reports' 0 0 0 "${ARRAY_EMAIL[@]}" 2>&1 1>&3)"
+            RET_CODE=$?
+            exec 3>&-
+            if [ $RET_CODE = 0 ]; then
+                add_dkim
+            else
+                if [ $RET_CODE = 3 ]; then
+                    sed -i "/$(echo "$SCRIPT_DKIM $DIALOG_RET" | sed 's/\//\\\//g')/d" $CRON_DKIM
                 else
                     break
                 fi
@@ -3321,7 +3288,7 @@ disable_cluster() {
 # return values:
 # none
 enable_sender() {
-    printf "%s" $SENDER_SCRIPT | base64 -d | gunzip > $CRON_SENDER
+    printf '%s' $SENDER_SCRIPT | base64 -d | gunzip > $CRON_SENDER
     chmod 700 $CRON_SENDER
     $CRON_SENDER
 }
@@ -3546,7 +3513,7 @@ enable_update() {
     NRj+vEte1+67zTLodT0z7isw+PyybV9N5xfwY+i9BqqsPj5+q/S3EdG/gOD2Q9T73tzO/I+f3sb9
     H/Txne3y11bsz/8B3xJ0NvYLAAA=
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_UPDATE
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $CRON_UPDATE
     chmod 700 $CRON_UPDATE
 }
 # disable automatic spamd updates
@@ -3582,7 +3549,7 @@ enable_rulesupdate() {
     9uow0y6SdmJUq5w7yU+wY3xyCTz+sgoiFO5dA8Glx0GIorRwKdw9cibaczj2vHOv+BukmnrV4AUA
     AA==
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $CRON_RULES
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $CRON_RULES
     chmod 700 $CRON_RULES
     $CRON_RULES
 }
@@ -3680,7 +3647,7 @@ install_pyzorrazor() {
     t2rl6qQTQcG3gCy9+jn6zHYvTrwn5rAj1Kg2GKEsU7Kk0TvSeSY4zmnQoyY02C3dpLuR6OMY3Mq0
     xBlGG8P5ijgqzWsXzz/X6mWbBAkAAA==
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
     if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^pyzor { }$' "$CONFIG_LOCAL"; then
         echo 'pyzor { }' >> "$CONFIG_LOCAL"
     fi
@@ -3700,7 +3667,7 @@ install_pyzorrazor() {
     /4eG4RugcRJv43zOPvVKIEAJkgAhIN7SYAvs+DtQSB2PgbHKft4d0S3XMfldzXJ0693poh1iWPzp
     cOwDCMDk1CgjtL7l6HitsXwhuQIHmXMjWuA8TjPnQRPO80AngYq/7vjOR0EFAAA=
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
     chown pyzorsocket:pyzorsocket /opt/pyzorsocket/bin/pyzorsocket.py
     chmod 0700 /opt/pyzorsocket/bin/pyzorsocket.py
     PACKED_SCRIPT='
@@ -3713,7 +3680,7 @@ install_pyzorrazor() {
     OXjj7x+aEs3AcQMHuLA0e2WNUmHLsjo9XXNkUqXI5CODmFQ3tmHFPthXtJ/O+tHY3Kdzrckke/mr
     lb1YzTK3Wa5mLtczXt8fFPvPDQRVY6YJRRYuVvEGr04i2KYDAAA=
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
     chmod +x /etc/init.d/pyzorsocket
     chkconfig --add pyzorsocket
     chkconfig pyzorsocket on
@@ -3731,7 +3698,7 @@ install_pyzorrazor() {
     n8i6GRvdoK3RaqA72piukRxvDszmuiTzt2HWZtzOMO9O1uo1iW8N61U1CGBSWeaLReIKd/DgBf0L
     bFL70WMFAAA=
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
     if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^razor { }$' "$CONFIG_LOCAL"; then
         echo 'razor { }' >> "$CONFIG_LOCAL"
     fi
@@ -3752,7 +3719,7 @@ install_pyzorrazor() {
     Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
     aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
     chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
     chmod 0700 /opt/razorsocket/bin/razorsocket.py
     PACKED_SCRIPT='
@@ -3765,7 +3732,7 @@ install_pyzorrazor() {
     0JRoBo4bOMCFpdkrq5cKW5bV8fGSI5MqRSY/GcSkur4OK/bDvqL9NWu3vrpP51aTUfbyFyv7sJp5
     bjNfZM6XGZ/fD4q9cQNB1ZhpQpGFi1V8AdB9kzCmAwAA
     '
-    printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
     chmod +x /etc/init.d/razorsocket
     chkconfig --add razorsocket
     chkconfig razorsocket on
@@ -3860,7 +3827,7 @@ rspamd_update() {
         clear
         service rspamd stop
         yum update -y rspamd
-        [ "$?" = 0 ] && printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
+        [ "$?" = 0 ] && printf '%s' $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
         service rspamd start
     fi
 }
@@ -4147,12 +4114,12 @@ dialog_config_rspamd() {
                     rspamd_update;;
                 "$DIALOG_SENDER")
                     FILE_SCRIPT='/tmp/sender_whitelist.sh'
-                    printf "%s" $SENDER_SCRIPT | base64 -d | gunzip > $FILE_SCRIPT
+                    printf '%s' $SENDER_SCRIPT | base64 -d | gunzip > $FILE_SCRIPT
                     chmod 700 $FILE_SCRIPT
                     $FILE_SCRIPT
                     rm -f $FILE_SCRIPT;;
                 "$DIALOG_SERVICE")
-                    printf "%s" $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
+                    printf '%s' $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
             esac
         else
             break
@@ -4165,30 +4132,30 @@ dialog_config_rspamd() {
 # return values:
 # none
 dialog_report() {
-    DIALOG_STATUS="Current status: "
-    DIALOG_EMAIL="Add/remove email recipients"
-    DIALOG_SCRIPT="Edit script"
+    DIALOG_STATUS='Current status: '
+    DIALOG_EMAIL='Add/remove email recipients'
+    DIALOG_SCRIPT='Edit script'
     while true; do
-        [ -f $SCRIPT_STATS ] && [ -f $CRON_STATS ] && STATUS_CRON="enabled" || STATUS_CRON="disabled"
+        [ -f $SCRIPT_STATS ] && [ -f $CRON_STATS ] && STATUS_CRON='enabled' || STATUS_CRON='disabled'
         ARRAY_MAIL=()
         ARRAY_MAIL+=("$DIALOG_STATUS$STATUS_CRON" "")
-        if [ "$STATUS_CRON" = "enabled" ]; then
-            ARRAY_MAIL+=("$DIALOG_EMAIL" "")
-            ARRAY_MAIL+=("$DIALOG_SCRIPT" "")
+        if [ "$STATUS_CRON" = 'enabled' ]; then
+            ARRAY_MAIL+=("$DIALOG_EMAIL" '')
+            ARRAY_MAIL+=("$DIALOG_SCRIPT" '')
         fi
         exec 3>&1
-        DIALOG_RET="$($DIALOG --clear --backtitle "Other configurations"                        \
-            --cancel-label "Back" --ok-label "Edit" --menu "Monthly email stats reports" 0 40 0 \
+        DIALOG_RET="$($DIALOG --clear --backtitle 'Other configurations'                        \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Monthly email stats reports' 0 40 0 \
             "${ARRAY_MAIL[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_STATUS$STATUS_CRON")
-                    if [ "$STATUS_CRON" = "enabled" ]; then
+                    if [ "$STATUS_CRON" = 'enabled' ]; then
                         rm -f $SCRIPT_STATS $CRON_STATS
                     else
-                        PACKED_SCRIPT="
+                        PACKED_SCRIPT='
                         H4sIAFgu9VsAA71Xe3PiNhD/n0+xVTwHHDXG3Fxyl5xvQnOkk5mEpEA67UCaUbAAtUbmLEGSC/Sz
                         dyU/sAlzz5k6D6zVand/+9Ky95Nzx4VzR+W0tAcnAaORvOdjBb32rxCEE6CCBo+fWIS71/cMeuFs
                         xiKoSPN5LJgahcLGP7kIFBeT+iicVZHXbTjNhvumtIfvKGbMAyZhHEYQUKngVQN8+ihLyY5HnCWN
@@ -4214,8 +4181,8 @@ dialog_report() {
                         akw1EfpCSjaC2UM6iWpM6cBOjsnWIJpUqXEGKN3XbXfXUJWDk+neZf6ICn1Zjrm+KbU4ySK8tnP2
                         v9L2564X1GYYbYktxKpMMXu0i6s3cBEKNQ0eY0dDzIz5g/biSNgDnfJezpzD5muk6wk8k3G8ecfU
                         qBpflP4DGPryLFQOAAA=
-                        "
-                        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_STATS
+                        '
+                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_STATS
                         chmod +x $SCRIPT_STATS
                         echo "$SCRIPT_STATS $EMAIL_DEFAULT" >> $CRON_STATS
                     fi;;
@@ -4229,36 +4196,94 @@ dialog_report() {
         fi
     done
 }
+# manage monthly DKIM reports in dialog menu
+# parameters:
+# none
+# return values:
+# none
+dialog_dkim() {
+    DIALOG_STATUS='Current status: '
+    DIALOG_EMAIL='Add/remove email recipients'
+    DIALOG_SCRIPT='Edit script'
+    while true; do
+        [ -f $SCRIPT_DKIM ] && [ -f $CRON_DKIM ] && STATUS_CRON='enabled' || STATUS_CRON='disabled'
+        ARRAY_MAIL=()
+        ARRAY_MAIL+=("$DIALOG_STATUS$STATUS_CRON" "")
+        if [ "$STATUS_CRON" = 'enabled' ]; then
+            ARRAY_MAIL+=("$DIALOG_EMAIL" '')
+            ARRAY_MAIL+=("$DIALOG_SCRIPT" '')
+        fi
+        exec 3>&1
+        DIALOG_RET="$($DIALOG --clear --backtitle 'Other configurations'                        \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Monthly email stats reports' 0 40 0 \
+            "${ARRAY_MAIL[@]}" 2>&1 1>&3)"
+        RET_CODE=$?
+        exec 3>&-
+        if [ $RET_CODE = 0 ]; then
+            case "$DIALOG_RET" in
+                "$DIALOG_STATUS$STATUS_CRON")
+                    if [ "$STATUS_CRON" = 'enabled' ]; then
+                        rm -f $SCRIPT_DKIM $CRON_DKIM
+                    else
+                        PACKED_SCRIPT='
+                        H4sIAJ7CnV0AA31Ua2/aMBT9nl9xm6Z1UvIAtn1oJ6Qi+hga0ApopYpSZBJDvGI7ix2tbO1/n5NA
+                        gQ4NBfnKvjfn3JNzfXgQTCkPpljGhnEI0TNlk5QkIlW+jOG+5lf9qnGoT1oiWaZ0HiuwQwfq1dop
+                        9IhqCQ53XJGUk5gRLqckxSrjc7hm028ucKJCwT39l9lCUT73Q8GK1zUzFYv0DLo4DeGCkvRZEg42
+                        86NVfL631jGMYb/ZG9ze9IeTbvO2gQKdFiRCqhl98USmpiLjUaBSzGXRBcMJMi6+t7uTzs11wwwU
+                        S4K8S8+yI6wIVNDRg3fEEHgRLInUrUR46fgLMTcNg85gBN5vMK2aCeOvoGLCDdA/EsYCzDuJ5+QM
+                        LFvLRzhmBKyqA4RhutAihjShhCuzLHihCmrGjBpGpz0YTlqD+4Zp2fjXMyCGVRjbVtWFYJYK1rD9
+                        E8cFJVaBzKY/SKga/olbfp9IaAS+Oi12JFnoDJEWe4GLHfiTpJQrwKPa2HRNPKqXy6dy+Tx+Q2Ct
+                        VYFXkFoqvWSc/gQvXG94PNXhR45PIxif2KOqdzquOPAfxDfklBoerFVct74r5sVNt9nuTfqXrfZt
+                        +7I3zIUpBdayl/jelXluAlphWPXi1Xmtruzoyk7zoYFQsaOhZrpyxyYaD46Pt5M1xFz7HMwn6yM8
+                        mLBbvdZgCx3WtACNHh/1Mx6jffRWfW+A9zKJ6BwqMs4lr3ARcSlJCOwF/qW282GU9hl4tT30Vugb
+                        ++4Q2JJ+4+UW5lwoiIieAEY5gdzFkJIFXpqb1NLFRbiQ5H3/3dKIZ0zfAW7uY1cJd8uv7o5TkYUe
+                        OdpyhPGBz5ZXXksungRzlHvWKy+oMfSLFXIwWI/z0ZVjgjcAyVTS2G78rP5FH6Q6Mda3RT6tzvkm
+                        1uPvFH4raOgx1c9fiIjRHxwFAAA=
+                        '
+                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_DKIM
+                        chmod +x $SCRIPT_DKIM
+                        echo "$SCRIPT_DKIM $EMAIL_DEFAULT" >> $CRON_DKIM
+                    fi;;
+                "$DIALOG_EMAIL")
+                    dkim_report;;
+                "$DIALOG_SCRIPT")
+                    $TXT_EDITOR $SCRIPT_DKIM;;
+            esac
+        else
+            break
+        fi
+    done
+}
 # manage monthly sender anomaly detection in dialog menu
 # parameters:
 # none
 # return values:
 # none
 dialog_anomaly() {
-    DIALOG_STATUS="Current status: "
-    DIALOG_EMAIL="Add/remove email recipients"
-    DIALOG_SCRIPT="Edit script"
+    DIALOG_STATUS='Current status: '
+    DIALOG_EMAIL='Add/remove email recipients'
+    DIALOG_SCRIPT='Edit script'
     while true; do
-        [ -f $SCRIPT_ANOMALY ] && [ -f $CRON_ANOMALY ] && STATUS_CRON="enabled" || STATUS_CRON="disabled"
+        [ -f $SCRIPT_ANOMALY ] && [ -f $CRON_ANOMALY ] && STATUS_CRON='enabled' || STATUS_CRON='disabled'
         ARRAY_MAILADDR=()
-        ARRAY_MAILADDR+=("$DIALOG_STATUS$STATUS_CRON" "")
-        if [ "$STATUS_CRON" = "enabled" ]; then
-            ARRAY_MAILADDR+=("$DIALOG_EMAIL" "")
-            ARRAY_MAILADDR+=("$DIALOG_SCRIPT" "")
+        ARRAY_MAILADDR+=("$DIALOG_STATUS$STATUS_CRON" '')
+        if [ "$STATUS_CRON" = 'enabled' ]; then
+            ARRAY_MAILADDR+=("$DIALOG_EMAIL" '')
+            ARRAY_MAILADDR+=("$DIALOG_SCRIPT" '')
         fi
         exec 3>&1
-        DIALOG_RET="$($DIALOG --clear --backtitle "Other configurations"                        \
-            --cancel-label "Back" --ok-label "Edit" --menu "Sender anomaly detection" 0 40 0    \
+        DIALOG_RET="$($DIALOG --clear --backtitle 'Other configurations'                        \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Sender anomaly detection' 0 40 0    \
             "${ARRAY_MAILADDR[@]}" 2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_STATUS$STATUS_CRON")
-                    if [ "$STATUS_CRON" = "enabled" ]; then
+                    if [ "$STATUS_CRON" = 'enabled' ]; then
                         rm -f $SCRIPT_ANOMALY $CRON_ANOMALY
                     else
-                        PACKED_SCRIPT="
+                        PACKED_SCRIPT='
                         H4sIAIplbVwAA7VX/3OaSBT/nb/idUOK1ACaTmfuTMzUJtp6E00nml47MXEQVqGFxcJak2u8v/3e
                         AspqTNprJ8w4Luz7+nnvfRZ2nlkjn1kjO/GUHXA86nwZ2iwK7eDWTDz4UDWrZkXZwb3jaHob+xOP
                         Q8nRYb9S/QO6lB9HDC4YpzGjXkhZMqKxzWdsAm/D0TvU8jifJjXLms/nJqPciZiBv2QWcJ9NTCcK
@@ -4283,8 +4308,8 @@ dialog_anomaly() {
                         6OAH+XXt1PoNklXzkFWyebQ9HeXmLoshls7TTTMPssovUsjP+n4CFhmQpfcB+RGP+CylEcsJqM1m
                         U/PF3I4ZfsPUwMOZEN8Ys9FnfMOqrRNNSiyhzR2vpFb2wHpIC0rmCx0Eh4C1B7YOkg5k1FK6vIar
                         F/qREBitaIhg6PZl9Ur8741wsfi/HFPg/SREI5kvPom2U85/TH9ebf4OAAA=
-                        "
-                        printf "%s" $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_ANOMALY
+                        '
+                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_ANOMALY
                         chmod +x $SCRIPT_ANOMALY
                         echo "30 1,7,13,19 * * * root $SCRIPT_ANOMALY $EMAIL_DEFAULT" >> $CRON_ANOMALY
                     fi;;
@@ -4322,7 +4347,7 @@ toggle_logging() {
             iyDS/YHC0POFI1bebUvvZl9czMGJT5jcV3Uw0tOMopxF6TiQ8gKbQzqZVWEnro2mZjYeV3YrLHVf
             OYEa1MjLevQVIZf2S9+C/z/56KzeT8agabIAAAA=
             '
-            printf "%s" $PACKED_SCRIPT | base64 -d | gunzip >> "$CONFIG_BIND"
+            printf '%s' $PACKED_SCRIPT | base64 -d | gunzip >> "$CONFIG_BIND"
         else
             sed -i '/^logging {$/,/^};$/d' "$CONFIG_BIND"
         fi
@@ -4336,20 +4361,20 @@ toggle_logging() {
 # none
 dialog_other() {
     DIALOG_AUTO_UPDATE='Auto-update'
-    DIALOG_MAIL_INTERN='Mail.intern RoundRobin'
     DIALOG_CONFIG_FW='Firewall settings'
     DIALOG_RECENT_UPDATES='Recently updated packages'
     DIALOG_FORWARDING='Internal DNS forwarding'
     DIALOG_REPORT='Monthly email stats reports'
+    DIALOG_DKIM='Monthly DKIM reports'
     DIALOG_ANOMALY='Sender anomaly detection'
     DIALOG_LOG='DNS query logging'
     ARRAY_OTHER=()
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
-    ARRAY_OTHER+=("$DIALOG_MAIL_INTERN" '')
     ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
     ARRAY_OTHER+=("$DIALOG_RECENT_UPDATES" '')
     ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
     ARRAY_OTHER+=("$DIALOG_REPORT" '')
+    ARRAY_OTHER+=("$DIALOG_DKIM" '')
     ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
     ARRAY_OTHER+=("$DIALOG_LOG" '')
     while true; do
@@ -4364,8 +4389,6 @@ dialog_other() {
                 "$DIALOG_AUTO_UPDATE")
                     [ -f $CONFIG_AUTO_UPDATE ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE
                     [ -f $CONFIG_AUTO_UPDATE_ALT ] && $TXT_EDITOR $CONFIG_AUTO_UPDATE_ALT;;
-                "$DIALOG_MAIL_INTERN")
-                    mail_intern;;
                 "$DIALOG_CONFIG_FW")
                     $TXT_EDITOR $CONFIG_FW;;
                 "$DIALOG_RECENT_UPDATES")
@@ -4374,6 +4397,8 @@ dialog_other() {
                     internal_forwarding;;
                 "$DIALOG_REPORT")
                     dialog_report;;
+                "$DIALOG_DKIM")
+                    dialog_dkim;;
                 "$DIALOG_ANOMALY")
                     dialog_anomaly;;
                 "$DIALOG_LOG")
@@ -4597,12 +4622,19 @@ init_cs() {
     echo 'Performing base setup... this may take a while on first run'
     # enable CS RHEL repo
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
+    # install epel
+    if ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
+        wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -O /tmp/epel-release-6-8.noarch.rpm &>/dev/null
+        rpm -ivh /tmp/epel-release-6-8.noarch.rpm &>/dev/null
+    fi
     # install vim editor
     which vim &>/dev/null || yum install -y vim --enablerepo=cs-* &>/dev/null
     # install dialog
     which dialog &>/dev/null || yum install -y dialog --enablerepo=cs-* &>/dev/null
     # install zip
     which zip &>/dev/null || yum install -y zip --enablerepo=cs-* &>/dev/null
+    # install tmux
+    which tmux &>/dev/null || yum install -y tmux --enablerepo=cs-* &>/dev/null    
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch $CONFIG_PF
