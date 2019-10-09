@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_dkim.sh V1.0.0
+# check_dkim.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -11,7 +11,7 @@
 # 1 - no DKIM signature
 # 2 - invalid DKIM signature
 
-DKIM_LOG="/var/log/dkim-$(date +'%Y-%m').log"
+DKIM_LOG="/tmp/dkim-$(date +'%Y-%m').log"
 
 LOG_PREFIX='>>>>'
 LOG_SUFFIX='<<<<'
@@ -85,5 +85,5 @@ fi
 HEADER_DKIM="$(get_header "$1" 'x-msw-original-dkim-signature')"
 
 if ! [ -z "$HEADER_DKIM" ]; then
-    echo "[$(date +'%F %T')] from=$HEADER_FROM, to=$HEADER_TO, subject=$HEADER_SUBJECT, dkim_domain=$(echo "$HEADER_DKIM" | awk 'match($0, /d=(\S+);/, a) {print a[1]}'), dkim_selector=$(echo "$HEADER_DKIM" | awk 'match($0, /s=(\S+);/, a) {print a[1]}')" >> "$DKIM_LOG"
+    echo "[$(date +'%F %T')] from=$HEADER_FROM, to=$HEADER_TO, subject=$HEADER_SUBJECT, dkim_domain=$(echo "$HEADER_DKIM" | awk 'match($0, /d=([^;]+);/, a) {print a[1]}'), dkim_selector=$(echo "$HEADER_DKIM" | awk 'match($0, /s=([^;]+);/, a) {print a[1]}')" >> "$DKIM_LOG"
 fi
