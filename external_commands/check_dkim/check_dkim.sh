@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_dkim.sh V1.1.0
+# check_dkim.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -32,21 +32,21 @@ write_log() {
 # return values:
 # header field
 get_header() {
-    HEADER_START="$(grep -n "^$2" "$1" | head -1 | cut -f1 -d\:)"
+    HEADER_START="$(grep -i -n "^$2:" "$1" | head -1 | cut -f1 -d\:)"
 
     if [ -z "$HEADER_START" ]; then
-        write_log 'Cannot find start of header line'
+        write_log "Cannot find start of '$2' header line"
         exit 99
     fi
 
     HEADER_END="$(expr $HEADER_START + $(sed -n "$(expr $HEADER_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:) - 1)"
 
     if [ -z "$HEADER_END" ]; then
-        write_log 'Cannot find end of header line'
+        write_log 'Cannot find end of '$2' header line'
         exit 99
     fi
 
-    echo $(sed -n "$HEADER_START,$HEADER_END p" "$1") | awk "match(\$0, /$2: ?(.*)/, a) {print a[1]}"
+    echo $(sed -n "$HEADER_START,$HEADER_END p" "$1") | awk "match(\$0, /\S+: ?(.*)/, a) {print a[1]}"
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
@@ -61,29 +61,29 @@ if ! [ -f "$1" ]; then
     exit 99
 fi
 
-HEADER_FROM="$(get_header "$1" 'From')"
-
-if [ -z "$HEADER_FROM" ]; then
-    write_log 'From header is empty'
-    exit 99
-fi
-
-HEADER_TO="$(get_header "$1" 'To')"
-
-if [ -z "$HEADER_TO" ]; then
-    write_log 'To header is empty'
-    exit 99
-fi
-
-HEADER_SUBJECT="$(get_header "$1" 'Subject')"
-
-if [ -z "$HEADER_SUBJECT" ]; then
-    write_log 'Subject header is empty'
-    exit 99
-fi
-
 HEADER_DKIM="$(get_header "$1" 'x-msw-original-dkim-signature')"
 
 if ! [ -z "$HEADER_DKIM" ]; then
+    HEADER_FROM="$(get_header "$1" 'from')"
+
+    if [ -z "$HEADER_FROM" ]; then
+        write_log 'From header is empty'
+        exit 99
+    fi
+
+    HEADER_TO="$(get_header "$1" 'to')"
+
+    if [ -z "$HEADER_TO" ]; then
+        write_log 'To header is empty'
+        exit 99
+    fi
+
+    HEADER_SUBJECT="$(get_header "$1" 'subject')"
+
+    if [ -z "$HEADER_SUBJECT" ]; then
+        write_log 'Subject header is empty'
+        exit 99
+    fi
+
     echo "[$(date +'%F %T')] from=$HEADER_FROM, to=$HEADER_TO, subject=$HEADER_SUBJECT, dkim_domain=$(echo "$HEADER_DKIM" | awk 'match($0, /d=([^;]+);/, a) {print a[1]}'), dkim_selector=$(echo "$HEADER_DKIM" | awk 'match($0, /s=([^;]+);/, a) {print a[1]}')" >> "$DKIM_LOG"
 fi
