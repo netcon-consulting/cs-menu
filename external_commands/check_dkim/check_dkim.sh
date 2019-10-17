@@ -7,9 +7,8 @@
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
 # return codes:
-# 0 - valid DKIM signature
-# 1 - no DKIM signature
-# 2 - invalid DKIM signature
+# 0 - DKIM checked
+# 99 - unrecoverable error
 
 DKIM_LOG="/tmp/dkim-$(date +'%Y-%m').log"
 

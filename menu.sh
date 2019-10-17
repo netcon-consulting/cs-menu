@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.70.0 for Clearswift SEG >= 4.8
+# menu.sh V1.71.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,9 +58,9 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - removed option for mail.intern RoundRobin
-# - added option for monthly DKIM reports to 'Other config' submenu
-# - install EPEL repo and tmux in base setup
+# - for external commands added support for custom command parameters in rule config
+# - added external command 'check_tls'
+# - install mailx in base setup
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1446,7 +1446,7 @@ install_command() {
             wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.sh" -O "$DIR_COMMANDS/$DIALOG_RET.sh" 2>/dev/null
             chown cs-admin:cs-adm "$DIR_COMMANDS/$DIALOG_RET.sh"
             chmod +x "$DIR_COMMANDS/$DIALOG_RET.sh"
-            RESULT="$(create_rule "$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.rule" -O - 2>/dev/null)")"
+            RESULT="$(create_rule "$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/rule.cfg" -O - 2>/dev/null)")"
             if [ "$?" = 0 ]; then
                 APPLY_NEEDED=1
             else
@@ -1757,39 +1757,46 @@ create_rule() {
         return 2
     fi
 
-    PATH_CMD="$(echo "$1" | sed -n '/path_cmd/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+    CMD_PATH="$(echo "$1" | sed -n '/cmd_path/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
-    if [ -z "$PATH_CMD" ]; then
-        echo "'path_cmd' is empty"
+    if [ -z "$CMD_PATH" ]; then
+        echo "'cmd_path' is empty"
         return 3
+    fi
+
+    CMD_PARAMETER="$(echo "$1" | sed -n '/cmd_parameter/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if [ -z "$CMD_PARAMETER" ]; then
+        echo "'cmd_parameter' is empty"
+        return 4
     fi
 
     TIMEOUT="$(echo "$1" | sed -n '/timeout/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$TIMEOUT" ]; then
         echo "'timeout' is empty"
-        return 4
+        return 5
     fi
 
     LIST_MEDIA="$(echo "$1" | sed -n '/media_types/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_MEDIA" ]; then
         echo "'media_types' is empty"
-        return 5
+        return 6
     fi
 
     LIST_CODE="$(echo "$1" | sed -n '/return_codes/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_CODE" ]; then
         echo "'return_codes' is empty"
-        return 6
+        return 7
     fi
 
     LIST_DISPOSAL="$(echo "$1" | sed -n '/disposal_actions/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
 
     if [ -z "$LIST_DISPOSAL" ]; then
         echo "'disposal_actions' is empty"
-        return 7
+        return 8
     fi
 
     LIST_DEPENDENCY="$(echo "$1" | sed -n '/dependencies/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
@@ -1799,14 +1806,14 @@ create_rule() {
             yum install -y "$DEPENDENCY" --enablerepo=cs-* &>/dev/null
             if [ "$?" != 0 ]; then
                 echo "cannot install '$DEPENDENCY'"
-                return 8
+                return 9
             fi
         done
     fi
 
     if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
         echo "rule '$NAME_RULE' already exists"
-        return 9
+        return 10
     fi
 
     LIST_URL="$(echo "$1" | sed -n '/url_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
@@ -1889,7 +1896,7 @@ create_rule() {
         POLICY_RULE+="$MEDIA_TYPE"
     done < <(echo "$LIST_MEDIA")
 
-    POLICY_RULE+="</MediaTypes><Direction direction=\"either\" uuid=\"$(uuidgen)\"/><ExecutableSettings uuid=\"$(uuidgen)\"><Filename>$PATH_CMD</Filename><CmdLine>%FILENAME% %LOGNAME%</CmdLine><ResponseList>"
+    POLICY_RULE+="</MediaTypes><Direction direction=\"either\" uuid=\"$(uuidgen)\"/><ExecutableSettings uuid=\"$(uuidgen)\"><Filename>$CMD_PATH</Filename><CmdLine>$CMD_PARAMETER</CmdLine><ResponseList>"
 
     while read LINE_CODE; do
         POLICY_RULE+="<Response action=\"$(echo $LINE_CODE | awk -F, '{print $2}' | tr [a-z] [A-Z])\" code=\"$(echo $LINE_CODE | awk -F, '{print $1}')\">$(echo $LINE_CODE | awk -F, '{print $3}')</Response>"
@@ -1936,7 +1943,7 @@ create_rule() {
 
     if [ "$?" != 0 ]; then
         echo 'error restarting Tomcat'
-        return 10
+        return 11
     fi
 }
 # create policy rule from rule config file
@@ -4634,7 +4641,9 @@ init_cs() {
     # install zip
     which zip &>/dev/null || yum install -y zip --enablerepo=cs-* &>/dev/null
     # install tmux
-    which tmux &>/dev/null || yum install -y tmux --enablerepo=cs-* &>/dev/null    
+    which tmux &>/dev/null || yum install -y tmux --enablerepo=cs-* &>/dev/null
+    # install mail
+    which mail &>/dev/null || yum install -y mailx --enablerepo=cs-* &>/dev/null
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch $CONFIG_PF
