@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.71.0 for Clearswift SEG >= 4.8
+# menu.sh V1.72.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,9 +58,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - for external commands added support for custom command parameters in rule config
-# - added external command 'check_tls'
-# - install mailx in base setup
+# - when generating a base policy preserve the Web UI and SSH access settings
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1821,11 +1819,11 @@ create_rule() {
     if ! [ -z "$LIST_URL" ]; then
         while read NAME_LIST; do
             if ! grep -q "UrlList name=\"$NAME_LIST\"" "$DIR_URL/*.xml" 2>/dev/null; then
-                UUID_WHITELIST="$(uuidgen)"
-                FILE_WHITELIST="$DIR_URL/$UUID_WHITELIST.xml"
-                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_WHITELIST\"><Url>isdoll.de</Url></UrlList>" > "$FILE_WHITELIST"
-                chown cs-tomcat:cs-adm "$FILE_WHITELIST"
-                chmod g+w "$FILE_WHITELIST"
+                UUID_URL="$(uuidgen)"
+                FILE_URL="$DIR_URL/$UUID_URL.xml"
+                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><UrlList name=\"$NAME_LIST\" type=\"CUSTOM\" uuid=\"$UUID_URL\"><Url>dummy.com</Url></UrlList>" > "$FILE_URL"
+                chown cs-tomcat:cs-adm "$FILE_URL"
+                chmod g+w "$FILE_URL"
             fi
         done < <(echo "$LIST_URL")
     fi
@@ -2090,11 +2088,11 @@ create_config() {
             LIST_MTA+="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']" -v @name -o ',' -v @uuid "$LAST_CONFIG" 2>/dev/null),$(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup[@name = '$MTA_GROUP']/HostPriority" -v @priority -o '#' -v . -o '|' "$LAST_CONFIG" 2>/dev/null)"$'\n'
         done < <(xmlstarlet sel -t -m "Configuration/SmtpSettings/MtaGroups/MtaGroup" -v @name -n "$LAST_CONFIG" 2>/dev/null | sed '/^$/d')
         LIST_MTA="$(echo "$LIST_MTA" | sed '/^$/d')"
-    fi
 
-    if [ "$COUNT_MTA" != 0 ] && [ -z "$LIST_MTA" ]; then
-        echo 'MTA group list is empty'
-        return 12
+        if [ -z "$LIST_MTA" ]; then
+            echo 'MTA group list is empty'
+            return 12
+        fi
     fi
 
     INFO_NETWORK="$(xmlstarlet sel -t -m "Configuration/System/Network" -v @hostname -o ',' -v @uiAddress -n "$LAST_CONFIG" 2>/dev/null)"
@@ -2107,60 +2105,92 @@ create_config() {
         return 13
     fi
 
+    COUNT_GUIACCESS="$(xmlstarlet sel -t -m "Configuration/System/UIAccessControl" -v @count -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$COUNT_GUIACCESS" ]; then
+        echo 'GUI access count is empty'
+        return 14
+    fi
+
+    if [ "$COUNT_GUIACCESS" != 0 ]; then
+        LIST_GUIACCESS="$(xmlstarlet sel -t -m "Configuration/System/UIAccessControl/Connection" -v . -o ',' -v @allow -n "$LAST_CONFIG" 2>/dev/null)"
+
+        if [ -z "$LIST_GUIACCESS" ]; then
+            echo 'GUI access list is empty'
+            return 15
+        fi
+    fi
+
+    STATUS_AUTOCOMPLETE="$(xmlstarlet sel -t -m "Configuration/System/UIAccessControl/PasswordAutoComplete" -v @enabled -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$STATUS_AUTOCOMPLETE" ]; then
+        echo 'Autocomplete status is empty'
+        return 16
+    fi
+
     INFO_EMAIL="$(xmlstarlet sel -t -m "Configuration/System/EmailIdentities" -v @admin -o ',' -v @messageManagement -o ',' -v @server -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_EMAIL" ]; then
         echo 'Email info is empty'
-        return 14
+        return 17
     fi
 
     INFO_ALERT="$(xmlstarlet sel -t -m "Configuration/System/EngineAlerts" -v @recipient -o ',' -v @sender -o ',' -v @subject -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_ALERT" ]; then
         echo 'Alert info is empty'
-        return 15
+        return 18
     fi
+
+    STATUS_SSH="$(xmlstarlet sel -t -m "Configuration/System/SSH" -v @enabled -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$STATUS_SSH" ]; then
+        echo 'SSH status is empty'
+        return 19
+    fi
+
+    LIST_SSH="$(xmlstarlet sel -t -m "Configuration/System/SSH/IP" -v . -n "$LAST_CONFIG" 2>/dev/null)"
 
     KEYMAP="$(xmlstarlet sel -t -m "Configuration/System/OS" -v @keymap -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$KEYMAP" ]; then
         echo 'Keymap is empty'
-        return 16
+        return 20
     fi
 
     LIST_PEER="$(xmlstarlet sel -t -m "Configuration/System/PeerAppliances/Peer" -v @address -o ',' -v @name -o ',' -v @password -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$LIST_PEER" ]; then
         echo 'Peer list is empty'
-        return 17
+        return 21
     fi
 
     COUNT_SCANNER="$(xmlstarlet sel -t -m "Configuration/ScannerSelection" -v @count -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$COUNT_SCANNER" ]; then
         echo 'Scanner count is empty'
-        return 18
+        return 22
     fi
 
     LIST_SCANNER="$(xmlstarlet sel -t -m "Configuration/ScannerSelection/Scanner" -v @behavioural -o ',' -v @cloud -o ',' -v @enabled -o ',' -v @heuristic -o ',' -v @mnemonic -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$LIST_SCANNER" ]; then
         echo 'Scanner list is empty'
-        return 19
+        return 23
     fi
 
     INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_DEPLOYMENT" ]; then
         echo 'Deployment info is empty'
-        return 20
+        return 24
     fi
 
     COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY" 2>/dev/null)"
 
     if [ -z "$COUNT_DEPLOYMENT" ]; then
         echo 'Deployment count is empty'
-        return 21
+        return 25
     fi
 
     while read ADDRESS; do
@@ -2211,7 +2241,27 @@ create_config() {
     done
     sed -i "/^  <\/Network>/i\ \ \ </DNS>\n\ \ \ <StaticRoutes/>" "$TEMPLATE_CONFIG"
 
+    sed -i "/^  <\/UIAccessControl>/i\ \ <UIAccessControl count=\"$COUNT_GUIACCESS\">" "$TEMPLATE_CONFIG"
+
+    while read GUI_ACCESS; do
+        sed -i "/^  <\/UIAccessControl>/i\ \ \ <Connection allow=\"$(echo $GUI_ACCESS | awk -F, '{print $2}')\" clientType=\"all\" type=\"host\">$(echo $GUI_ACCESS | awk -F, '{print $1}')<\/Connection>" "$TEMPLATE_CONFIG"
+    done < <(echo "$LIST_GUIACCESS")
+
+    sed -i "/^  <\/UIAccessControl>/i\ \ \ <PasswordAutoComplete enabled=\"$STATUS_AUTOCOMPLETE\" uuid=\"$(uuidgen)\"\/>" "$TEMPLATE_CONFIG"
+
     sed -i "/^  <MessageAuditing enabled=\"true\"\/>/i\ \ <EmailIdentities admin=\"$(echo $INFO_EMAIL | awk -F, '{print $1}')\" messageManagement=\"$(echo $INFO_EMAIL | awk -F, '{print $2}')\" server=\"$(echo $INFO_EMAIL | awk -F, '{print $3}')\"/>\n\ \ <EngineAlerts enabled=\"true\" recipient=\"$(echo $INFO_ALERT | awk -F, '{print $1}')\" sender=\"$(echo $INFO_ALERT | awk -F, '{print $2}')\" subject=\"$(echo $INFO_ALERT | awk -F, '{print $3}')\"/>" "$TEMPLATE_CONFIG"
+
+    if [ -z "$LIST_SSH" ]; then
+        sed -i "/^  <FIPSSettings enabled=/i\ \ <SSH enabled=\"$STATUS_SSH\"\/>" "$TEMPLATE_CONFIG"
+    else
+        sed -i "/^  <FIPSSettings enabled=/i\ \ <SSH enabled=\"$STATUS_SSH\">" "$TEMPLATE_CONFIG"
+
+        while read SSH_ACCESS; do
+            sed -i "/^  <FIPSSettings enabled=/i\ \ \ <IP>$SSH_ACCESS<\/IP>" "$TEMPLATE_CONFIG"
+        done < <(echo "$LIST_SSH")
+
+        sed -i "/^  <FIPSSettings enabled=/i\ \ <\/SSH>" "$TEMPLATE_CONFIG"
+    fi
 
     sed -i "/^  <\/LexicalDataImportSettings>/a\ \ <OS keymap=\"$KEYMAP\"/>" "$TEMPLATE_CONFIG"
 

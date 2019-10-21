@@ -17262,14 +17262,6 @@ public exponent: 10001
   <Time ntpserver="" timezone="" usentp="false" usevmwaretimesync="false"/>
   <Ldap/>
   <Alerts/>
-  <UIAccessControl count="6">
-   <Connection allow="true" clientType="all" type="host">130.180.71.126</Connection>
-   <Connection allow="true" clientType="all" type="host">212.95.113.151</Connection>
-   <Connection allow="true" clientType="all" type="host">87.138.177.96</Connection>
-   <Connection allow="true" clientType="all" type="host">213.157.6.174</Connection>
-   <Connection allow="true" clientType="all" type="host">172.16.0.200</Connection>
-   <Connection allow="true" clientType="all" type="host">*</Connection>
-   <PasswordAutoComplete enabled="true" uuid="b95c1204-e94d-48b3-bb6f-5a4521513db2"/>
   </UIAccessControl>
   <EngineParams automaticMessageRepair="false" badMessageHealthThreshold="10" badSlaveHealthThreshold="10" childLimit="1000000" healthAlertResendPeriod="1800" maxProcessTime="1800" ocrEnabledLanguages="ENG,FRE,GER,SPA" ocrMaxImageSize="8400" ocrMinImageSize="200" pdfImageExtraction="false" recursionDepth="50" subjectEncodeFailures="true"/>
   <MessageTracking enabled="true" maxDays="7" maxSize="1024"/>
@@ -17277,7 +17269,6 @@ public exponent: 10001
   <RecentMessages enabled="true"/>
   <CallHomeSettings restricted="false"/>
   <ManagedLists connecttimeout="10" index="https://applianceupdate.clearswift.com/update.aspx?file=appliance/expressionsindex.xml&amp;license=%LICENSE%" readtimeout="30"/>
-  <SSH enabled="false"/>
   <FIPSSettings enabled="false"/>
   <LexicalDataImportSettings enabled="false">
    <LexicalFileServer address="" allowToUseUntrustedSSLCertificate="false" isImplicit="false" password="" port="443" serverType="HTTPS" useAuthentication="false" username=""/>
