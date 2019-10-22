@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.72.0 for Clearswift SEG >= 4.8
+# menu.sh V1.73.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -58,7 +58,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - when generating a base policy preserve the Web UI and SSH access settings
+# - added option for adjusting maximum message size to 'Rspamd config' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -274,6 +274,7 @@ install_rspamd() {
     echo "ruleset = \"$FILE_RULES\";"$'\n''alpha = 0.1;' > "$CONFIG_SPAMASSASSIN"
     echo 'enabled = true;' > "$CONFIG_REPUTATION"
     echo 'phishtank_enabled = true;'$'\n''phishtank_map = "https://rspamd.com/phishtank/online-valid.json.zst";' > "$CONFIG_PHISHING"
+    echo "max_message = $(postmulti -i postfix-inbound -x postconf message_size_limit | awk -F '= ' '{print $2}');" > "$CONFIG_OPTIONS"
     VERSION_RULES="$(dig txt 2.4.3.spamassassin.heinlein-support.de +short | tr -d '"')"
     if [ -z "$VERSION_RULES" ]; then
         echo 'Cannot determine SA rules version'
@@ -3672,6 +3673,23 @@ check_installed_pyzorrazor() {
         return 1
     fi
 }
+# adjust rspamd max message size in dialog inputbox
+# parameters:
+# none
+# return values:
+# none
+dialog_size() {
+    SIZE_CURRENT="$(grep '^max_message = ' "$CONFIG_OPTIONS" | awk 'match($0, /max_message = ([^;]+);/, a) {print a[1]}')"
+
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Manage Rspamd config' --title 'Rspamd message size' --inputbox 'Enter maximum allowed message size (in bytes)' 0 50 $SIZE_CURRENT 2>&1 1>&3)"
+    RET_CODE=$?
+    exec 3>&-
+    if [ $RET_CODE = 0 ] && ! [ -z "$DIALOG_RET" ] && [ "$DIALOG_RET" != "$SIZE_CURRENT" ]; then
+        sed -i "s/^max_message = .*/max_message = $DIALOG_RET;/" "$CONFIG_OPTIONS"
+        service rspamd restart &>/dev/null
+    fi
+}
 # install Pyzor and Razor plugins
 # parameters:
 # none
@@ -3849,7 +3867,7 @@ webui_access() {
                 ARRAY_IP+=($IP_ADDRESS '')
             done
             exec 3>&1
-            DIALOG_RET="$($DIALOG --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+            DIALOG_RET="$($DIALOG --clear --backtitle 'Manage Rspamd config' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
                 --menu 'Add/remove IPs for Rspamd web UI access' 0 0 0 "${ARRAY_IP[@]}" 2>&1 1>&3)"
             RET_CODE=$?
             exec 3>&-
@@ -4117,6 +4135,7 @@ dialog_config_rspamd() {
     DIALOG_FROM='Whitelist sender from'
     DIALOG_TO='Whitelist recipient to'
     DIALOG_COUNTRY='Blacklist country'
+    DIALOG_SIZE='Message size limit'
     DIALOG_PYZORRAZOR='Install Pyzor & Razor plugins'
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_WEBUI='Rspamd web UI access'
@@ -4133,6 +4152,7 @@ dialog_config_rspamd() {
         ARRAY_RSPAMD+=("$DIALOG_FROM" '')
         ARRAY_RSPAMD+=("$DIALOG_TO" '')
         ARRAY_RSPAMD+=("$DIALOG_COUNTRY" '')
+        ARRAY_RSPAMD+=("$DIALOG_SIZE" '')
         ARRAY_RSPAMD+=("$DIALOG_PYZORRAZOR_INSTALLED" '')
         ARRAY_RSPAMD+=("$DIALOG_BAYES" '')
         ARRAY_RSPAMD+=("$DIALOG_WEBUI" '')
@@ -4158,6 +4178,8 @@ dialog_config_rspamd() {
                     "$TXT_EDITOR" "$WHITELIST_TO";;
                 "$DIALOG_COUNTRY")
                     "$TXT_EDITOR" "$BLACKLIST_COUNTRY";;
+                "$DIALOG_SIZE")
+                    dialog_size;;
                 "$DIALOG_PYZORRAZOR_INSTALLED")
                     install_pyzorrazor;;
                 "$DIALOG_BAYES")
@@ -4170,11 +4192,7 @@ dialog_config_rspamd() {
                 "$DIALOG_UPDATE")
                     rspamd_update;;
                 "$DIALOG_SENDER")
-                    FILE_SCRIPT='/tmp/sender_whitelist.sh'
-                    printf '%s' $SENDER_SCRIPT | base64 -d | gunzip > $FILE_SCRIPT
-                    chmod 700 $FILE_SCRIPT
-                    $FILE_SCRIPT
-                    rm -f $FILE_SCRIPT;;
+                    printf '%s' $SENDER_SCRIPT | base64 -d | gunzip | bash;;
                 "$DIALOG_SERVICE")
                     printf '%s' $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd;;
             esac
