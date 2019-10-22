@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.73.0 for Clearswift SEG >= 4.8
+# menu.sh V1.74.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -28,9 +28,9 @@
 # - automatic mail queue cleanup
 # - automatic daily CS config backup via mail
 # - Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
-# - Import 'run external command' policy rules
-# - Install external commands including corresponding policy rules
-# - Generate base policy configuration
+# - import 'run external command' policy rules
+# - install external commands including corresponding policy rules
+# - generate base policy configuration
 #
 # Postfix settings
 # - Postscreen weighted blacklists and bot detection for Postfix
@@ -39,17 +39,19 @@
 # - Postfix recipient verification via next transport hop
 # - DANE support for Postfix (outbound)
 # - outbound header rewriting (anonymising)
-# - Loadbalancing for Postfix transport rules (multi destination transport)
+# - loadbalancing for Postfix transport rules (multi destination transport)
 # - custom individual outbound settings (override general main.cf options)
 # - Postfix notifications for rejected, bounced or error mails
 # - custom Postfix ESMTP settings (disable auth and DSN silently)
 # - advanced smtpd recipient restrictions and whitelists
 # - smtpd late reject to identify senders of rejected messages
 # - Office365 IP-range whitelisting
+# - sender dependent routing
+# - milter bypass
 #
 # Rspamd
 # - Rspamd installation and integration as milter
-# - Master-slave cluster setup
+# - master-slave cluster setup
 # - feature toggles for greylisting, rejecting, Bayes-learning, detailed spam headers, detailed Rspamd history, URL reputation and phishing detection
 # - integration of Heinlein Spamassassin rules with automatic daily updates
 # - integration of Pyzor and Razor
@@ -58,7 +60,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option for adjusting maximum message size to 'Rspamd config' submenu
+# - added support for sender dependent milter bypass
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -102,6 +104,7 @@ SENDER_ROUTING="$DIR_MAPS/relayhost_map"
 WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
+MILTER_BYPASS="$DIR_MAPS/smtpd_milter_map"
 WHITELIST_IP='/var/lib/rspamd/whitelist_sender_ip'
 WHITELIST_DOMAIN='/var/lib/rspamd/whitelist_sender_domain'
 WHITELIST_FROM='/var/lib/rspamd/whitelist_sender_from'
@@ -809,6 +812,31 @@ disable_sender_routing() {
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
 }
+# enable milter bypass
+# parameters:
+# none
+# return values:
+# none
+enable_milter_bypass() {
+    for OPTION in                                                             \
+        "smtpd_milter_maps=cidr:$MILTER_BYPASS"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable milter bypass
+# parameters:
+# none
+# return values:
+# none
+disable_milter_bypass() {
+    for OPTION in                                                             \
+        "smtpd_milter_maps=cidr:$MILTER_BYPASS"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+}
 # enable inbound bounce notification
 # parameters:
 # $1 - notification email address
@@ -1131,6 +1159,19 @@ check_enabled_sender_routing() {
         echo off
     fi
 }
+# check whether milter bypass is enabled
+# parameters:
+# none
+# return values:
+# milter bypass status
+check_enabled_milter_bypass() {
+    if [ -f "$PF_IN" ]                                                                                              \
+        && grep -q "smtpd_milter_maps=cidr:$MILTER_BYPASS" "$PF_IN"; then
+        echo on
+    else
+        echo off
+    fi
+}
 # check whether inbound bounce notification is enabled
 # parameters:
 # none
@@ -1236,12 +1277,13 @@ dialog_feature_postfix() {
     DIALOG_DANE='DANE'
     DIALOG_SENDER_REWRITE='Sender rewrite'
     DIALOG_SENDER_ROUTING='Sender dependent routing'
+    DIALOG_MILTER_BYPASS='Milter bypass'
     DIALOG_BOUNCE_IN='Inbound-Bounce'
     DIALOG_BOUNCE_OUT='Outbound-Bounce'
     DIALOG_OFFICE365='Office365 IP-range whitelisting'
     DIALOG_POSTSCREEN='Postscreen'
     DIALOG_POSTSCREEN_DEEP='PS Deep'
-    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing bounce_in bounce_out office365 postscreen postscreen_deep; do
+    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing milter_bypass bounce_in bounce_out office365 postscreen postscreen_deep; do
         declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     [ "$STATUS_BOUNCE_IN" = 'on' ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_IN=''
@@ -1254,6 +1296,7 @@ dialog_feature_postfix() {
     check_installed_local_dns && ARRAY_ENABLE+=("$DIALOG_DANE" '' "$STATUS_DANE")
     ARRAY_ENABLE+=("$DIALOG_SENDER_REWRITE" '' "$STATUS_SENDER_REWRITE")
     ARRAY_ENABLE+=("$DIALOG_SENDER_ROUTING" '' "$STATUS_SENDER_ROUTING")
+    ARRAY_ENABLE+=("$DIALOG_MILTER_BYPASS" '' "$STATUS_MILTER_BYPASS")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" '' "$STATUS_BOUNCE_IN")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" '' "$STATUS_BOUNCE_OUT")
     ARRAY_ENABLE+=("$DIALOG_OFFICE365" '' "$STATUS_OFFICE365")
@@ -1353,6 +1396,18 @@ dialog_feature_postfix() {
         else
             if [ "$STATUS_SENDER_ROUTING" = 'on' ]; then
                 disable_sender_routing
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_MILTER_BYPASS"; then
+            if [ "$STATUS_MILTER_BYPASS" = 'off' ]; then
+                enable_milter_bypass
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Milter bypass'
+        else
+            if [ "$STATUS_MILTER_BYPASS" = 'on' ]; then
+                disable_milter_bypass
                 APPLY_NEEDED=1
             fi
         fi
@@ -2914,6 +2969,12 @@ write_examples() {
         echo '#@isdoll.de            smtp:[127.0.0.1]:10026' >> "$SENDER_ROUTING"
         postmap "$SENDER_ROUTING"
     fi
+    if ! [ -f "$MILTER_BYPASS" ]; then
+        echo '##################################' >> "$MILTER_BYPASS"
+        echo '# sender dependent milter bypass #' >> "$MILTER_BYPASS"
+        echo '##################################' >> "$MILTER_BYPASS"
+        echo '#127.0.0.0/8    DISABLE' >> "$MILTER_BYPASS"
+    fi
 }
 ###################################################################################################
 # select Postfix configuration to edit in dialog menu
@@ -2931,6 +2992,7 @@ dialog_postfix() {
     DIALOG_SENDER_REWRITE='Sender rewrite'
     DIALOG_HEADER_REWRITE='Header rewrite'
     DIALOG_SENDER_ROUTING='Sender dependent routing'
+    DIALOG_MILTER_BYPASS='Milter bypass'
     DIALOG_RESTRICTIONS='Postfix restrictions'
     DIALOG_BACKUP='Backup Postfix feature config'
     DIALOG_RESTORE='Restore Postfix feature config'
@@ -2947,6 +3009,7 @@ dialog_postfix() {
             "$DIALOG_SENDER_REWRITE" ''                                                         \
             "$DIALOG_HEADER_REWRITE" ''                                                         \
             "$DIALOG_SENDER_ROUTING" ''                                                         \
+            "$DIALOG_MILTER_BYPASS" ''                                                          \
             "$DIALOG_RESTRICTIONS" ''                                                           \
             "$DIALOG_BACKUP" ''                                                                 \
             "$DIALOG_RESTORE" ''                                                                \
@@ -2974,6 +3037,8 @@ dialog_postfix() {
                 "$DIALOG_SENDER_ROUTING")
                     "$TXT_EDITOR" "$SENDER_ROUTING"
                     postmap "$SENDER_ROUTING";;
+                "$DIALOG_MILTER_BYPASS")
+                    "$TXT_EDITOR" "$MILTER_BYPASS";;
                 "$DIALOG_RESTRICTIONS")
                     dialog_restrictions;;
                 "$DIALOG_BACKUP")

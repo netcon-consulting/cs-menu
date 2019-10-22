@@ -1,4 +1,4 @@
-NetCon Clearswift Configuration V1.73.0
+NetCon Clearswift Configuration V1.74.0
 =======================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
@@ -25,9 +25,9 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * automatic mail queue cleanup
 * automatic daily CS config backup via mail
 * Hybrid-Analysis Falcon and Palo Alto Networks WildFire sandbox integration
-* Import 'run external command' policy rules
-* Install external commands including corresponding policy rules
-* Generate base policy configuration
+* import 'run external command' policy rules
+* install external commands including corresponding policy rules
+* generate base policy configuration
 
 ### Postfix settings:
 * Postscreen weighted blacklists and bot detection for Postfix
@@ -36,17 +36,19 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * Postfix recipient verification via next transport hop
 * DANE support for Postfix (outbound)
 * outbound header rewriting (anonymising)
-* Loadbalancing for Postfix transport rules (multi destination transport)
+* loadbalancing for Postfix transport rules (multi destination transport)
 * custom individual outbound settings (override general main.cf options)
 * Postfix notifications for rejected, bounced or error mails
 * custom Postfix ESMTP settings (disable auth and DSN silently)
 * advanced smtpd recipient restrictions and whitelists
 * smtpd late reject to identify senders of rejected messages
 * Office365 IP-range whitelisting
+* sender dependent routing
+* milter bypass
 
 ### Rspamd:
 * Rspamd installation and integration as milter
-* Master-slave cluster setup
+* master-slave cluster setup
 * feature toggles for greylisting, rejecting, Bayes-learning, detailed spam headers, detailed Rspamd history, URL reputation and phishing detection
 * integration of Heinlein Spamassassin rules with automatic daily updates
 * integration of Pyzor and Razor
