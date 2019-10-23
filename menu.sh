@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.74.0 for Clearswift SEG >= 4.8
+# menu.sh V1.75.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -60,7 +60,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added support for sender dependent milter bypass
+# - in 'report_dkim.sh', add support for custom CSV-seperator
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -4366,19 +4366,19 @@ dialog_dkim() {
                         rm -f $SCRIPT_DKIM $CRON_DKIM
                     else
                         PACKED_SCRIPT='
-                        H4sIAJ7CnV0AA31Ua2/aMBT9nl9xm6Z1UvIAtn1oJ6Qi+hga0ApopYpSZBJDvGI7ix2tbO1/n5NA
-                        gQ4NBfnKvjfn3JNzfXgQTCkPpljGhnEI0TNlk5QkIlW+jOG+5lf9qnGoT1oiWaZ0HiuwQwfq1dop
-                        9IhqCQ53XJGUk5gRLqckxSrjc7hm028ucKJCwT39l9lCUT73Q8GK1zUzFYv0DLo4DeGCkvRZEg42
-                        86NVfL631jGMYb/ZG9ze9IeTbvO2gQKdFiRCqhl98USmpiLjUaBSzGXRBcMJMi6+t7uTzs11wwwU
-                        S4K8S8+yI6wIVNDRg3fEEHgRLInUrUR46fgLMTcNg85gBN5vMK2aCeOvoGLCDdA/EsYCzDuJ5+QM
-                        LFvLRzhmBKyqA4RhutAihjShhCuzLHihCmrGjBpGpz0YTlqD+4Zp2fjXMyCGVRjbVtWFYJYK1rD9
-                        E8cFJVaBzKY/SKga/olbfp9IaAS+Oi12JFnoDJEWe4GLHfiTpJQrwKPa2HRNPKqXy6dy+Tx+Q2Ct
-                        VYFXkFoqvWSc/gQvXG94PNXhR45PIxif2KOqdzquOPAfxDfklBoerFVct74r5sVNt9nuTfqXrfZt
-                        +7I3zIUpBdayl/jelXluAlphWPXi1Xmtruzoyk7zoYFQsaOhZrpyxyYaD46Pt5M1xFz7HMwn6yM8
-                        mLBbvdZgCx3WtACNHh/1Mx6jffRWfW+A9zKJ6BwqMs4lr3ARcSlJCOwF/qW282GU9hl4tT30Vugb
-                        ++4Q2JJ+4+UW5lwoiIieAEY5gdzFkJIFXpqb1NLFRbiQ5H3/3dKIZ0zfAW7uY1cJd8uv7o5TkYUe
-                        OdpyhPGBz5ZXXksungRzlHvWKy+oMfSLFXIwWI/z0ZVjgjcAyVTS2G78rP5FH6Q6Mda3RT6tzvkm
-                        1uPvFH4raOgx1c9fiIjRHxwFAAA=
+                        H4sIAG8XsF0AA5VUbW+iQBD+zq+YbmmBKqDe3Ye2IamxtmfOt6ht0ig1K6zCVXY9dsnVa/3vt4Ce
+                        L7UfzmDYzM7wzDwzz5ye2JOQ2hPMA0U5Bf8ljMYxWbBYWDyAx7JVtkrKqbypscUyDmeBAN0zoFIq
+                        X0KbiBqj8EAFiSkJIkL5hMRYJHQG99HkexEoER6jpvzzZC5COrM8FmWfqyYiYPEVtHDswW1I4hdO
+                        KOiR5a/PN0djDUUZ9KrtfrfTG4xb1a6j2dLNXjAupuGryRIxYQn1bRFjyrMqIrzQlNsfjda42bl3
+                        kC2ihZ1Waaq6jwWBgnb2ZJ5FGpg+LAmXpfh4aVhzNkOKUus/jvv1br1XHXR6jnatKUo4hSGYfwCp
+                        ZQTuNYiAUAXkj3gBA/TA8YxcgapLRgnFEQG1ZACJcDiXvHrhIiRUoDzgNRRQVqahojQb/cFYgjlI
+                        1fHvF0ARFl6gj9RSEexpzCJHty6MIgi2PvBk8pN4wrEuinnPfCYh6Po2s3Aylx4szmx2ERvwtohD
+                        KgAPy+4IqW97xa1GCA8rn9i/fGL/6q6QJGLDLoJ34JJz+Upo+AtMb2MwaSyPHyp7HoJ7oQ9L5qVb
+                        MOB/8lwhA2W9ONl0Y0PhflNuO61qoz3u1WuNbqPeHqQE542S7cszMu/QDQJtDapWVpqR90dGNmVk
+                        s/rkaFpmkVBTGbk3gRIPzs93nSXETEoI0LN6CA8I9qPXrOyiwyYt0IajkXxcVzuW3rruLfDRTPxw
+                        BgUepE0oUOZTzokH0St8TG2vVULOK5jlI+mt0bcy2Etgh/qtJmqYUibAJ1JcUUgJpGqAmMzxEm1d
+                        czVkxzkn/+xbadAkkuvlcB5SdRzaBDu07Gjk6NVGLEjVRlTbmSbloJadOXvP6zA5oGEqATPfmy70
+                        sjekmcFmy5zdGQjMPvBILJxd0q4q3+RFLB0DucTSjWHcbM9yKxnZrGZpyFUhn7/0uWWaswUAAA==
                         '
                         printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $SCRIPT_DKIM
                         chmod +x $SCRIPT_DKIM

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# dkim_report.sh V1.0.0
+# dkim_report.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -9,12 +9,14 @@
 TRANSPORT_MAP='/etc/postfix-outbound/transport.map'
 DKIM_LOG="/tmp/dkim-$(date +'%Y-%m' -d yesterday).log"
 
+CSV_SEPERATOR=';'
+
 if [ -z "$1" ]; then
     echo "Usage: $(basename $0) email_recipient"
     exit 1
 fi
 
-LIST_CSV="$(awk 'match($0, /from=(.*), to=(.*), subject=.*, dkim_domain=(.*), dkim_selector=(.*)/,a) {print a[1]","a[2]","a[3]","a[4]}' $DKIM_LOG | sort | uniq -c | sort -nr | awk 'match($0, /^[ ]*([0-9]+) (.*)/,a) {print a[1]","a[2]}')"
+LIST_CSV="$(awk "match(\$0, /from=(.*), to=(.*), subject=.*, dkim_domain=(.*), dkim_selector=(.*)/,a) {print a[1]\"${CSV_SEPERATOR}\"a[2]\"${CSV_SEPERATOR}\"a[3]\"${CSV_SEPERATOR}\"a[4]}" "$DKIM_LOG" | sort | uniq -c | sort -nr | awk "match(\$0, /^[ ]*([0-9]+) (.*)/,a) {print a[1]\"${CSV_SEPERATOR}\"a[2]}")"
 
 if ! [ -z "$LIST_CSV" ]; then
     DOMAIN_RECIPIENT="$(echo "$1"| awk -F"@" '{print $2}')"
@@ -25,7 +27,7 @@ if ! [ -z "$LIST_CSV" ]; then
         echo "Cannot determine mail relay"
         exit 1
     else
-        LIST_CSV='number,from,to,dkim_domain,dkim_selector'$'\n'"$LIST_CSV"
+        LIST_CSV="number${CSV_SEPERATOR}from${CSV_SEPERATOR}to${CSV_SEPERATOR}dkim_domain${CSV_SEPERATOR}dkim_selector"$'\n'"$LIST_CSV"
 
         echo "$LIST_CSV" | mail -s "[DKIM-report] Report from $(date +%F)" -S smtp="$MAIL_RELAY:25" -r $(hostname)@$(hostname -d) "$1"
     fi
