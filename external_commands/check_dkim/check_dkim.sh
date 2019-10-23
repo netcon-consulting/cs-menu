@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_dkim.sh V1.2.0
+# check_dkim.sh V1.3.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -45,7 +45,7 @@ get_header() {
         exit 99
     fi
 
-    echo $(sed -n "$HEADER_START,$HEADER_END p" "$1") | awk "match(\$0, /\S+: ?(.*)/, a) {print a[1]}"
+    echo $(sed -n "$HEADER_START,$HEADER_END p" "$1") | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}'
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then

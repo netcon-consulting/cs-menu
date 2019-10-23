@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_qr.sh V1.14.0
+# check_qr.sh V1.15.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -51,14 +51,14 @@ if [ "$?" = 0 ] && echo "$RESULT" | grep -q '^QR-Code:'; then
     LIST_URL="$(echo $RESULT | awk '{pattern="((https?://|www.)[^ ]+)"; while (match($0, pattern, arr)) {val = arr[1]; print val; sub(pattern, "")}}')"
 
     if ! [ -z "$LIST_URL" ]; then
-        FILE_WHITE="$(grep -l "UrlList name=\"$NAME_WHITELIST\"" $DIR_URL/*.xml)"
+        FILE_WHITE="$(grep -l "UrlList name=\"$NAME_WHITELIST\"" $DIR_URL/*.xml 2>/dev/null)"
         [ -z "$FILE_WHITE" ] || LIST_WHITE="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_WHITE" | sed 's/^\*:\/\///')"
 
         for URL in $LIST_URL; do
             if [ -z "$LIST_WHITE" ] || ! echo "$LIST_WHITE" | grep -q "^$URL$"; then
                 NAME_DOMAIN="$(echo "$URL" | awk 'match($0, /(https?:\/\/)?([^ \/]+)/, a) {print a[2]}')"
 
-                FILE_BLACK="$(grep -l "UrlList name=\"$NAME_BLACKLIST\"" $DIR_URL/*.xml)"
+                FILE_BLACK="$(grep -l "UrlList name=\"$NAME_BLACKLIST\"" $DIR_URL/*.xml 2>/dev/null)"
                 [ -z "$FILE_BLACK" ] || LIST_BLACK="$(xmlstarlet sel -t -m "UrlList/Url" -v . -n "$FILE_BLACK" | sed 's/^\*:\/\///')"
                 if ! [ -z "$LIST_BLACK" ] && echo "$LIST_BLACK" | grep -q "^$NAME_DOMAIN$"; then
                     write_log "$URL"

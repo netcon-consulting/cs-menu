@@ -1,5 +1,5 @@
 #!/bin/bash
-# menu.sh V1.75.0 for Clearswift SEG >= 4.8
+# menu.sh V1.76.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
 # https://www.netcon-consulting.com
@@ -60,7 +60,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - in 'report_dkim.sh', add support for custom CSV-seperator
+# - for external commands added option in the rules config for creating lexical expression list
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1797,6 +1797,7 @@ create_rule() {
     DIR_CFG='/var/cs-gateway/uicfg'
     DIR_RULES="$DIR_CFG/policy/rules"
     DIR_URL="$DIR_CFG/policy/urllists"
+    DIR_LEXICAL="$DIR_CFG/policy/ta"
     FILE_DISPOSAL="$DIR_CFG/policy/disposals.xml"
 
     if [ -z "$1" ]; then
@@ -1882,6 +1883,20 @@ create_rule() {
                 chmod g+w "$FILE_URL"
             fi
         done < <(echo "$LIST_URL")
+    fi
+
+    LIST_LEXICAL="$(echo "$1" | sed -n '/lexical_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if ! [ -z "$LIST_LEXICAL" ]; then
+        while read NAME_LIST; do
+            if ! grep -q "name=\"$NAME_LIST\"" "$DIR_LEXICAL/*.xml" 2>/dev/null; then
+                UUID_LEXICAL="$(uuidgen)"
+                FILE_LEXICAL="$DIR_LEXICAL/$UUID_LEXICAL.xml"
+                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><TextualAnalysis count=\"3\" followedby=\"10\" name=\"$NAME_LIST\" nearness=\"10\" summary=\"\" threshold=\"10\" triggerOnce=\"false\" uuid=\"$UUID_LEXICAL\"><Phrase case=\"false\" redact=\"false\" summary=\"\" text=\"dummy\" type=\"custom\" uuid=\"$(uuidgen)\" weight=\"10\"><customEntityIndexes/><qualifierIndexes/></Phrase></TextualAnalysis>" > "$FILE_LEXICAL"
+                chown cs-tomcat:cs-adm "$FILE_LEXICAL"
+                chmod g+w "$FILE_LEXICAL"
+            fi
+        done < <(echo "$LIST_LEXICAL")
     fi
 
     LIST_TYPE="$(xmlstarlet sel -t -m "Configuration/MediaTypes/MediaTypeGroup/MediaType[@name!='New']" -v @mnemonic -o "," -v @uuid -o "," -v @encrypted -o "," -v @signed -o "," -v @signedAndEncrypted -o "," -v @drm -o "," -v @notProtected -n $LAST_CONFIG)"
