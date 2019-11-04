@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_dkim.sh V1.4.0
+# check_dkim.sh V1.5.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -33,17 +33,11 @@ write_log() {
 get_header() {
     HEADER_START="$(grep -i -n "^$2:" "$1" | head -1 | cut -f1 -d\:)"
 
-    if [ -z "$HEADER_START" ]; then
-        write_log "Cannot find start of '$2' header line"
-        exit 99
-    fi
+    [ -z "$HEADER_START" ] && return 1
 
     HEADER_END="$(expr $HEADER_START + $(sed -n "$(expr $HEADER_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:) - 1)"
 
-    if [ -z "$HEADER_END" ]; then
-        write_log 'Cannot find end of '$2' header line'
-        exit 99
-    fi
+    [ -z "$HEADER_END" ] && return 1
 
     echo $(sed -n "$HEADER_START,$HEADER_END p" "$1") | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}'
 }
