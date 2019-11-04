@@ -1,12 +1,13 @@
 #!/bin/bash
-# menu.sh V1.76.0 for Clearswift SEG >= 4.8
+
+# menu.sh V1.77.0 for Clearswift SEG >= 4.8
 #
-# Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH
-# https://www.netcon-consulting.com
+# Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Authors:
 # Uwe Sommer (u.sommer@netcon-consulting.com)
-# Dr. Marc Dierksen (m.dierksen@netcon-consulting.com)
+# Marc Dierksen (m.dierksen@netcon-consulting.com)
+
 ###################################################################################################
 # Config tool for missing features on Clearswift Secure E-Mail Gateway.
 # These settings will ease many advanced configuration tasks and highly improve spam detection.
@@ -60,7 +61,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - for external commands added option in the rules config for creating lexical expression list
+# - added option to change the Tomcat maximum heap memory size to 'Clearswift config' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -675,8 +676,7 @@ disable_letsencrypt() {
 enable_tls() {
     [ -f /etc/postfix/dh1024.pem ] || openssl dhparam -out /etc/postfix/dh1024.pem 1024 &>/dev/null
     for OPTION in                                                  \
-        'smtpd_tls_loglevel=1'                                     \
-        'smtpd_tls_dh1024_param_file=/etc/postfix/dh1024.pem'; do
+        'smtpd_tls_loglevel=1'; do
         if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
             echo "$OPTION" >> "$PF_IN"
         fi
@@ -714,7 +714,7 @@ disable_tls() {
 # return values:
 # none
 enable_esmtp_filter() {
-    for OPTION in                                                               \
+    for OPTION in                                                      \
         "smtpd_discard_ehlo_keyword_address_maps=cidr:$ESMTP_ACCESS"   \
         'smtpd_discard_ehlo_keywords='; do
         if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
@@ -729,7 +729,7 @@ enable_esmtp_filter() {
 # return values:
 # none
 disable_esmtp_filter() {
-    for OPTION in                                                               \
+    for OPTION in                                                      \
         "smtpd_discard_ehlo_keyword_address_maps=cidr:$ESMTP_ACCESS"   \
         'smtpd_discard_ehlo_keywords='; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
@@ -1033,7 +1033,6 @@ enable_postscreen_deep() {
             echo "$OPTION" >> "$CONFIG_PF"
         fi
     done
-
 }
 # disable Postscreen Deep inspection
 # parameters:
@@ -1050,7 +1049,6 @@ disable_postscreen_deep() {
         "postconf -c $PF_INBOUND -e 'postscreen_dnsbl_whitelist_threshold=-1'"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$CONFIG_PF"
     done
-
 }
 ###################################################################################################
 # check whether feature is already enabled
@@ -2370,6 +2368,32 @@ generate_policy() {
     RESULT="$(create_config)"
     [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error generating base policy' --clear --msgbox "Error: $RESULT" 0 0
 }
+# adjust Tomcat maximum heap memory size
+# parameters:
+# none
+# return values:
+# none
+tomcat_memory() {
+    MEMORY_DEFAULT='512'
+    MEMORY_KEYWORD='CS_TOMCAT_XMX'
+    CONFIG_TOMCAT='/opt/cs-gateway/custom/tomcat.properties'
+
+    [ -f "$CONFIG_TOMCAT" ] && MEMORY_CURRENT="$(grep "^$MEMORY_KEYWORD" "$CONFIG_TOMCAT" | awk "match(\$0, /^$MEMORY_KEYWORD *= *([^ ]+)/, a) {print a[1]}")"
+    [ -z "$MEMORY_CURRENT" ] && MEMORY_CURRENT="$MEMORY_DEFAULT"
+
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'Tomcat maximum memory' --inputbox 'Enter Tomcat maximum memory (in MB)' 0 50 "$MEMORY_CURRENT" 2>&1 1>&3)"
+    RET_CODE="$?"
+    exec 3>&-
+    if [ "$RET_CODE" = 0 ] && [ "$DIALOG_RET" != "$MEMORY_CURRENT" ]; then
+        if [ -f "$CONFIG_TOMCAT" ] && grep -q "^$MEMORY_KEYWORD" "$CONFIG_TOMCAT"; then
+            sed -i "s/^$MEMORY_KEYWORD.*/$MEMORY_KEYWORD=$DIALOG_RET/" "$CONFIG_TOMCAT"
+        else
+            echo "$MEMORY_KEYWORD=$DIALOG_RET" >> "$CONFIG_TOMCAT"
+        fi
+        cs-servicecontrol restart tomcat &>/dev/null
+    fi
+}
 # adjust WebGUI timeout
 # parameters:
 # none
@@ -2387,9 +2411,9 @@ gui_timeout() {
     
     exec 3>&1
     DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'WebUI Timeout' --inputbox 'Enter timeout for WebUI (in minutes)' 0 50 $TIMEOUT_CURRENT 2>&1 1>&3)"
-    RET_CODE=$?
+    RET_CODE="$?"
     exec 3>&-
-    if [ $RET_CODE = 0 ] & [ "$DIALOG_RET" != "$TIMEOUT_CURRENT" ]; then
+    if [ "$RET_CODE" = 0 ] & [ "$DIALOG_RET" != "$TIMEOUT_CURRENT" ]; then
         sed -i "s/<session-timeout>$TIMEOUT_CURRENT<\/session-timeout>/<session-timeout>$DIALOG_RET<\/session-timeout>/" "$DIR_APPLIANCE/$FILE_APPLIANCE"
         cd "$DIR_APPLIANCE"
         zip -r "$FILE_ZIP" "$FILE_APPLIANCE" &>/dev/null
@@ -3110,7 +3134,8 @@ dialog_clearswift() {
     DIALOG_RULE='Import policy rule'
     DIALOG_SAMPLE='Email sample config'
     DIALOG_POLICY='Generate base policy'
-    DIALOG_TIMEOUT='WebGUI timeout'
+    DIALOG_TOMCAT='Tomcat maximum memory size'
+    DIALOG_TIMEOUT='Web GUI timeout'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
     DIALOG_TOGGLE_BACKUP='Email config backup'
@@ -3129,6 +3154,7 @@ dialog_clearswift() {
             "$DIALOG_RULE" ''                                                                      \
             "$DIALOG_SAMPLE" ''                                                                    \
             "$DIALOG_POLICY" ''                                                                    \
+            "$DIALOG_TOMCAT" ''                                                                    \
             "$DIALOG_TIMEOUT" ''                                                                   \
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
             "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
@@ -3162,6 +3188,8 @@ dialog_clearswift() {
                     email_sample;;
                 "$DIALOG_POLICY")
                     generate_policy;;
+                "$DIALOG_TOMCAT")
+                    tomcat_memory;;
                 "$DIALOG_TIMEOUT")
                     gui_timeout;;
                 "$DIALOG_TOGGLE_PASSWORD")
@@ -4818,12 +4846,12 @@ init_cs() {
 # none
 print_info() {
     TMP_INFO="/tmp/TMPshowinfo"
-    if [ ! -f $TMP_INFO ]; then
-        INFO_START=$(expr $(grep -n '###################################################################################################' $0 | head -1 | awk -F: '{print $1}') + 1)
-        INFO_END=$(expr $(grep -n '# Changelog:' $0 | head -1 | awk -F: '{print $1}') - 2)
-        INFO_TEXT="$(sed -n "$INFO_START,"$INFO_END"p" $0 | sed 's/^#//g' | sed 's/^ //g')"
+    if ! [ -f "$TMP_INFO" ]; then
+        INFO_START=$(expr $(grep -n '###################################################################################################' "$0" | head -1 | awk -F: '{print $1}') + 1)
+        INFO_END=$(expr $(grep -n '# Changelog:' "$0" | head -1 | awk -F: '{print $1}') - 2)
+        INFO_TEXT="$(sed -n "$INFO_START,$INFO_END p" "$0" | sed 's/^#//g' | sed 's/^ //g')"
         $DIALOG --clear --backtitle "$TITLE_MAIN" --title 'Program info' --ok-label 'ESC to not show again / Enter to continue' --msgbox "$INFO_TEXT" 0 0
-        [ "$?" != 0 ] && touch $TMP_INFO
+        [ "$?" != 0 ] && touch "$TMP_INFO"
     fi
 }
 # check for update and when available ask user whether to install it and show changelog
@@ -4833,12 +4861,12 @@ print_info() {
 # none
 check_update() {
     TMP_UPDATE='/tmp/TMPupdate'
-    wget $LINK_UPDATE -O $TMP_UPDATE &>/dev/null
-    VERSION="$(grep '^# menu.sh V' $TMP_UPDATE | awk -FV '{print $2}' | awk '{print $1}')"
+    wget "$LINK_UPDATE" -O "$TMP_UPDATE" &>/dev/null
+    VERSION="$(grep '^# menu.sh V' "$TMP_UPDATE" | awk -FV '{print $2}' | awk '{print $1}')"
     MAJOR_DL="$(echo $VERSION | awk -F. '{print $1}')"
     MINOR_DL="$(echo $VERSION | awk -F. '{print $2}')"
     BUILD_DL="$(echo $VERSION | awk -F. '{print $3}')"
-    VERSION="$(grep '^# menu.sh V' $0 | awk -FV '{print $2}' | awk '{print $1}')"
+    VERSION="$(grep '^# menu.sh V' "$0" | awk -FV '{print $2}' | awk '{print $1}')"
     MAJOR_CURRENT="$(echo $VERSION | awk -F. '{print $1}')"
     MINOR_CURRENT="$(echo $VERSION | awk -F. '{print $2}')"
     BUILD_CURRENT="$(echo $VERSION | awk -F. '{print $3}')"
@@ -4847,12 +4875,12 @@ check_update() {
        ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" = "$MINOR_CURRENT" ] && [ "$BUILD_DL" -gt "$BUILD_CURRENT" ]); then
         $DIALOG --clear --backtitle "$TITLE_MAIN" --yesno 'New update available. Install?' 0 40
         if [ "$?" = 0 ]; then
-            INFO_START=$(expr $(grep -n '# Changelog:' $TMP_UPDATE | head -1 | awk -F: '{print $1}') + 1)
-            INFO_END=$(expr $(grep -n '###################################################################################################' $TMP_UPDATE | head -2 | tail -1 | awk -F: '{print $1}') - 2)
-            INFO_TEXT="$(sed -n "$INFO_START,"$INFO_END"p" $TMP_UPDATE | sed 's/^#//g' | sed 's/^ //g')"
+            INFO_START=$(expr $(grep -n '# Changelog:' "$TMP_UPDATE" | head -1 | awk -F: '{print $1}') + 1)
+            INFO_END=$(expr $(grep -n '###################################################################################################' "$TMP_UPDATE" | head -2 | tail -1 | awk -F: '{print $1}') - 2)
+            INFO_TEXT="$(sed -n "$INFO_START,$INFO_END p" "$TMP_UPDATE" | sed 's/^#//g' | sed 's/^ //g')"
             $DIALOG --clear --backtitle "$TITLE_MAIN" --title "Changelog" --msgbox "$INFO_TEXT" 0 0
-            cp -f $TMP_UPDATE $0
-            $0
+            cp -f "$TMP_UPDATE" "$0"
+            "$0"
             exit 0
         fi
     fi
@@ -4893,7 +4921,7 @@ while true; do
         ARRAY_MAIN+=("$DIALOG_SHOW" '')
         [ $APPLY_NEEDED = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" '')
     else
-        ARRAY_MAIN+=("$DIALOG_SEG" "")
+        ARRAY_MAIN+=("$DIALOG_SEG" '')
     fi
     exec 3>&1
     DIALOG_RET="$($DIALOG --clear --title "$TITLE_MAIN $VERSION_MENU" --cancel-label 'Exit' --menu '' 0 0 0 "${ARRAY_MAIN[@]}" 2>&1 1>&3)"
@@ -4923,7 +4951,7 @@ while true; do
                 apply_config;;
         esac
     else
-        break;
+        break
     fi
 done
 clear

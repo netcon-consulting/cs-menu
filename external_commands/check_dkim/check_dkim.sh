@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_dkim.sh V1.3.0
+# check_dkim.sh V1.4.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -65,24 +65,15 @@ HEADER_DKIM="$(get_header "$1" 'x-msw-original-dkim-signature')"
 if ! [ -z "$HEADER_DKIM" ]; then
     HEADER_FROM="$(get_header "$1" 'from')"
 
-    if [ -z "$HEADER_FROM" ]; then
-        write_log 'From header is empty'
-        exit 99
-    fi
+    [ -z "$HEADER_FROM" ] && HEADER_FROM='<empty>'
 
     HEADER_TO="$(get_header "$1" 'to')"
 
-    if [ -z "$HEADER_TO" ]; then
-        write_log 'To header is empty'
-        exit 99
-    fi
+    [ -z "$HEADER_TO" ] && HEADER_TO='<empty>'
 
     HEADER_SUBJECT="$(get_header "$1" 'subject')"
 
-    if [ -z "$HEADER_SUBJECT" ]; then
-        write_log 'Subject header is empty'
-        exit 99
-    fi
+    [ -z "$HEADER_SUBJECT" ] && HEADER_SUBJECT='<empty>'
 
     echo "[$(date +'%F %T')] from=$HEADER_FROM, to=$HEADER_TO, subject=$HEADER_SUBJECT, dkim_domain=$(echo "$HEADER_DKIM" | awk 'match($0, /d=([^;]+);/, a) {print a[1]}'), dkim_selector=$(echo "$HEADER_DKIM" | awk 'match($0, /s=([^;]+);/, a) {print a[1]}')" >> "$DKIM_LOG"
 fi
