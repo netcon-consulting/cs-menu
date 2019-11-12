@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.79.0 for Clearswift SEG >= 4.8
+# menu.sh V1.80.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -2473,7 +2473,7 @@ archive_bounces() {
     fi
 
     if [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyApplication/Policy[@disposal = '$UUID_DISPOSAL']" -v @disposal "$FILE_CONFIG" 2>/dev/null)" ]; then
-        sed -i "s/<Policy corePolicy=/<Policy corePolicy=\"false\" count=\"0\" crypto=\"UNDEFINED\" disposal=\"$UUID_DISPOSAL\" enable=\"true\" routeTypes=\"EmailGateway\" siteSpecific=\"false\" uuid=\"$(uuidgen)\"><RouteList><RouteItem uuid=\"$(uuidgen)\"><target>$UUID_ADDRESSLIST<\/target><source>$UUID_EMPTY<\/source><\/RouteItem><\/RouteList><Encryption decrypt=\"false\" extractKeys=\"SMIME\" extractKeysEnabled=\"false\" mike=\"false\" mikeLanguage=\"en\" mikeMode=\"EXTERNAL\" ocspEnabled=\"false\" securely=\"false\" smartDomainSigning=\"false\" summaryDecrypt=\"false\" summaryVerify=\"false\"\/><\/Policy><Policy corePolicy=\"false\" count=\"0\" crypto=\"UNDEFINED\" disposal=\"$UUID_DROP\" enable=\"true\" routeTypes=\"EmailGateway\" siteSpecific=\"false\" uuid=\"$(uuidgen)\"><RouteList><RouteItem uuid=\"$(uuidgen)\"><target>$UUID_ADDRESSLIST<\/target><source>$UUID_ANYONE<\/source><\/RouteItem><\/RouteList><Encryption decrypt=\"false\" extractKeys=\"SMIME\" extractKeysEnabled=\"false\" mike=\"false\" mikeLanguage=\"en\" mikeMode=\"EXTERNAL\" ocspEnabled=\"false\" securely=\"false\" smartDomainSigning=\"false\" summaryDecrypt=\"false\" summaryVerify=\"false\"\/><\/Policy><Policy corePolicy=/" "$FILE_CONFIG"
+        sed -i "s/<Policy co/<Policy corePolicy=\"false\" count=\"0\" crypto=\"UNDEFINED\" disposal=\"$UUID_DISPOSAL\" enable=\"true\" routeTypes=\"EmailGateway\" siteSpecific=\"false\" uuid=\"$(uuidgen)\"><RouteList><RouteItem uuid=\"$(uuidgen)\"><target>$UUID_ADDRESSLIST<\/target><source>$UUID_EMPTY<\/source><\/RouteItem><\/RouteList><Encryption decrypt=\"false\" extractKeys=\"SMIME\" extractKeysEnabled=\"false\" mike=\"false\" mikeLanguage=\"en\" mikeMode=\"EXTERNAL\" ocspEnabled=\"false\" securely=\"false\" smartDomainSigning=\"false\" summaryDecrypt=\"false\" summaryVerify=\"false\"\/><\/Policy><Policy corePolicy=\"false\" count=\"0\" crypto=\"UNDEFINED\" disposal=\"$UUID_DROP\" enable=\"true\" routeTypes=\"EmailGateway\" siteSpecific=\"false\" uuid=\"$(uuidgen)\"><RouteList><RouteItem uuid=\"$(uuidgen)\"><target>$UUID_ADDRESSLIST<\/target><source>$UUID_ANYONE<\/source><\/RouteItem><\/RouteList><Encryption decrypt=\"false\" extractKeys=\"SMIME\" extractKeysEnabled=\"false\" mike=\"false\" mikeLanguage=\"en\" mikeMode=\"EXTERNAL\" ocspEnabled=\"false\" securely=\"false\" smartDomainSigning=\"false\" summaryDecrypt=\"false\" summaryVerify=\"false\"\/><\/Policy><Policy co/" "$FILE_CONFIG"
     fi
 
     CONFIG_WHEN="$(date +%s)000"
