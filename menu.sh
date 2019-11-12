@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.78.0 for Clearswift SEG >= 4.8
+# menu.sh V1.79.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -62,7 +62,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option to setup outbound-bounce archive to 'Clearswift config' submenu.
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2457,13 +2457,14 @@ archive_bounces() {
 
     cp -f "$LAST_CONFIG" "$FILE_CONFIG"
 
+    UUID_DISPOSAL="$(uuidgen)"
+    UUID_ADDRESSLIST="$(uuidgen)"
+
     if [ -z "$(xmlstarlet sel -t -m "Configuration/DisposalCollection/MessageArea[@name = '$NAME_DISPOSAL']" -v @name "$FILE_CONFIG" 2>/dev/null)" ]; then
-        UUID_DISPOSAL="$(uuidgen)"
         sed -i "s/<\/DisposalCollection>/<MessageArea auditorNotificationAuditor=\"admin\" auditorNotificationAuditorAddress=\"\" auditorNotificationEnabled=\"false\" auditorNotificationpwdOtherAddress=\"\" auditorNotificationPlainBody=\"A message was released by %RELEASEDBY% which violated the policy %POLICYVIOLATED%. A version of the email has been attached.\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" auditorNotificationSender=\"admin\" auditorNotificationSubject=\"A message which violated policy %POLICYVIOLATED% has been released.\" delayedReleaseDelay=\"15\" expiry=\"30\" name=\"$NAME_DISPOSAL\" notificationEnabled=\"false\" notificationOtherAddress=\"\" notificationPlainBody=\"A message you sent has been released by the administrator\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" notificationSender=\"admin\" notificationSubject=\"A message you sent has been released\" notspam=\"true\" pmm=\"false\" releaseRate=\"10000\" releaseScheduleType=\"throttle\" scheduleEnabled=\"false\" system=\"false\" uuid=\"$UUID_DISPOSAL\"><PMMAddressList\/><WeeklySchedule mode=\"ONE_HOUR\"><DailyScheduleList><DailySchedule day=\"1\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"2\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"3\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"4\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"5\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"6\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"7\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><\/DailyScheduleList><\/WeeklySchedule><\/MessageArea><\/DisposalCollection>/" "$FILE_CONFIG"
     fi
 
     if [ -z "$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = '$BOUNCE_RECIPIENT']" -v @name "$FILE_CONFIG" 2>/dev/null)" ]; then
-        UUID_ADDRESSLIST="$(uuidgen)"
         sed -i "s/<AddressListTable>/<AddressListTable><AddressList name=\"$BOUNCE_RECIPIENT\" type=\"static\" uuid=\"$UUID_ADDRESSLIST\"><Address>$BOUNCE_RECIPIENT<\/Address><\/AddressList>/" "$FILE_CONFIG"
     fi
 
