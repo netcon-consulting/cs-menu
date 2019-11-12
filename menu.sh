@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.77.0 for Clearswift SEG >= 4.8
+# menu.sh V1.78.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -32,6 +32,7 @@
 # - import 'run external command' policy rules
 # - install external commands including corresponding policy rules
 # - generate base policy configuration
+# - setup outbound-bounce archive
 #
 # Postfix settings
 # - Postscreen weighted blacklists and bot detection for Postfix
@@ -61,7 +62,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option to change the Tomcat maximum heap memory size to 'Clearswift config' submenu
+# - added option to setup outbound-bounce archive to 'Clearswift config' submenu.
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -116,6 +117,7 @@ MAP_OFFICE365='/etc/postfix-inbound/office365.map'
 LIST_OFFICE365='40.92.0.0/15 40.107.0.0/16 52.100.0.0/14 104.47.0.0/17'
 LOG_FILES='/var/log/cs-gateway/mail.'
 LAST_CONFIG='/var/cs-gateway/deployments/lastAppliedConfiguration.xml'
+DEPLOYMENT_HISTORY='/var/cs-gateway/deployments/deploymenthistory.xml'
 PASSWORD_KEYSTORE='changeit'
 PF_IN='/opt/cs-gateway/custom/postfix-inbound/main.cf'
 PF_OUT='/opt/cs-gateway/custom/postfix-outbound/main.cf'
@@ -2060,9 +2062,9 @@ email_sample() {
 # parameters:
 # none
 # return values:
-# none
+# stderr - 0 for success, else for error
+# stdout - error message
 create_config() {
-    DEPLOYMENT_HISTORY='/var/cs-gateway/deployments/deploymenthistory.xml'
     LINK_TEMPLATE="$LINK_GITHUB/configs/template_config.xml"
     TEMPLATE_CONFIG='/tmp/TMPtemplate_config.xml'
 
@@ -2367,6 +2369,137 @@ create_config() {
 generate_policy() {
     RESULT="$(create_config)"
     [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error generating base policy' --clear --msgbox "Error: $RESULT" 0 0
+}
+# create bounce archive
+# parameters:
+# $1 - bounce recipient domain
+# return values:
+# stderr - 0 for success, else for error
+# stdout - error message
+archive_bounces() {
+    NAME_DISPOSAL='Bounces'
+
+    for OPTION in                                                                                                                                                   \
+        "postconf -c $PF_INBOUND -Me '2525/inet=2525 inet n - n - 250 smtpd -o smtpd_milters= -o inet_interfaces=localhost -o smtpd_recipient_restrictions='"; do
+        if ! [ -f "$CONFIG_PF" ] || ! grep -q "$OPTION" "$CONFIG_PF"; then
+            echo "$OPTION" >> "$CONFIG_PF"
+        fi
+    done
+
+    BOUNCE_DOMAIN="bounces.$1"
+    BOUNCE_RECIPIENT="bounces@$BOUNCE_DOMAIN"
+
+    for OPTION in                                                       \
+        'notify_classes=bounce'                                         \
+        "bounce_notice_recipient=$BOUNCE_RECIPIENT"                     \
+        'internal_mail_filter_classes = bounce'                         \
+        "header_checks=regexp:$HEADER_REWRITE"; do
+        if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
+            echo "$OPTION" >> "$PF_OUT"
+        fi
+    done
+
+    if ! [ -f "$HEADER_REWRITE" ] || ! grep -q "^/^Subject: Undelivered Mail Returned to Sender/ BCC $BOUNCE_RECIPIENT" "$HEADER_REWRITE"; then
+        echo "/^Subject: Undelivered Mail Returned to Sender/ BCC $BOUNCE_RECIPIENT" >> "$HEADER_REWRITE"
+    fi
+
+    LAST_CONFIG="$(xmlstarlet sel -t -m "DeploymentRecords/Deployment[@deployed = 'true' and @state = 'Succeeded']" -v @file -n "$DEPLOYMENT_HISTORY" 2>/dev/null | head -1)"
+
+    if [ -z "$LAST_CONFIG" ]; then
+        echo 'Cannot determine last config file'
+        return 1
+    fi
+
+    COUNT_ROUTE="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable" -v @count "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$COUNT_ROUTE" ]; then
+        echo 'Cannot determine route count'
+        return 2
+    fi
+
+    UUID_EMPTY="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Empty Senders']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$UUID_EMPTY" ]; then
+        echo "Cannot find 'Empty Sender' UUID"
+        return 3
+    fi
+
+    UUID_ANYONE="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Anyone']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$UUID_ANYONE" ]; then
+        echo "Cannot find 'Anyone' UUID"
+        return 4
+    fi
+
+    UUID_DROP="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Drop" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$UUID_ANYONE" ]; then
+        echo "Cannot find 'Anyone' UUID"
+        return 5
+    fi
+
+    INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$INFO_DEPLOYMENT" ]; then
+        echo 'Deployment info is empty'
+        return 6
+    fi
+
+    COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY" 2>/dev/null)"
+
+    if [ -z "$COUNT_DEPLOYMENT" ]; then
+        echo 'Deployment count is empty'
+        return 7
+    fi
+
+    CONFIG_UUID="$(uuidgen)"
+    FILE_CONFIG="/var/cs-gateway/deployments/$CONFIG_UUID.xml"
+
+    cp -f "$LAST_CONFIG" "$FILE_CONFIG"
+
+    if [ -z "$(xmlstarlet sel -t -m "Configuration/DisposalCollection/MessageArea[@name = '$NAME_DISPOSAL']" -v @name "$FILE_CONFIG" 2>/dev/null)" ]; then
+        UUID_DISPOSAL="$(uuidgen)"
+        sed -i "s/<\/DisposalCollection>/<MessageArea auditorNotificationAuditor=\"admin\" auditorNotificationAuditorAddress=\"\" auditorNotificationEnabled=\"false\" auditorNotificationpwdOtherAddress=\"\" auditorNotificationPlainBody=\"A message was released by %RELEASEDBY% which violated the policy %POLICYVIOLATED%. A version of the email has been attached.\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" auditorNotificationSender=\"admin\" auditorNotificationSubject=\"A message which violated policy %POLICYVIOLATED% has been released.\" delayedReleaseDelay=\"15\" expiry=\"30\" name=\"$NAME_DISPOSAL\" notificationEnabled=\"false\" notificationOtherAddress=\"\" notificationPlainBody=\"A message you sent has been released by the administrator\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" notificationSender=\"admin\" notificationSubject=\"A message you sent has been released\" notspam=\"true\" pmm=\"false\" releaseRate=\"10000\" releaseScheduleType=\"throttle\" scheduleEnabled=\"false\" system=\"false\" uuid=\"$UUID_DISPOSAL\"><PMMAddressList\/><WeeklySchedule mode=\"ONE_HOUR\"><DailyScheduleList><DailySchedule day=\"1\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"2\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"3\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"4\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"5\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"6\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"7\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><\/DailyScheduleList><\/WeeklySchedule><\/MessageArea><\/DisposalCollection>/" "$FILE_CONFIG"
+    fi
+
+    if [ -z "$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = '$BOUNCE_RECIPIENT']" -v @name "$FILE_CONFIG" 2>/dev/null)" ]; then
+        UUID_ADDRESSLIST="$(uuidgen)"
+        sed -i "s/<AddressListTable>/<AddressListTable><AddressList name=\"$BOUNCE_RECIPIENT\" type=\"static\" uuid=\"$UUID_ADDRESSLIST\"><Address>$BOUNCE_RECIPIENT<\/Address><\/AddressList>/" "$FILE_CONFIG"
+    fi
+
+    if [ -z "$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable/Route[@domain = '$BOUNCE_DOMAIN']" -v @domain "$FILE_CONFIG" 2>/dev/null)" ]; then
+        sed -i "s/<RoutingTable count=\"$COUNT_ROUTE\">/<RoutingTable count=\"$(expr $COUNT_ROUTE + 1)\"><Route domain=\"$BOUNCE_DOMAIN\" routingType=\"SERVER\" tlsEndpointUuid=\"00000000-0000-0000-0000-000000000000\"><SmtpAuth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"\/><Server address=\"127.0.0.1\" allowUntrusted=\"true\" port=\"2525\" requireSecure=\"false\" uuid=\"$(uuidgen)\"\/><MtaGroup mtaGroupUuid=\"00000000-0000-0000-0000-000000000000\" port=\"25\"\/><\/Route>/" "$FILE_CONFIG"
+    fi
+
+    if [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyApplication/Policy[@disposal = '$UUID_DISPOSAL']" -v @disposal "$FILE_CONFIG" 2>/dev/null)" ]; then
+        sed -i "s/<Policy corePolicy=/<Policy corePolicy=\"false\" count=\"0\" crypto=\"UNDEFINED\" disposal=\"$UUID_DISPOSAL\" enable=\"true\" routeTypes=\"EmailGateway\" siteSpecific=\"false\" uuid=\"$(uuidgen)\"><RouteList><RouteItem uuid=\"$(uuidgen)\"><target>$UUID_ADDRESSLIST<\/target><source>$UUID_EMPTY<\/source><\/RouteItem><\/RouteList><Encryption decrypt=\"false\" extractKeys=\"SMIME\" extractKeysEnabled=\"false\" mike=\"false\" mikeLanguage=\"en\" mikeMode=\"EXTERNAL\" ocspEnabled=\"false\" securely=\"false\" smartDomainSigning=\"false\" summaryDecrypt=\"false\" summaryVerify=\"false\"\/><\/Policy><Policy corePolicy=\"false\" count=\"0\" crypto=\"UNDEFINED\" disposal=\"$UUID_DROP\" enable=\"true\" routeTypes=\"EmailGateway\" siteSpecific=\"false\" uuid=\"$(uuidgen)\"><RouteList><RouteItem uuid=\"$(uuidgen)\"><target>$UUID_ADDRESSLIST<\/target><source>$UUID_ANYONE<\/source><\/RouteItem><\/RouteList><Encryption decrypt=\"false\" extractKeys=\"SMIME\" extractKeysEnabled=\"false\" mike=\"false\" mikeLanguage=\"en\" mikeMode=\"EXTERNAL\" ocspEnabled=\"false\" securely=\"false\" smartDomainSigning=\"false\" summaryDecrypt=\"false\" summaryVerify=\"false\"\/><\/Policy><Policy corePolicy=/" "$FILE_CONFIG"
+    fi
+
+    CONFIG_WHEN="$(date +%s)000"
+    CONFIG_WHENDESC="$(date +'%d %B %Y %T %Z')"
+
+    sed -i "s/<DeploymentRecords count=\"$COUNT_DEPLOYMENT\">/<DeploymentRecords count=\"$(expr $COUNT_DEPLOYMENT + 1)\"><Deployment admin=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $1}')\" adminName=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $2}')\" deployed=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $3}')\" file=\"$(echo $FILE_CONFIG | sed 's/\//\\\//g')\" host=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $5}')\" ip=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $6}')\" planned=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $7}')\" pushSummaryStatus=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $8}')\" reason=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $9}')\" remote=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $10}')\" sourceHost=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $11}')\" state=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $12}')\" uuid=\"$CONFIG_UUID\" when=\"$CONFIG_WHEN\" whenDesc=\"$CONFIG_WHENDESC\"><Progress current=\"89\" total=\"90\"\/><Log>log<\/Log><Detail>Generated with archive_bounces.sh<\/Detail><PeerAppliances\/><ReferencePeers imageManager=\"none\" trustedSenders=\"none\"\/><SelectedAreas maintenance=\"false\" network=\"false\" peers=\"false\" pmm=\"false\" policy=\"false\" proxy=\"false\" reports=\"false\" systemConfig=\"false\" tlsCertificates=\"false\" users=\"false\"\/><\/Deployment>/" "$DEPLOYMENT_HISTORY"
+
+    chown cs-tomcat:cs-adm "$FILE_CONFIG"
+    chmod g+w "$FILE_CONFIG"
+
+    cs-servicecontrol restart tomcat &>/dev/null
+}
+# setup bounce archive
+# parameters:
+# none
+# return values:
+# none
+setup_bounce() {
+    exec 3>&1
+    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'Bounce recipient domain' --inputbox 'Enter domain for bounce recipient' 0 50 '' 2>&1 1>&3)"
+    RET_CODE="$?"
+    exec 3>&-
+
+    if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
+        RESULT="$(archive_bounces "$DIALOG_RET")"
+        [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error setting up bounce archive' --clear --msgbox "Error: $RESULT" 0 0
+    fi
 }
 # adjust Tomcat maximum heap memory size
 # parameters:
@@ -3134,6 +3267,7 @@ dialog_clearswift() {
     DIALOG_RULE='Import policy rule'
     DIALOG_SAMPLE='Email sample config'
     DIALOG_POLICY='Generate base policy'
+    DIALOG_BOUNCE='Setup bounce archive'
     DIALOG_TOMCAT='Tomcat maximum memory size'
     DIALOG_TIMEOUT='Web GUI timeout'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
@@ -3154,6 +3288,7 @@ dialog_clearswift() {
             "$DIALOG_RULE" ''                                                                      \
             "$DIALOG_SAMPLE" ''                                                                    \
             "$DIALOG_POLICY" ''                                                                    \
+            "$DIALOG_BOUNCE" ''                                                                    \
             "$DIALOG_TOMCAT" ''                                                                    \
             "$DIALOG_TIMEOUT" ''                                                                   \
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
@@ -3188,6 +3323,8 @@ dialog_clearswift() {
                     email_sample;;
                 "$DIALOG_POLICY")
                     generate_policy;;
+                "$DIALOG_BOUNCE")
+                    setup_bounce;;
                 "$DIALOG_TOMCAT")
                     tomcat_memory;;
                 "$DIALOG_TIMEOUT")
