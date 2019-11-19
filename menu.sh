@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.80.0 for Clearswift SEG >= 4.8
+# menu.sh V1.81.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -2399,9 +2399,16 @@ archive_bounces() {
         fi
     done
 
-    if ! [ -f "$HEADER_REWRITE" ] || ! grep -q "^/^Subject: Undelivered Mail Returned to Sender/ BCC $BOUNCE_RECIPIENT" "$HEADER_REWRITE"; then
-        echo "/^Subject: Undelivered Mail Returned to Sender/ BCC $BOUNCE_RECIPIENT" >> "$HEADER_REWRITE"
+    HOST_NAME="$(hostname)"
+
+    if ! [ -f "$HEADER_REWRITE" ] || ! grep -q "^/^Subject: Undelivered Mail Returned to Sender from $HOST_NAME/ BCC $BOUNCE_RECIPIENT" "$HEADER_REWRITE"; then
+        echo "/^Subject: Undelivered Mail Returned to Sender from $HOST_NAME/ BCC $BOUNCE_RECIPIENT" >> "$HEADER_REWRITE"
     fi
+
+    grep -q -F '/^X-NEXT-HOP\:\s+(\S+)\s+([0-9]+)\s*$/ FILTER smtp:[${1}]:${2}' "$HEADER_REWRITE" || echo '/^X-NEXT-HOP\:\s+(\S+)\s+([0-9]+)\s*$/ FILTER smtp:[${1}]:${2}' >> "$HEADER_REWRITE"
+    grep -q -F '/^X-NEXT-HOP\:\s+(\S+)\s*$/ FILTER smtp:[${1}]:25' "$HEADER_REWRITE" || echo '/^X-NEXT-HOP\:\s+(\S+)\s*$/ FILTER smtp:[${1}]:25' >> "$HEADER_REWRITE"
+
+    sed -i "s/^Subject: Undelivered Mail Returned to Sender$/^Subject: Undelivered Mail Returned to Sender from $HOST_NAME/" /etc/postfix-outbound/bounce.cf
 
     LAST_CONFIG="$(xmlstarlet sel -t -m "DeploymentRecords/Deployment[@deployed = 'true' and @state = 'Succeeded']" -v @file -n "$DEPLOYMENT_HISTORY" 2>/dev/null | head -1)"
 
