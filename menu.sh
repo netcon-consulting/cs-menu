@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.81.0 for Clearswift SEG >= 4.8
+# menu.sh V1.82.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -297,18 +297,8 @@ install_rspamd() {
             cat $DIR_RULES/*.cf > "$FILE_RULES"
         fi
     fi
-    PACKED_SCRIPT='
-    H4sIAAlQq1wAA0svyi8tUFAqzkzPSywpLUotVlKo5lIAAr3MvOSc0pRUjZKiStuSotJUa4WCosz8
-    osySSltDa4WU0oKczOTEklTb3NSi9FRNBSUVH39nR594Z38/NxfPIP2c/OTEHL0UfYTJ8ekgu/SS
-    8/PSlAhbYYBpZH5ZalFRZkoqblNruQCAjCEi0AAAAA==
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/groups.conf
-    PACKED_SCRIPT='
-    H4sIAK1Pq1wAA7WOPQ7CMAyF957CygEYkJgQAyegygabG0xiNU1QbKgK6t0JKmJn4G3vR3qfTEOX
-    o8AOng1UmfZ4OljzcW+NxD5oHaxXm+03PZO4wlflnGplXCDXw0Ai6AmEfUK9FRJAj5xEQQNBOz1y
-    AZdjxC4XVL4TXDgqFU4eEumYS2+Wj3mhsfu/0Vj8hWZuXk2fo04qAQAA
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/rspamd/local.d/signatures_group.conf
+    echo 'group "signatures" {'$'\n\t''.include(try=true; priority=1; duplicate=merge) "$LOCAL_CONFDIR/local.d/signatures_group.conf"'$'\n\t''.include(try=true; priority=10) "$LOCAL_CONFDIR/override.d/signatures_group.conf"'$'\n''}' > /etc/rspamd/local.d/groups.conf
+    echo 'symbols = {'$'\n\t''"PYZOR" {'$'\n\t\t''weight = 2.5;'$'\n\t\t''description = "check message signatures against the Pyzor collaborative filtering network";'$'\n\t''}'$'\n\t''"RAZOR" {'$'\n\t\t''weight = 2.5;'$'\n\t\t''description = "check message signatures against the Razor collaborative filtering network";'$'\n\t''}'$'\n''}' > /etc/rspamd/local.d/signatures_group.conf
     printf '%s' $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     get_keypress
 }
@@ -576,9 +566,9 @@ enable_rspamd() {
     if [ -f "$MAP_CLIENT" ]; then
         CLIENT_REJECT="$(postmulti -i postfix-inbound -x postconf -n | grep '^cp_client_' | grep 'REJECT' | awk '{print $1}')"
         if [ -z "$CLIENT_REJECT" ]; then
-            LIST_IP="$(awk '{print $1}' $MAP_CLIENT | sort -u | xargs)"
+            LIST_IP="$(awk '{print $1}' $MAP_CLIENT | grep -E '^[0-9.]+$' | sort -u | xargs)"
         else
-            LIST_IP="$(awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $MAP_CLIENT | sort -u | xargs)"
+            LIST_IP="$(awk "\$2 != \"$CLIENT_REJECT\" {print \$1}" $MAP_CLIENT | grep -E '^[0-9.]+$' | sort -u | xargs)"
         fi
         LIST_IPADDR=''
         for IP_ADDR in $LIST_IP; do
@@ -3154,6 +3144,7 @@ write_examples() {
         echo '# sender dependent milter bypass #' >> "$MILTER_BYPASS"
         echo '##################################' >> "$MILTER_BYPASS"
         echo '#127.0.0.0/8    DISABLE' >> "$MILTER_BYPASS"
+        echo '#127.0.0.0/8    inet:127.0.0.1:19127' >> "$MILTER_BYPASS"
     fi
 }
 ###################################################################################################
@@ -3275,7 +3266,7 @@ dialog_clearswift() {
     DIALOG_RULE='Import policy rule'
     DIALOG_SAMPLE='Email sample config'
     DIALOG_POLICY='Generate base policy'
-    DIALOG_BOUNCE='Setup bounce archive'
+    DIALOG_BOUNCE='Setup bounce quarantine'
     DIALOG_TOMCAT='Tomcat maximum memory size'
     DIALOG_TIMEOUT='Web GUI timeout'
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
