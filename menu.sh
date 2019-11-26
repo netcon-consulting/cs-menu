@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.83.0 for Clearswift SEG >= 4.8
+# menu.sh V1.84.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -33,6 +33,7 @@
 # - install external commands including corresponding policy rules
 # - generate base policy configuration
 # - setup outbound-bounce archive
+# - LDAP-sync monitoring
 #
 # Postfix settings
 # - Postscreen weighted blacklists and bot detection for Postfix
@@ -62,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - added option for monitoring LDAP-sync to 'Clearswift config' submenu.
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -141,6 +142,7 @@ CRON_SENDER='/etc/cron.daily/sender_whitelist.sh'
 CRON_BACKUP='/etc/cron.daily/email_backup.sh'
 CRON_RULES='/etc/cron.daily/update_rules.sh'
 CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
+CRON_LDAP='/etc/cron.hourly/ldap_watchdog.sh'
 MD5_RSPAMD='7ba3f694eed8e0015bdf605f9618424b'
 BACKUP_IN='/root/inbound-main.cf'
 BACKUP_OUT='/root/outbound-main.cf'
@@ -2650,6 +2652,55 @@ toggle_backup() {
         fi
     fi
 }
+# toggle LDAP-sync monitoring
+# parameters:
+# none
+# return values:
+# none
+toggle_ldap() {
+    PACKED_SCRIPT='
+    H4sIABDh3F0AA5VVa2/iRhT97l9xM3F3cBJjyLZSN1tWQUC2SEAicLqtgCDHHrC1eGzNDHnskv/e
+    O8YGkxCptXjY43vPnPs4c4+PnPuIO/eeDA3jGJaBl84ePeWHQbKoyhD+qld/rdaMY3zXStJnES1C
+    BRXfgvNa/Xcbfz7BgKlWwuGWKyY4C2PG5T0TnlrxBXyN7/88A86Un3Abv3K1VBFfVP0kzjCbKxUm
+    4gL6nvChHTHxXTIOlbga5PeXB30tw2h3h7Neu3nToM6DJxxf2gtPsUfv2dExUMMdNgejm+uhO+tn
+    RgjjpIlU8+jJTlbqPlnxwFHC4zJNhKrGmU//psBUcerg4warfTtsut3rAUL93aAfazVqdPrNbm82
+    7LS6N93OwG3Q2ezV0mxGDcPt9juzwfW3BjErAfKD01+kRQyj1x25s0Gz32lQtJonAq66vQ5EHMzK
+    UoJZROdIhV7OCaxhIVgK9gPQpSeVSa3PECQG4DVym25Hb+A9fgca6+JVzNoZbHwbpDL27B/TE4s4
+    Z+BZ8DMVEVfgjevTFwrE1BsT5KShMrru8J9DaHpbV0Qs0Ig1+9P/QBzdtlqd0eg91NHK95mU/xk3
+    A47mMMa1gjGBo0bxmG9HYPoZVMh4Zl/yyRK2cYh4KhLMrJRoDet19r7CnlJRgGHxCNhYFuaHyd6G
+    a5AsACqd6uTnx8mL6TjUstB2odCs3DJviehLR7NpAZKDZwEirM6RfeUAzRNgDq5eaJ7P4to20GnD
+    pBNOD6T2j2YQ6Mh6kVTjuy/TE+7FWTvckfdzvGs8P2TBaskCx9wyJSUS88jI/4KEM8PA3B5h9uwf
+    CLIltx95YTLXacylVk6776nyGyuvaSGcK+ttInc6IqNn7uPxANoXlhgzzL0I+QOq64LkSdoxM7YY
+    7WsU7qCkZbIt9itJk6I25JLsqnO+V5zco9dEEe1Wi6jLh5IO/cOHPQezkqmc3JmvSQF5675hU+ax
+    bR6g48kEP9MpfY9oXqvd9gf5BNECTiWe0QpOeRJwKZkP8ZPulFcMM0FoO5sLvFWYfLDrB0iWOGSC
+    fEvjgFo2BWl5nCcKAoajJo44g1jvItjSe96XB3uKFNS3S2wp2QG4cqOuN1i2xNTpFrK/5VNwCrqz
+    Nm216SgK9ghkrNJGmffF+W8ofoEnRYhjRmvNutzdgx1YBxqqLKftfdHv8KUsB6Ns5iSpKs88PcPx
+    UTLxEPkMh6USiU4MjgCsiJ5iBrr+Cz+6v27tBwAA
+    '
+    if [ -f "$CRON_LDAP" ]; then
+        STATUS_CURRENT='enabled'
+        STATUS_TOGGLE='Disable'
+    else
+        STATUS_CURRENT='disabled'
+        STATUS_TOGGLE='Enable'
+    fi
+    $DIALOG --backtitle 'Clearswift Configuration' --title 'Toggle LDAP-sync monitoring' --yesno "LDAP-sync monitoring $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    if [ "$?" = 0 ]; then
+        if [ $STATUS_CURRENT = 'disabled' ]; then
+            exec 3>&1
+            DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'LDAP-sync monitoring' --inputbox 'Enter email for alert notification' 0 50 $EMAIL_DEFAULT 2>&1 1>&3)"
+            RET_CODE=$?
+            exec 3>&-
+            if [ $RET_CODE = 0 ] && [ ! -z "$DIALOG_RET" ]; then
+                printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > $CRON_LDAP
+                sed -i "s/__EMAIL_RECIPIENT__/$DIALOG_RET/" $CRON_LDAP
+                chmod 700 $CRON_LDAP
+            fi
+        else
+            rm -f $CRON_LDAP
+        fi
+    fi
+}
 # add zone name and IP in dialog inputbox
 # parameters:
 # none
@@ -3272,6 +3323,7 @@ dialog_clearswift() {
     DIALOG_TOGGLE_PASSWORD='CS admin password check'
     DIALOG_TOGGLE_CLEANUP='Mqueue cleanup'
     DIALOG_TOGGLE_BACKUP='Email config backup'
+    DIALOG_TOGGLE_LDAP='LDAP-sync monitoring'
     while true; do
         exec 3>&1
         DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"                                    \
@@ -3293,6 +3345,7 @@ dialog_clearswift() {
             "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
             "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
             "$DIALOG_TOGGLE_BACKUP" ''                                                             \
+            "$DIALOG_TOGGLE_LDAP" ''                                                               \
             2>&1 1>&3)"
         RET_CODE=$?
         exec 3>&-
@@ -3334,6 +3387,8 @@ dialog_clearswift() {
                     toggle_cleanup;;
                 "$DIALOG_TOGGLE_BACKUP")
                     toggle_backup;;
+                "$DIALOG_TOGGLE_LDAP")
+                    toggle_ldap;;
             esac
         else
             break
