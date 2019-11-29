@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.84.0 for Clearswift SEG >= 4.8
+# menu.sh V1.85.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -2400,7 +2400,7 @@ archive_bounces() {
     grep -q -F '/^X-NEXT-HOP\:\s+(\S+)\s+([0-9]+)\s*$/ FILTER smtp:[${1}]:${2}' "$HEADER_REWRITE" || echo '/^X-NEXT-HOP\:\s+(\S+)\s+([0-9]+)\s*$/ FILTER smtp:[${1}]:${2}' >> "$HEADER_REWRITE"
     grep -q -F '/^X-NEXT-HOP\:\s+(\S+)\s*$/ FILTER smtp:[${1}]:25' "$HEADER_REWRITE" || echo '/^X-NEXT-HOP\:\s+(\S+)\s*$/ FILTER smtp:[${1}]:25' >> "$HEADER_REWRITE"
 
-    sed -i "s/^Subject: Undelivered Mail Returned to Sender$/^Subject: Undelivered Mail Returned to Sender from $HOST_NAME/" /opt/cs-gateway/postfix/postfix-outbound/bounce.cf.default
+    sed -i "s/^Subject: Undelivered Mail Returned to Sender$/Subject: Undelivered Mail Returned to Sender from $HOST_NAME/" /opt/cs-gateway/postfix/postfix-outbound/bounce.cf.default
 
     LAST_CONFIG="$(xmlstarlet sel -t -m "DeploymentRecords/Deployment[@deployed = 'true' and @state = 'Succeeded']" -v @file -n "$DEPLOYMENT_HISTORY" 2>/dev/null | head -1)"
 
