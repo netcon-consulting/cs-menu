@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# wildfire_scan.sh V1.1.0
+# wildfire_scan.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -79,6 +79,8 @@ while true; do
     fi
 
     case "$VERDICT_RESULT" in
+        '-100')
+            ;;
         '-101' | '-102' | '-103')
             write_log 'Verdict result error'
             exit 99;;
