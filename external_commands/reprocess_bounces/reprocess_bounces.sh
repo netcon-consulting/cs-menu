@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# reprocess_bounces.sh V1.0.0
+# reprocess_bounces.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -55,16 +55,40 @@ fi
 
 SUBJECT="$(get_header "$1" 'subject')"
 
-if ! echo "$SUBJECT" | grep -q 'Undelivered Mail Returned to Sender'; then
-    SENDER="$(get_header "$1" 'return-path' | awk 'match($0, /<([^]]+)>/, a) {print a[1]}')"
-    RECIPIENT="$(get_header "$1" 'received' | awk 'match($0, /from.*by.*for <([^]]+)>;/, a) {print a[1]}')"
+if echo "$SUBJECT" | grep -q 'Undelivered Mail Returned to Sender'; then
+    CONTENT_TYPE="$(get_header "$1" 'content-type')"
 
-    if [ -z "$RECIPIENT" ]; then
-        echo 'Cannot determine recipient'
+    if [ -z "$CONTENT_TYPE" ]; then
+        write_log 'Content type is empty'
         exit 99
     fi
 
-    /usr/sbin/sendmail.postfix -f "$SENDER" "$RECIPIENT" < "$1"
+    BOUNDARY="$(echo "$CONTENT_TYPE" | awk 'match($0, /boundary="([^"]+)"/, a) {print a[1]}')"
+
+    if [ -z "$BOUNDARY" ]; then
+        write_log 'Boundary is empty'
+        exit 99
+    fi
+
+    LIST_RECIPIENT="$(sed -n "/^Content-Description: Delivery report$/,/^--$(echo "$BOUNDARY" | sed 's/\//\\\//g')$/p" "$1" | awk 'match($0, /Final-Recipient: rfc822; (.+)/, a) {print a[1]}')"
+
+    if [ -z "$LIST_RECIPIENT" ]; then
+        write_log 'Recipient list is empty'
+        exit 99
+    fi
+
+    MESSAGE="$(sed -n "/^Content-Description: Undelivered Message$/,/^--$(echo "$BOUNDARY" | sed 's/\//\\\//g')--$/p" "$1" | sed -n "/^Return-Path: <[^>]*>$/,/^--$(echo "$BOUNDARY" | sed 's/\//\\\//g')--$/p" | head -n -1)"
+
+    if [ -z "$MESSAGE" ]; then
+        write_log 'Message is empty'
+        exit 99
+    fi
+
+    SENDER="$(echo "$MESSAGE" | grep '^Return-Path: <\S*>$' | awk 'match($0, /^Return-Path: <([^>]+)>$/, a) {print a[1]}')"
+
+    for RECIPIENT in $LIST_RECIPIENT; do
+       echo "$MESSAGE" | /usr/sbin/sendmail.postfix -f "$SENDER" "$RECIPIENT"
+    done
 
     exit 1
 fi
