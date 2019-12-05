@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.85.0 for Clearswift SEG >= 4.8
+# menu.sh V1.86.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option for monitoring LDAP-sync to 'Clearswift config' submenu.
+# - fixed bounce messages not including original mails
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2380,12 +2380,19 @@ archive_bounces() {
 
     BOUNCE_DOMAIN="bounces.$1"
     BOUNCE_RECIPIENT="bounces@$BOUNCE_DOMAIN"
+    MESSAGE_SIZE="$(postmulti -i postfix-inbound -x postconf message_size_limit | sed -E 's/message_size_limit = ?//')"
+
+    if [ -z "$MESSAGE_SIZE" ]; then
+        echo 'Cannot determine message size limit'
+        return 1
+    fi
 
     for OPTION in                                                       \
         'notify_classes=bounce'                                         \
         "bounce_notice_recipient=$BOUNCE_RECIPIENT"                     \
         'internal_mail_filter_classes = bounce'                         \
-        "header_checks=regexp:$HEADER_REWRITE"; do
+        "header_checks=regexp:$HEADER_REWRITE"                          \
+        "bounce_size_limit=$MESSAGE_SIZE"; do
         if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
             echo "$OPTION" >> "$PF_OUT"
         fi
@@ -2406,49 +2413,49 @@ archive_bounces() {
 
     if [ -z "$LAST_CONFIG" ]; then
         echo 'Cannot determine last config file'
-        return 1
+        return 2
     fi
 
     COUNT_ROUTE="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable" -v @count "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$COUNT_ROUTE" ]; then
         echo 'Cannot determine route count'
-        return 2
+        return 3
     fi
 
     UUID_EMPTY="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Empty Senders']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$UUID_EMPTY" ]; then
         echo "Cannot find 'Empty Sender' UUID"
-        return 3
+        return 4
     fi
 
     UUID_ANYONE="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Anyone']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$UUID_ANYONE" ]; then
         echo "Cannot find 'Anyone' UUID"
-        return 4
+        return 5
     fi
 
     UUID_DROP="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Drop" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$UUID_ANYONE" ]; then
         echo "Cannot find 'Anyone' UUID"
-        return 5
+        return 6
     fi
 
     INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
 
     if [ -z "$INFO_DEPLOYMENT" ]; then
         echo 'Deployment info is empty'
-        return 6
+        return 7
     fi
 
     COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY" 2>/dev/null)"
 
     if [ -z "$COUNT_DEPLOYMENT" ]; then
         echo 'Deployment count is empty'
-        return 7
+        return 8
     fi
 
     CONFIG_UUID="$(uuidgen)"
