@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.86.0 for Clearswift SEG >= 4.8
+# menu.sh V1.87.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - fixed bounce messages not including original mails
+# - added Postfix feature for disabling address verify negative cache
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -960,6 +960,31 @@ disable_office365() {
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
 }
+# enable address verify negative cache disabled
+# parameters:
+# none
+# return values:
+# none
+enable_verify() {
+    for OPTION in                                                                                       \
+        "address_verify_negative_cache=no"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable address verify negative cache disabled
+# parameters:
+# none
+# return values:
+# none
+disable_verify() {
+    for OPTION in                                                                   \
+        "address_verify_negative_cache=no"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+}
 # enable Postscreen
 # parameters:
 # none
@@ -1211,6 +1236,19 @@ check_enabled_office365() {
         echo off
     fi
 }
+# check whether address verify negative cache disabled is enabled
+# parameters:
+# none
+# return values:
+# Office365 IP range whitelisting status
+check_enabled_verify() {
+    if [ -f "$PF_IN" ]                                                                              \
+        && grep -q "address_verify_negative_cache=no" "$PF_IN"; then
+        echo on
+    else
+        echo off
+    fi
+}
 # check whether Postscreen is enabled
 # parameters:
 # none
@@ -1273,9 +1311,10 @@ dialog_feature_postfix() {
     DIALOG_BOUNCE_IN='Inbound-Bounce'
     DIALOG_BOUNCE_OUT='Outbound-Bounce'
     DIALOG_OFFICE365='Office365 IP-range whitelisting'
+    DIALOG_VERIFY='Address verify negative cache disabled'
     DIALOG_POSTSCREEN='Postscreen'
     DIALOG_POSTSCREEN_DEEP='PS Deep'
-    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing milter_bypass bounce_in bounce_out office365 postscreen postscreen_deep; do
+    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing milter_bypass bounce_in bounce_out office365 verify postscreen postscreen_deep; do
         declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     [ "$STATUS_BOUNCE_IN" = 'on' ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_IN=''
@@ -1292,6 +1331,7 @@ dialog_feature_postfix() {
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" '' "$STATUS_BOUNCE_IN")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" '' "$STATUS_BOUNCE_OUT")
     ARRAY_ENABLE+=("$DIALOG_OFFICE365" '' "$STATUS_OFFICE365")
+    ARRAY_ENABLE+=("$DIALOG_VERIFY" '' "$STATUS_VERIFY")
     ARRAY_ENABLE+=("$DIALOG_POSTSCREEN" '' "$STATUS_POSTSCREEN")
     ARRAY_ENABLE+=("$DIALOG_POSTSCREEN_DEEP" '' "$STATUS_POSTSCREEN_DEEP")
     exec 3>&1
@@ -1432,6 +1472,18 @@ dialog_feature_postfix() {
         else
             if [ "$STATUS_OFFICE365" = 'on' ]; then
                 disable_office365
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_VERIFY"; then
+            if [ "$STATUS_VERIFY" = 'off' ]; then
+                enable_verify
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''Address verify negative cache disabled'
+        else
+            if [ "$STATUS_VERIFY" = 'on' ]; then
+                disable_verify
                 APPLY_NEEDED=1
             fi
         fi

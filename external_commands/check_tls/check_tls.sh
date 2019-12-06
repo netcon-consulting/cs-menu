@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_tls.sh V1.0.0
+# check_tls.sh V1.1.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -11,8 +11,8 @@
 # 1 - TLS not supported
 # 99 - unrecoverable error
 
-EXPIRE_VALID=5184000 # 60 days
-EXPIRE_INVALID=86400 # 24 hours
+EXPIRE_VALID=86400  # 24 hours
+EXPIRE_INVALID=3600 # 1 hour
 TIMEOUT=3
 TLS_LOG="/var/log/cs-gateway/tls-$(date +%Y-%m-%d).log"
 
@@ -60,7 +60,7 @@ for SERVER in $LIST_SERVER; do
         fi
     else
         # Already got a response
-        if [ "$REDIS_RES" = '1' ]]; then
+        if [ "$REDIS_RES" = '1' ]; then
             echo "[$(date)] Valid (DB): $DOMAIN_RECIPIENT: $SERVER" >> "$TLS_LOG"
             TLS_VALID=1
         else
