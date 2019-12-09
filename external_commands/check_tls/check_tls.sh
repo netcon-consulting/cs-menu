@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_tls.sh V1.1.0
+# check_tls.sh V1.2.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -48,7 +48,7 @@ for SERVER in $LIST_SERVER; do
 
     if [ "$REDIS_RES" == '(nil)' ] || [ "$REDIS_RES" == '' ]; then
         # Must check now
-        TLSCHECK_CONNECT="$(echo '' | timeout "$TIMEOUT" openssl s_client -showcerts -starttls smtp -connect "$SERVER":25 2>/dev/null)"
+        TLSCHECK_CONNECT="$(echo 'quit' | timeout "$TIMEOUT" openssl s_client -showcerts -starttls smtp -connect "$SERVER":25 2>/dev/null)"
 
         if echo "$TLSCHECK_CONNECT" | grep -q 'Verify return code: 0 (ok)'; then
             echo "[$(date)] Valid: $DOMAIN_RECIPIENT: $SERVER" >> "$TLS_LOG"
