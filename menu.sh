@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.87.0 for Clearswift SEG >= 4.8
+# menu.sh V1.88.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,9 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added Postfix feature for disabling address verify negative cache
+# - moved installation option for Pyzor & Razor to submenu 'Install feature'
+# - removed installation option for zbar
+# - for setup of bounce quarantine extract domain name from Postfix config
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -304,6 +306,131 @@ install_rspamd() {
     printf '%s' $RSPAMD_SCRIPT | base64 -d | gunzip > /etc/init.d/rspamd
     get_keypress
 }
+# install Pyzor and Razor plugins for Rspamd
+# parameters:
+# none
+# return values:
+# none
+install_pyzorrazor() {
+    if check_installed_pyzorrazor; then
+        confirm_reinstall 'Pyzor & Razor' || return
+    fi
+
+    clear
+    yum install -y python34-setuptools python34-devel perl-Razor-Agent
+    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
+    pip3 install pyzor
+    PACKED_SCRIPT='
+    H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
+    95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
+    93eH37LB6MM2lsXKykh5+/nLzftaKXdGE6MjSqRY59kiA7PiRbFCZXA99rzzc3YFa14WhmkwJheZ
+    ruDJOlttpDbEO529CCP8m/od5U4qUs5fzp8Sz71/+9FfMH+GVhPmX8oU7DGK6Pjp7fmlLIUhUeT0
+    1Wn+lI4fNgp46s7Pps9JdJXzjAQ3b/yHOgTrUiQml4IlG0ju3MMDw/Xd2GP4GxrFASg1YSk33BnQ
+    L18zlDKzAdHIHJjSEaLul6VEFygbgCFAmVQLdqbRL/we93AKTKlaKhCpN6BMIS6zbXA9YY53RA4R
+    3QglGGKFYQ+sk5iRFktv2XGlbfFgQYXuEIwHNvLOeoVGzmBh/60q3uEFnTAIaRD8T5GwEbD8SIVP
+    1jspNPxHSAY+E0PrMFWljH9AYh49br/JDRS5NpCivZGi3MYYA8J/bavq+xCmgMrzGKYBDLOUi7Vs
+    3puQ1fJMs32xtG+sCSddjzok2Ejv+B20Ws0sB+OsyI0pgMW5Cfvmhxgo+ApGGs1i7D9M9Z4f0GWs
+    lD5ZLlDIE8s56dLEJd5hWAEcC9VscjTVTMst4LfI2hs7EWk+z7uPGaZoD3m2oQ6PvG7RNOCLJZtG
+    0ePqaXDTcN6WQKFhAJ7NT2JnJ8GnsdEp6JRxkfbrCt94gi8KZ8dLGYkro4tjBFRKixzbRJkV1h7O
+    2KA7sCcVeMJcg4ZrqbbcBHXtpbb20r/W3vjRyGmcq3vATa8lu29M/cvXry7ffBN+W0PWTepAXBEG
+    BLag0z3UXEdnmI/c6kDDwG2kqhVwX4XVvcF97wrqREI2wmq51HumVVSLpd4xrUJvSpPKvSAqVUKr
+    oNFWLU/oMmEUipgndHcSu0eNPRslTJ3dj03SKkFoveqlsrMIG4sm3F2o9fsRtHpNY9HPVH87K8go
+    t2rl6qQTQcG3gCy9+jn6zHYvTrwn5rAj1Kg2GKEsU7Kk0TvSeSY4zmnQoyY02C3dpLuR6OMY3Mq0
+    xBlGG8P5ijgqzWsXzz/X6mWbBAkAAA==
+    '
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
+    if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^pyzor { }$' "$CONFIG_LOCAL"; then
+        echo 'pyzor { }' >> "$CONFIG_LOCAL"
+    fi
+    groupadd pyzorsocket
+    useradd -g pyzorsocket pyzorsocket
+    mkdir -p /opt/pyzorsocket/bin/
+    PACKED_SCRIPT='
+    H4sIAGtBq1wAA3VUTY/TMBC951eYcHFEcYW4VeoBuistQitVtDdAloknrVvHDnba3YL474w/mmZL
+    8SX2eN6b8byZvH41PXg3/aHMtDv1W2veF6rtrOuJcJtOOA/nM7RCaRZN7spmtapPZ5v1593OW1M0
+    zrbE23oPPQKP4Ei+XS+Wq2iYkPXWgZDKbB7V8yczIasez+0X+HkA3z8IIzWGPLN2p1/WsVorMP1L
+    m1Qb9C+KotbCe/IST2+RVrOiILgkNGQbTdSDbtBM8qpbSeYkGJlrlAYWMtXKAK2YhNpK3HydvX33
+    fUCoJoHmpFw83C8+lxeysCJVisXrLdR7Wg33oD3c8H5yqgceqkl/l+CcdeWMlAezN/bJkNq2LdKV
+    f6rrt2T+qxclBfFRY0HZx1MPfhn3NOk5H4vLVo/r5SXR1m+QIEPjh15KlPOIuURFgutIIHYnenEX
+    txgMqSp2FPoAl5qHtAdQUpot4gernh6VqEah/qnUfkaOpLGO7Ce4USbRMnRoPa3G1RqhAsuEyFG5
+    dphIuGLy0Haeyoq8IeU3U14Fjr0RieiOgUmNUQ29mDqdXjf6MAM5YIe+iAlJYfENzeYwipjGeSLZ
+    B7c5tFiNrJcEXzvV9cqaeXn/3FkPqXbEGiLy8JXVQMWElFxkDlriyZUTsgXdzeMBMOHeEq1QIIMc
+    /4eG4RugcRJv43zOPvVKIEAJkgAhIN7SYAvs+DtQSB2PgbHKft4d0S3XMfldzXJ0693poh1iWPzp
+    cOwDCMDk1CgjtL7l6HitsXwhuQIHmXMjWuA8TjPnQRPO80AngYq/7vjOR0EFAAA=
+    '
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
+    chown pyzorsocket:pyzorsocket /opt/pyzorsocket/bin/pyzorsocket.py
+    chmod 0700 /opt/pyzorsocket/bin/pyzorsocket.py
+    PACKED_SCRIPT='
+    H4sIAIFHp1wAA5VSYU/qMBT9bH/FdSwoL9nKNETFkBdj5ot5vGAGmqgxppTCGqDdazvfQ/G/uxU2
+    B+oHt0/33HPO7bltbRcPucBDomNUQzVIFs9SaUmnzNiaxlMqxZhP2uDBcQuCVgaOmKaKJ4ZL0d5U
+    QKIkZVoLMmebrazXl6miDMapoLkUZnyoiFr4yAfMDMVccOOPcNHXCEXh4Oas22miq6j3q7NX8dtD
+    3d7574vLbthx8BNReJbBWKdDvdDYzekOurq960X9jBYOHq/7YbRlgLQhyuw34AXB+mM0luAJcPp5
+    i4sJWKs2OCVlRNhcCv7MwEuz7tYIwDIxuDLGbrdS+8kCgoMjv5n9AbROWoel8zqs+7NE7sFdgeCx
+    v9CEB6jXwciUxuAW8TfOXhaKmVSJQo5e87Ay+SJrnBqbdST/iffAO1M+m+XXuYLAG4TRn0L83UOr
+    OXjj7x+aEs3AcQMHuLA0e2WNUmHLsjo9XXNkUqXI5CODmFQ3tmHFPthXtJ/O+tHY3Kdzrckke/mr
+    lb1YzTK3Wa5mLtczXt8fFPvPDQRVY6YJRRYuVvEGr04i2KYDAAA=
+    '
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
+    chmod +x /etc/init.d/pyzorsocket
+    chkconfig --add pyzorsocket
+    chkconfig pyzorsocket on
+    service pyzorsocket start
+    PACKED_SCRIPT='
+    H4sIAAdCq1wAA4VUTWvbQBA9R79iEQRLoJg4lxJDDiUtFAou5FgKYiWNPvBq191d0bih/70zu6uv
+    2KXywWLmzZuZNzMSquSCCdU0oNkT0/Bz6DSwWJsT76vcO+JIOJgtT1cwaI2jgDigP9b8t5pizLkv
+    lMidjZwvH79/exmd6mQNMXqiUsm6a/YN2JwLkaMzOaRRdHfHPkHNB2GZAWs72ZgQXtZN3ipjiXf3
+    8GF7j79dvHCelCbn4+7xYaywHmRpOyVZ2UJ59HUllptjGjF83oOKBLTOWMUt9wB6upqhldkW5GTz
+    waTWFn2vjjJDLVAswArRpvSe3Zo4o/d0FafBDnqmAllFMyXVo8GQ8hZ71dh/clGOB6AMpGR8WRlV
+    s++kAW1zxKKWyXIwGdtt79NrvVRQDE2fHDIWGnIJZigIA8v87dX0/yJrL7j+p+cgj1L9ki6hwn5Y
+    rVXPXBNGlUewQWPypxeK0v9izONwntjbBI2fv3x+/vpDxtlkcuLRVuKCWpA2Sb3vz8h1vTnk1mec
+    lq8O+3RovJZtyJu8rVLQgClyMobVHrd8doS1Hjd8dph2sBXJg1R6gCy6oU0JNwtLCmxfFLykpGUR
+    2kkjpw+O093lNMVg2Lp6VrNdHOCEmIRehrqKL0JDHxNiPaP1V0FD0xkLOvd7u9BO8h6QZbXP0Y09
+    n8i6GRvdoK3RaqA72piukRxvDszmuiTzt2HWZtzOMO9O1uo1iW8N61U1CGBSWeaLReIKd/DgBf0L
+    bFL70WMFAAA=
+    '
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
+    if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^razor { }$' "$CONFIG_LOCAL"; then
+        echo 'razor { }' >> "$CONFIG_LOCAL"
+    fi
+    groupadd razorsocket
+    useradd -g razorsocket razorsocket
+    mkdir -p /opt/razorsocket/bin/
+    PACKED_SCRIPT='
+    H4sIAHhCq1wAA31UUW/TMBB+Jr/CmIc6oktBvKBJfYBpaAhNqlh5GpPlJZfWm2MH29lWEP+ds+Ok
+    WdXhl9iXu+/O932+N68XnbOLW6kX7c5vjf6QyaY11hNhN62wDoYzNEKqIprsgc0oWe4Gm3HD7s4Z
+    Pexdd9taU4JzWW1NQ5wp78Ej1ANYknzWZ6uraJiT9daCqKTeXMqnr3pOrjyem+/wqwPnL4SuFBaR
+    ZaUSzpHnZnbMNz/NMoKrgppso4k5UDWaSVplU5ElCcbC1lJBEQpQUgPLiwpKU+Hm+vTk/c0YIes+
+    aEno2cX52Te6BwsrQvW5eLmF8p7l439QDo54P1rpgYe2sT8UrDWWnhLa6XttHjUpTdMgHP2bH94l
+    4R/cqKcKLzVlrvi88+BWcc964pZTFoury/VqX2jjNgiQQuOH7VuU6girRi/TgmZ04Zt2sb5cWfEb
+    y58T+kj3cOmKDGEL4bjzFilm+dShVAaTTKAtuE75wM0ooaIUSrFrOko3JjuJXQgpn9dwk2evpqQN
+    gEvy7hkHPQWR+77K29AqNnOtaGZzMvux/nLycZb/h8WXELYHACN9E8JD7JxUE/7u8M7hV1F1TetY
+    lZO3hP7UNHsx3V0BuldqPj6O/kWxwwc1vrWUsEVfjAlFoRo0S+YwBLCMYRYUn+yma0D7JKAKXGll
+    66XRS3r+1CJ1JDadGE1EeuSJ/4BRiKriImEwiqcgkS2odhkPyC3xhijpPGjEeDk0DIwxNE6P43Eu
+    Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
+    aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
+    '
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
+    chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
+    chmod 0700 /opt/razorsocket/bin/razorsocket.py
+    PACKED_SCRIPT='
+    H4sIAJxIq1wAA5VSXU/CMBR9tr/iOhYVk63MxKgYYoyZxojBDPRBY0wphTVAO9tORfG/uxU2B+qD
+    29M993z03ra2iftc4D7RMaqhGijyLpWWdMyMrWk8plIM+agJHhzuQ7CfgQOmqeKJ4VI0VxWQKEmZ
+    1oJM2Wor63VlqiiDYSpoLoUJ7yuiZj7yATNDMRfc+ANc9DVCUdi7O223Gugm6ly0tit+26jdObs6
+    v2yHLQe/EIUnGYx12tczjd2c7qDo9L4TdTNa2Hu67YbRmgHShiizU4cPBMuP0ViCJ8Dp5i0uRmCt
+    muCUlAFhUyn4OwMvBXc9ArBMDK7E2O1Waj+ZQbB34DeyP4Cj4GivdF4O656UyEMWYEHw2DM04BG2
+    tsDIlMbgFuOvnL0sFDOpEoUcfebDyuSPWePU2FkH8lV8D7wx5pNJfp0LCLxeGF0X4v8eWk3BG/7/
+    0JRoBo4bOMCFpdkrq5cKW5bV8fGSI5MqRSY/GcSkur4OK/bDvqL9NWu3vrpP51aTUfbyFyv7sJp5
+    bjNfZM6XGZ/fD4q9cQNB1ZhpQpGFi1V8AdB9kzCmAwAA
+    '
+    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
+    chmod +x /etc/init.d/razorsocket
+    chkconfig --add razorsocket
+    chkconfig razorsocket on
+    service razorsocket start
+    service rspamd restart
+    get_keypress
+}
 # install ACME Tool
 # parameters:
 # none
@@ -371,16 +498,6 @@ install_local_dns() {
     /etc/init.d/named restart
     get_keypress
 }
-# install zbar
-# parameters:
-# none
-# return values:
-# none
-install_zbar() {
-    clear
-    yum install -y zbar
-    get_keypress
-}
 ###################################################################################################
 # Check if installed
 ###################################################################################################
@@ -401,6 +518,22 @@ check_installed_seg() {
 check_installed_rspamd() {
     service rspamd status &>/dev/null
     [ $? = 1 ] && return 1 || return 0
+}
+# check whether Pyzor and Razor are installed
+# parameters:
+# none
+# return values:
+# error code - 0 for installed, 1 for not installed
+check_installed_pyzorrazor() {
+    which pyzor &>/dev/null
+    PYZOR_INSTALLED="$?"
+    which razor-check &>/dev/null
+    RAZOR_INSTALLED="$?"
+    if [ "$PYZOR_INSTALLED" = 0 ] && [ "$RAZOR_INSTALLED" = 0 ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 # check whether ACME Tool is installed
 # parameters:
@@ -438,15 +571,6 @@ check_installed_local_dns() {
     RET_CODE=$(grep -q "dnssec-validation auto;" $CONFIG_BIND || grep -q "#include" $CONFIG_BIND || grep -q "named.ca" $CONFIG_BIND)
     return $RET_CODE
 }
-# check whether zbar is installed
-# parameters:
-# none
-# return values:
-# error code - 0 for installed, 1 for not installed
-check_installed_zbar() {
-    which zbarimg &>/dev/null
-    return $?
-}
 ###################################################################################################
 # print info for installed feature
 # parameters:
@@ -483,44 +607,43 @@ install_feature() {
 # none
 dialog_install() {
     DIALOG_RSPAMD="Rspamd"
+    DIALOG_PYZORRAZOR="Pyzor & Razor for Rspamd"
     DIALOG_LETSENCRYPT="ACME Tool"
     DIALOG_AUTO_UPDATE="Auto update"
     DIALOG_VMWARE_TOOLS="VMware Tools"
     DIALOG_LOCAL_DNS="Local DNS resolver"
-    DIALOG_ZBAR="Zbar QR-code reader"
     EXPLANATION_RSPAMD="Implemented as a milter on Port 11332.\nThe webinterface runs on Port 11334 on localhost.\nYou will need a SSH Tunnel to access the Web interface.\nssh root@servername -L 11334:127.0.0.1:11334\n\nEnable corresponding feature in menu under 'Enable features->Rspamd'"
     EXPLANATION_LETSENCRYPT="Easy acquisition of Let's Encrypt certificates for TLS. It will autorenew the certificates via cronjob.\n\nEnable corresponding feature in menu under 'Enable features->Let's-Encrypt-Cert'"
     EXPLANATION_LOCAL_DNS="DNS forwarding disabled and local DNSSec resolver enabled for DANE validation.\n\nEnable corresponding feature in menu under 'Enable features->DANE'"
     while true; do
-        DIALOG_RSPAMD_INSTALLED="$DIALOG_RSPAMD"
-        DIALOG_LETSENCRYPT_INSTALLED="$DIALOG_LETSENCRYPT"
-        DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE"
-        DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS"
-        DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
-        DIALOG_ZBAR_INSTALLED="$DIALOG_ZBAR"
-        check_installed_rspamd && DIALOG_RSPAMD_INSTALLED+=' (installed)'
-        check_installed_letsencrypt && DIALOG_LETSENCRYPT_INSTALLED+=' (installed)'
-        check_installed_auto_update && DIALOG_AUTO_UPDATE_INSTALLED+=' (installed)'
-        check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED+=' (installed)'
-        check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED+=' (installed)'
-        check_installed_zbar && DIALOG_ZBAR_INSTALLED+=' (installed)'
+        MENU_INSTALL=()
+        check_installed_rspamd && DIALOG_RSPAMD_INSTALLED="$DIALOG_RSPAMD (installed)" || DIALOG_RSPAMD_INSTALLED="$DIALOG_RSPAMD"
+        MENU_INSTALL+=("$DIALOG_RSPAMD_INSTALLED" '')
+        if check_installed_rspamd; then
+            check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR (installed)" || DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
+            MENU_INSTALL+=("$DIALOG_PYZORRAZOR_INSTALLED" '')
+        fi
+        check_installed_letsencrypt && DIALOG_LETSENCRYPT_INSTALLED="$DIALOG_LETSENCRYPT (installed)" || DIALOG_LETSENCRYPT_INSTALLED="$DIALOG_LETSENCRYPT"
+        MENU_INSTALL+=("$DIALOG_LETSENCRYPT_INSTALLED" '')
+        check_installed_auto_update && DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE (installed)" || DIALOG_AUTO_UPDATE_INSTALLED="$DIALOG_AUTO_UPDATE"
+        MENU_INSTALL+=("$DIALOG_AUTO_UPDATE_INSTALLED" '')
+        check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS (installed)" || DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS"
+        MENU_INSTALL+=("$DIALOG_VMWARE_TOOLS_INSTALLED" '')
+        check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS (installed)" || DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
+        MENU_INSTALL+=("$DIALOG_LOCAL_DNS_INSTALLED" '')
         exec 3>&1
             DIALOG_RET="$($DIALOG --clear --backtitle "$TITLE_MAIN"             \
                 --cancel-label "Back" --ok-label "Apply"                        \
                 --menu "Choose features to install" 0 0 0                       \
-                "$DIALOG_LOCAL_DNS_INSTALLED" ""                                \
-                "$DIALOG_VMWARE_TOOLS_INSTALLED" ""                             \
-                "$DIALOG_RSPAMD_INSTALLED" ""                                   \
-                "$DIALOG_LETSENCRYPT_INSTALLED" ""                              \
-                "$DIALOG_AUTO_UPDATE_INSTALLED" ""                              \
-                "$DIALOG_ZBAR_INSTALLED" ""                                     \
-                2>&1 1>&3)"
+                "${MENU_INSTALL[@]}" 2>&1 1>&3)"
             RET_CODE=$?
         exec 3>&-
         if [ $RET_CODE = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_RSPAMD_INSTALLED")
                     install_feature "rspamd" "$DIALOG_RSPAMD" "$EXPLANATION_RSPAMD";;
+                "$DIALOG_PYZORRAZOR_INSTALLED")
+                    install_feature "pyzorrazor" "$DIALOG_PYZORRAZOR";;
                 "$DIALOG_LETSENCRYPT_INSTALLED")
                     install_feature "letsencrypt" "$DIALOG_LETSENCRYPT" "$EXPLANATION_LETSENCRYPT";;
                 "$DIALOG_AUTO_UPDATE_INSTALLED")
@@ -529,8 +652,6 @@ dialog_install() {
                     install_feature "vmware_tools" "$DIALOG_VMWARE_TOOLS";;
                 "$DIALOG_LOCAL_DNS_INSTALLED")
                     install_feature "local_dns" "$DIALOG_LOCAL_DNS" "$EXPLANATION_LOCAL_DNS";;
-                "$DIALOG_ZBAR_INSTALLED")
-                    install_feature "zbar" "$DIALOG_ZBAR";;
             esac
         else
             break
@@ -2416,12 +2537,84 @@ generate_policy() {
 }
 # create bounce archive
 # parameters:
-# $1 - bounce recipient domain
+# none
 # return values:
 # stderr - 0 for success, else for error
 # stdout - error message
 archive_bounces() {
+    declare LAST_CONFIG
+
     NAME_DISPOSAL='Bounces'
+
+    NAME_DOMAIN="$(postmulti -i postfix-inbound -x postconf mydomain | sed -E 's/mydomain = ?//')"
+
+    if [ -z "$NAME_DOMAIN" ]; then
+        echo "Cannot determine domain name"
+        return 1
+    fi
+
+    MESSAGE_SIZE="$(postmulti -i postfix-inbound -x postconf message_size_limit | sed -E 's/message_size_limit = ?//')"
+
+    if [ -z "$MESSAGE_SIZE" ]; then
+        echo 'Cannot determine message size limit'
+        return 2
+    fi
+
+    HOST_NAME="$(hostname)"
+
+    if [ -z "$HOST_NAME" ]; then
+        echo 'Cannot determine hostname'
+        return 3
+    fi
+
+    LAST_CONFIG="$(xmlstarlet sel -t -m "DeploymentRecords/Deployment[@deployed = 'true' and @state = 'Succeeded']" -v @file -n "$DEPLOYMENT_HISTORY" 2>/dev/null | head -1)"
+
+    if [ -z "$LAST_CONFIG" ]; then
+        echo 'Cannot determine last config file'
+        return 4
+    fi
+
+    COUNT_ROUTE="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable" -v @count "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$COUNT_ROUTE" ]; then
+        echo 'Cannot determine route count'
+        return 5
+    fi
+
+    UUID_EMPTY="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Empty Senders']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$UUID_EMPTY" ]; then
+        echo "Cannot find 'Empty Sender' UUID"
+        return 6
+    fi
+
+    UUID_ANYONE="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Anyone']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$UUID_ANYONE" ]; then
+        echo "Cannot find 'Anyone' UUID"
+        return 7
+    fi
+
+    UUID_DROP="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Drop" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$UUID_DROP" ]; then
+        echo "Cannot find 'Drop' UUID"
+        return 8
+    fi
+
+    INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
+
+    if [ -z "$INFO_DEPLOYMENT" ]; then
+        echo 'Deployment info is empty'
+        return 9
+    fi
+
+    COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY" 2>/dev/null)"
+
+    if [ -z "$COUNT_DEPLOYMENT" ]; then
+        echo 'Deployment count is empty'
+        return 10
+    fi
 
     for OPTION in                                                                                                                                                   \
         "postconf -c $PF_INBOUND -Me '2525/inet=2525 inet n - n - 250 smtpd -o smtpd_milters= -o inet_interfaces=localhost -o smtpd_recipient_restrictions='"; do
@@ -2430,14 +2623,8 @@ archive_bounces() {
         fi
     done
 
-    BOUNCE_DOMAIN="bounces.$1"
+    BOUNCE_DOMAIN="bounces.$NAME_DOMAIN"
     BOUNCE_RECIPIENT="bounces@$BOUNCE_DOMAIN"
-    MESSAGE_SIZE="$(postmulti -i postfix-inbound -x postconf message_size_limit | sed -E 's/message_size_limit = ?//')"
-
-    if [ -z "$MESSAGE_SIZE" ]; then
-        echo 'Cannot determine message size limit'
-        return 1
-    fi
 
     for OPTION in                                                       \
         'notify_classes=bounce'                                         \
@@ -2450,8 +2637,6 @@ archive_bounces() {
         fi
     done
 
-    HOST_NAME="$(hostname)"
-
     if ! [ -f "$HEADER_REWRITE" ] || ! grep -q "^/^Subject: Undelivered Mail Returned to Sender from $HOST_NAME/ BCC $BOUNCE_RECIPIENT" "$HEADER_REWRITE"; then
         echo "/^Subject: Undelivered Mail Returned to Sender from $HOST_NAME/ BCC $BOUNCE_RECIPIENT" >> "$HEADER_REWRITE"
     fi
@@ -2460,55 +2645,6 @@ archive_bounces() {
     grep -q -F '/^X-NEXT-HOP\:\s+(\S+)\s*$/ FILTER smtp:[${1}]:25' "$HEADER_REWRITE" || echo '/^X-NEXT-HOP\:\s+(\S+)\s*$/ FILTER smtp:[${1}]:25' >> "$HEADER_REWRITE"
 
     sed -i "s/^Subject: Undelivered Mail Returned to Sender$/Subject: Undelivered Mail Returned to Sender from $HOST_NAME/" /opt/cs-gateway/postfix/postfix-outbound/bounce.cf.default
-
-    LAST_CONFIG="$(xmlstarlet sel -t -m "DeploymentRecords/Deployment[@deployed = 'true' and @state = 'Succeeded']" -v @file -n "$DEPLOYMENT_HISTORY" 2>/dev/null | head -1)"
-
-    if [ -z "$LAST_CONFIG" ]; then
-        echo 'Cannot determine last config file'
-        return 2
-    fi
-
-    COUNT_ROUTE="$(xmlstarlet sel -t -m "Configuration/SmtpSettings/RoutingTable" -v @count "$LAST_CONFIG" 2>/dev/null)"
-
-    if [ -z "$COUNT_ROUTE" ]; then
-        echo 'Cannot determine route count'
-        return 3
-    fi
-
-    UUID_EMPTY="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Empty Senders']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
-
-    if [ -z "$UUID_EMPTY" ]; then
-        echo "Cannot find 'Empty Sender' UUID"
-        return 4
-    fi
-
-    UUID_ANYONE="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name = 'Anyone']" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
-
-    if [ -z "$UUID_ANYONE" ]; then
-        echo "Cannot find 'Anyone' UUID"
-        return 5
-    fi
-
-    UUID_DROP="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Drop" -v @uuid "$LAST_CONFIG" 2>/dev/null)"
-
-    if [ -z "$UUID_ANYONE" ]; then
-        echo "Cannot find 'Anyone' UUID"
-        return 6
-    fi
-
-    INFO_DEPLOYMENT="$(xmlstarlet sel -t -m "Configuration/Deployment" -v @admin -o ',' -v @adminName -o ',' -v @deployed -o ',' -v @file -o ',' -v @host -o ',' -v @ip -o ',' -v @planned -o ',' -v @pushSummaryStatus -o ',' -v @reason -o ',' -v @remote -o ',' -v @sourceHost -o ',' -v @state -n "$LAST_CONFIG" 2>/dev/null)"
-
-    if [ -z "$INFO_DEPLOYMENT" ]; then
-        echo 'Deployment info is empty'
-        return 7
-    fi
-
-    COUNT_DEPLOYMENT="$(xmlstarlet sel -t -m "DeploymentRecords" -v @count -n "$DEPLOYMENT_HISTORY" 2>/dev/null)"
-
-    if [ -z "$COUNT_DEPLOYMENT" ]; then
-        echo 'Deployment count is empty'
-        return 8
-    fi
 
     CONFIG_UUID="$(uuidgen)"
     FILE_CONFIG="/var/cs-gateway/deployments/$CONFIG_UUID.xml"
@@ -2537,7 +2673,7 @@ archive_bounces() {
     CONFIG_WHEN="$(date +%s)000"
     CONFIG_WHENDESC="$(date +'%d %B %Y %T %Z')"
 
-    sed -i "s/<DeploymentRecords count=\"$COUNT_DEPLOYMENT\">/<DeploymentRecords count=\"$(expr $COUNT_DEPLOYMENT + 1)\"><Deployment admin=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $1}')\" adminName=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $2}')\" deployed=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $3}')\" file=\"$(echo $FILE_CONFIG | sed 's/\//\\\//g')\" host=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $5}')\" ip=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $6}')\" planned=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $7}')\" pushSummaryStatus=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $8}')\" reason=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $9}')\" remote=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $10}')\" sourceHost=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $11}')\" state=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $12}')\" uuid=\"$CONFIG_UUID\" when=\"$CONFIG_WHEN\" whenDesc=\"$CONFIG_WHENDESC\"><Progress current=\"89\" total=\"90\"\/><Log>log<\/Log><Detail>Generated with archive_bounces.sh<\/Detail><PeerAppliances\/><ReferencePeers imageManager=\"none\" trustedSenders=\"none\"\/><SelectedAreas maintenance=\"false\" network=\"false\" peers=\"false\" pmm=\"false\" policy=\"false\" proxy=\"false\" reports=\"false\" systemConfig=\"false\" tlsCertificates=\"false\" users=\"false\"\/><\/Deployment>/" "$DEPLOYMENT_HISTORY"
+    sed -i "s/<DeploymentRecords count=\"$COUNT_DEPLOYMENT\">/<DeploymentRecords count=\"$(expr "$COUNT_DEPLOYMENT" + 1)\"><Deployment admin=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $1}')\" adminName=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $2}')\" deployed=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $3}')\" file=\"$(echo $FILE_CONFIG | sed 's/\//\\\//g')\" host=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $5}')\" ip=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $6}')\" planned=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $7}')\" pushSummaryStatus=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $8}')\" reason=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $9}')\" remote=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $10}')\" sourceHost=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $11}')\" state=\"$(echo "$INFO_DEPLOYMENT" | awk -F, '{print $12}')\" uuid=\"$CONFIG_UUID\" when=\"$CONFIG_WHEN\" whenDesc=\"$CONFIG_WHENDESC\"><Progress current=\"89\" total=\"90\"\/><Log>log<\/Log><Detail>Generated with archive_bounces.sh<\/Detail><PeerAppliances\/><ReferencePeers imageManager=\"none\" trustedSenders=\"none\"\/><SelectedAreas maintenance=\"false\" network=\"false\" peers=\"false\" pmm=\"false\" policy=\"false\" proxy=\"false\" reports=\"false\" systemConfig=\"false\" tlsCertificates=\"false\" users=\"false\"\/><\/Deployment>/" "$DEPLOYMENT_HISTORY"
 
     chown cs-tomcat:cs-adm "$FILE_CONFIG"
     chmod g+w "$FILE_CONFIG"
@@ -2550,15 +2686,8 @@ archive_bounces() {
 # return values:
 # none
 setup_bounce() {
-    exec 3>&1
-    DIALOG_RET="$(dialog --clear --backtitle 'Clearswift Configuration' --title 'Bounce recipient domain' --inputbox 'Enter domain for bounce recipient' 0 50 '' 2>&1 1>&3)"
-    RET_CODE="$?"
-    exec 3>&-
-
-    if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
-        RESULT="$(archive_bounces "$DIALOG_RET")"
-        [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error setting up bounce archive' --clear --msgbox "Error: $RESULT" 0 0
-    fi
+    RESULT="$(archive_bounces "$DIALOG_RET")"
+    [ "$?" = 0 ] || $DIALOG --backtitle 'Manage configuration' --title 'Error setting up bounce archive' --clear --msgbox "Error: $RESULT" 0 0
 }
 # adjust Tomcat maximum heap memory size
 # parameters:
@@ -4015,22 +4144,6 @@ disable_elastic() {
     sed -i '/debug = true;/d' "$CONFIG_ELASTIC"
     sed -i '/import_kibana = true;/d' "$CONFIG_ELASTIC"
 }
-# check whether Pyzor and Razor are installed
-# parameters:
-# none
-# return values:
-# error code - 0 for installed, 1 for not installed
-check_installed_pyzorrazor() {
-    which pyzor &>/dev/null
-    PYZOR_INSTALLED="$?"
-    which razor-check &>/dev/null
-    RAZOR_INSTALLED="$?"
-    if [ "$PYZOR_INSTALLED" = 0 ] && [ "$RAZOR_INSTALLED" = 0 ]; then
-        return 0
-    else
-        return 1
-    fi
-}
 # adjust rspamd max message size in dialog inputbox
 # parameters:
 # none
@@ -4047,131 +4160,6 @@ dialog_size() {
         sed -i "s/^max_message = .*/max_message = $DIALOG_RET;/" "$CONFIG_OPTIONS"
         service rspamd restart &>/dev/null
     fi
-}
-# install Pyzor and Razor plugins
-# parameters:
-# none
-# return values:
-# none
-install_pyzorrazor() {
-    if check_installed_pyzorrazor; then
-        confirm_reinstall 'Pyzor & Razor' || return
-    fi
-
-    clear
-    yum install -y python34-setuptools python34-devel perl-Razor-Agent
-    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
-    pip3 install pyzor
-    PACKED_SCRIPT='
-    H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
-    95UKug+L7+55fL7XQia8YGVSsCVT8LPMFTAfj75XWE0hswxUV6n0jm/TlVPUZibZHbFBqe9VFteo
-    93eH37LB6MM2lsXKykh5+/nLzftaKXdGE6MjSqRY59kiA7PiRbFCZXA99rzzc3YFa14WhmkwJheZ
-    ruDJOlttpDbEO529CCP8m/od5U4qUs5fzp8Sz71/+9FfMH+GVhPmX8oU7DGK6Pjp7fmlLIUhUeT0
-    1Wn+lI4fNgp46s7Pps9JdJXzjAQ3b/yHOgTrUiQml4IlG0ju3MMDw/Xd2GP4GxrFASg1YSk33BnQ
-    L18zlDKzAdHIHJjSEaLul6VEFygbgCFAmVQLdqbRL/we93AKTKlaKhCpN6BMIS6zbXA9YY53RA4R
-    3QglGGKFYQ+sk5iRFktv2XGlbfFgQYXuEIwHNvLOeoVGzmBh/60q3uEFnTAIaRD8T5GwEbD8SIVP
-    1jspNPxHSAY+E0PrMFWljH9AYh49br/JDRS5NpCivZGi3MYYA8J/bavq+xCmgMrzGKYBDLOUi7Vs
-    3puQ1fJMs32xtG+sCSddjzok2Ejv+B20Ws0sB+OsyI0pgMW5Cfvmhxgo+ApGGs1i7D9M9Z4f0GWs
-    lD5ZLlDIE8s56dLEJd5hWAEcC9VscjTVTMst4LfI2hs7EWk+z7uPGaZoD3m2oQ6PvG7RNOCLJZtG
-    0ePqaXDTcN6WQKFhAJ7NT2JnJ8GnsdEp6JRxkfbrCt94gi8KZ8dLGYkro4tjBFRKixzbRJkV1h7O
-    2KA7sCcVeMJcg4ZrqbbcBHXtpbb20r/W3vjRyGmcq3vATa8lu29M/cvXry7ffBN+W0PWTepAXBEG
-    BLag0z3UXEdnmI/c6kDDwG2kqhVwX4XVvcF97wrqREI2wmq51HumVVSLpd4xrUJvSpPKvSAqVUKr
-    oNFWLU/oMmEUipgndHcSu0eNPRslTJ3dj03SKkFoveqlsrMIG4sm3F2o9fsRtHpNY9HPVH87K8go
-    t2rl6qQTQcG3gCy9+jn6zHYvTrwn5rAj1Kg2GKEsU7Kk0TvSeSY4zmnQoyY02C3dpLuR6OMY3Mq0
-    xBlGG8P5ijgqzWsXzz/X6mWbBAkAAA==
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/pyzor.lua
-    if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^pyzor { }$' "$CONFIG_LOCAL"; then
-        echo 'pyzor { }' >> "$CONFIG_LOCAL"
-    fi
-    groupadd pyzorsocket
-    useradd -g pyzorsocket pyzorsocket
-    mkdir -p /opt/pyzorsocket/bin/
-    PACKED_SCRIPT='
-    H4sIAGtBq1wAA3VUTY/TMBC951eYcHFEcYW4VeoBuistQitVtDdAloknrVvHDnba3YL474w/mmZL
-    8SX2eN6b8byZvH41PXg3/aHMtDv1W2veF6rtrOuJcJtOOA/nM7RCaRZN7spmtapPZ5v1593OW1M0
-    zrbE23oPPQKP4Ei+XS+Wq2iYkPXWgZDKbB7V8yczIasez+0X+HkA3z8IIzWGPLN2p1/WsVorMP1L
-    m1Qb9C+KotbCe/IST2+RVrOiILgkNGQbTdSDbtBM8qpbSeYkGJlrlAYWMtXKAK2YhNpK3HydvX33
-    fUCoJoHmpFw83C8+lxeysCJVisXrLdR7Wg33oD3c8H5yqgceqkl/l+CcdeWMlAezN/bJkNq2LdKV
-    f6rrt2T+qxclBfFRY0HZx1MPfhn3NOk5H4vLVo/r5SXR1m+QIEPjh15KlPOIuURFgutIIHYnenEX
-    txgMqSp2FPoAl5qHtAdQUpot4gernh6VqEah/qnUfkaOpLGO7Ce4USbRMnRoPa3G1RqhAsuEyFG5
-    dphIuGLy0Haeyoq8IeU3U14Fjr0RieiOgUmNUQ29mDqdXjf6MAM5YIe+iAlJYfENzeYwipjGeSLZ
-    B7c5tFiNrJcEXzvV9cqaeXn/3FkPqXbEGiLy8JXVQMWElFxkDlriyZUTsgXdzeMBMOHeEq1QIIMc
-    /4eG4RugcRJv43zOPvVKIEAJkgAhIN7SYAvs+DtQSB2PgbHKft4d0S3XMfldzXJ0693poh1iWPzp
-    cOwDCMDk1CgjtL7l6HitsXwhuQIHmXMjWuA8TjPnQRPO80AngYq/7vjOR0EFAAA=
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/pyzorsocket/bin/pyzorsocket.py
-    chown pyzorsocket:pyzorsocket /opt/pyzorsocket/bin/pyzorsocket.py
-    chmod 0700 /opt/pyzorsocket/bin/pyzorsocket.py
-    PACKED_SCRIPT='
-    H4sIAIFHp1wAA5VSYU/qMBT9bH/FdSwoL9nKNETFkBdj5ot5vGAGmqgxppTCGqDdazvfQ/G/uxU2
-    B+oHt0/33HPO7bltbRcPucBDomNUQzVIFs9SaUmnzNiaxlMqxZhP2uDBcQuCVgaOmKaKJ4ZL0d5U
-    QKIkZVoLMmebrazXl6miDMapoLkUZnyoiFr4yAfMDMVccOOPcNHXCEXh4Oas22miq6j3q7NX8dtD
-    3d7574vLbthx8BNReJbBWKdDvdDYzekOurq960X9jBYOHq/7YbRlgLQhyuw34AXB+mM0luAJcPp5
-    i4sJWKs2OCVlRNhcCv7MwEuz7tYIwDIxuDLGbrdS+8kCgoMjv5n9AbROWoel8zqs+7NE7sFdgeCx
-    v9CEB6jXwciUxuAW8TfOXhaKmVSJQo5e87Ay+SJrnBqbdST/iffAO1M+m+XXuYLAG4TRn0L83UOr
-    OXjj7x+aEs3AcQMHuLA0e2WNUmHLsjo9XXNkUqXI5CODmFQ3tmHFPthXtJ/O+tHY3Kdzrckke/mr
-    lb1YzTK3Wa5mLtczXt8fFPvPDQRVY6YJRRYuVvEGr04i2KYDAAA=
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/pyzorsocket
-    chmod +x /etc/init.d/pyzorsocket
-    chkconfig --add pyzorsocket
-    chkconfig pyzorsocket on
-    service pyzorsocket start
-    PACKED_SCRIPT='
-    H4sIAAdCq1wAA4VUTWvbQBA9R79iEQRLoJg4lxJDDiUtFAou5FgKYiWNPvBq191d0bih/70zu6uv
-    2KXywWLmzZuZNzMSquSCCdU0oNkT0/Bz6DSwWJsT76vcO+JIOJgtT1cwaI2jgDigP9b8t5pizLkv
-    lMidjZwvH79/exmd6mQNMXqiUsm6a/YN2JwLkaMzOaRRdHfHPkHNB2GZAWs72ZgQXtZN3ipjiXf3
-    8GF7j79dvHCelCbn4+7xYaywHmRpOyVZ2UJ59HUllptjGjF83oOKBLTOWMUt9wB6upqhldkW5GTz
-    waTWFn2vjjJDLVAswArRpvSe3Zo4o/d0FafBDnqmAllFMyXVo8GQ8hZ71dh/clGOB6AMpGR8WRlV
-    s++kAW1zxKKWyXIwGdtt79NrvVRQDE2fHDIWGnIJZigIA8v87dX0/yJrL7j+p+cgj1L9ki6hwn5Y
-    rVXPXBNGlUewQWPypxeK0v9izONwntjbBI2fv3x+/vpDxtlkcuLRVuKCWpA2Sb3vz8h1vTnk1mec
-    lq8O+3RovJZtyJu8rVLQgClyMobVHrd8doS1Hjd8dph2sBXJg1R6gCy6oU0JNwtLCmxfFLykpGUR
-    2kkjpw+O093lNMVg2Lp6VrNdHOCEmIRehrqKL0JDHxNiPaP1V0FD0xkLOvd7u9BO8h6QZbXP0Y09
-    n8i6GRvdoK3RaqA72piukRxvDszmuiTzt2HWZtzOMO9O1uo1iW8N61U1CGBSWeaLReIKd/DgBf0L
-    bFL70WMFAAA=
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /usr/share/rspamd/plugins/razor.lua
-    if ! [ -f "$CONFIG_LOCAL" ] || ! grep -q '^razor { }$' "$CONFIG_LOCAL"; then
-        echo 'razor { }' >> "$CONFIG_LOCAL"
-    fi
-    groupadd razorsocket
-    useradd -g razorsocket razorsocket
-    mkdir -p /opt/razorsocket/bin/
-    PACKED_SCRIPT='
-    H4sIAHhCq1wAA31UUW/TMBB+Jr/CmIc6oktBvKBJfYBpaAhNqlh5GpPlJZfWm2MH29lWEP+ds+Ok
-    WdXhl9iXu+/O932+N68XnbOLW6kX7c5vjf6QyaY11hNhN62wDoYzNEKqIprsgc0oWe4Gm3HD7s4Z
-    Pexdd9taU4JzWW1NQ5wp78Ej1ANYknzWZ6uraJiT9daCqKTeXMqnr3pOrjyem+/wqwPnL4SuFBaR
-    ZaUSzpHnZnbMNz/NMoKrgppso4k5UDWaSVplU5ElCcbC1lJBEQpQUgPLiwpKU+Hm+vTk/c0YIes+
-    aEno2cX52Te6BwsrQvW5eLmF8p7l439QDo54P1rpgYe2sT8UrDWWnhLa6XttHjUpTdMgHP2bH94l
-    4R/cqKcKLzVlrvi88+BWcc964pZTFoury/VqX2jjNgiQQuOH7VuU6girRi/TgmZ04Zt2sb5cWfEb
-    y58T+kj3cOmKDGEL4bjzFilm+dShVAaTTKAtuE75wM0ooaIUSrFrOko3JjuJXQgpn9dwk2evpqQN
-    gEvy7hkHPQWR+77K29AqNnOtaGZzMvux/nLycZb/h8WXELYHACN9E8JD7JxUE/7u8M7hV1F1TetY
-    lZO3hP7UNHsx3V0BuldqPj6O/kWxwwc1vrWUsEVfjAlFoRo0S+YwBLCMYRYUn+yma0D7JKAKXGll
-    66XRS3r+1CJ1JDadGE1EeuSJ/4BRiKriImEwiqcgkS2odhkPyC3xhijpPGjEeDk0DIwxNE6P43Eu
-    Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
-    aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
-    chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
-    chmod 0700 /opt/razorsocket/bin/razorsocket.py
-    PACKED_SCRIPT='
-    H4sIAJxIq1wAA5VSXU/CMBR9tr/iOhYVk63MxKgYYoyZxojBDPRBY0wphTVAO9tORfG/uxU2B+qD
-    29M993z03ra2iftc4D7RMaqhGijyLpWWdMyMrWk8plIM+agJHhzuQ7CfgQOmqeKJ4VI0VxWQKEmZ
-    1oJM2Wor63VlqiiDYSpoLoUJ7yuiZj7yATNDMRfc+ANc9DVCUdi7O223Gugm6ly0tit+26jdObs6
-    v2yHLQe/EIUnGYx12tczjd2c7qDo9L4TdTNa2Hu67YbRmgHShiizU4cPBMuP0ViCJ8Dp5i0uRmCt
-    muCUlAFhUyn4OwMvBXc9ArBMDK7E2O1Waj+ZQbB34DeyP4Cj4GivdF4O656UyEMWYEHw2DM04BG2
-    tsDIlMbgFuOvnL0sFDOpEoUcfebDyuSPWePU2FkH8lV8D7wx5pNJfp0LCLxeGF0X4v8eWk3BG/7/
-    0JRoBo4bOMCFpdkrq5cKW5bV8fGSI5MqRSY/GcSkur4OK/bDvqL9NWu3vrpP51aTUfbyFyv7sJp5
-    bjNfZM6XGZ/fD4q9cQNB1ZhpQpGFi1V8AdB9kzCmAwAA
-    '
-    printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /etc/init.d/razorsocket
-    chmod +x /etc/init.d/razorsocket
-    chkconfig --add razorsocket
-    chkconfig razorsocket on
-    service razorsocket start
-    service rspamd restart
-    get_keypress
 }
 # reset Bayes spam database
 # parameters:
@@ -4494,7 +4482,6 @@ dialog_config_rspamd() {
     DIALOG_TO='Whitelist recipient to'
     DIALOG_COUNTRY='Blacklist country'
     DIALOG_SIZE='Message size limit'
-    DIALOG_PYZORRAZOR='Install Pyzor & Razor plugins'
     DIALOG_BAYES='Reset Bayes spam database'
     DIALOG_WEBUI='Rspamd web UI access'
     DIALOG_STATS='Rspamd info & stats'
@@ -4502,8 +4489,6 @@ dialog_config_rspamd() {
     DIALOG_SENDER='Generate sender domain/from whitelists'
     DIALOG_SERVICE='Fix Rspamd service script'
     while true; do
-        DIALOG_PYZORRAZOR_INSTALLED="$DIALOG_PYZORRAZOR"
-        check_installed_pyzorrazor && DIALOG_PYZORRAZOR_INSTALLED+=' (installed)'
         ARRAY_RSPAMD=()
         ARRAY_RSPAMD+=("$DIALOG_IP" '')
         ARRAY_RSPAMD+=("$DIALOG_DOMAIN" '')
@@ -4511,7 +4496,6 @@ dialog_config_rspamd() {
         ARRAY_RSPAMD+=("$DIALOG_TO" '')
         ARRAY_RSPAMD+=("$DIALOG_COUNTRY" '')
         ARRAY_RSPAMD+=("$DIALOG_SIZE" '')
-        ARRAY_RSPAMD+=("$DIALOG_PYZORRAZOR_INSTALLED" '')
         ARRAY_RSPAMD+=("$DIALOG_BAYES" '')
         ARRAY_RSPAMD+=("$DIALOG_WEBUI" '')
         ARRAY_RSPAMD+=("$DIALOG_STATS" '')
@@ -4538,8 +4522,6 @@ dialog_config_rspamd() {
                     "$TXT_EDITOR" "$BLACKLIST_COUNTRY";;
                 "$DIALOG_SIZE")
                     dialog_size;;
-                "$DIALOG_PYZORRAZOR_INSTALLED")
-                    install_pyzorrazor;;
                 "$DIALOG_BAYES")
                     reset_bayes;;
                 "$DIALOG_WEBUI")
