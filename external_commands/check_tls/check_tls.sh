@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_tls.sh V1.2.0
+# check_tls.sh V1.3.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -13,7 +13,7 @@
 
 EXPIRE_VALID=86400  # 24 hours
 EXPIRE_INVALID=3600 # 1 hour
-TIMEOUT=3
+TIMEOUT=10
 TLS_LOG="/var/log/cs-gateway/tls-$(date +%Y-%m-%d).log"
 
 LOG_PREFIX='>>>>'
@@ -33,7 +33,7 @@ if [ -z "$1" ] || [ -z "$2" ]; then
     exit 99
 fi
 
-DOMAIN_RECIPIENT="$(echo "$1"| awk -F"@" '{print $2}')"
+DOMAIN_RECIPIENT="$(echo "$1" | awk -F"@" '{print $2}')"
 
 if [ -z "$DOMAIN_RECIPIENT" ]; then
     write_log "Recipient domain is empty"
