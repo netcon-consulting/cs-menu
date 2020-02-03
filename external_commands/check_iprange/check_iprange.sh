@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_iprange.sh V1.1.0
+# check_iprange.sh V1.0.0
 #
 # Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -30,7 +30,7 @@ write_log() {
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $(basename $0) email log_file"
+    echo "Usage: $(basename "$0") email log_file"
     exit 99
 fi
 
@@ -41,7 +41,21 @@ if ! [ -f "$1" ]; then
     exit 99
 fi
 
-RECEIVED_LINE="$(sed -n '/^Received:/,/^\s+/p; /\s+/q' "$1")"
+RECEIVED_START="$(grep -n '^Received: from' "$1" | head -1 | cut -f1 -d\:)"
+
+if [ -z "$RECEIVED_START" ]; then
+    write_log 'Cannot find start of received from line'
+    exit 99
+fi
+
+RECEIVED_END="$(expr $RECEIVED_START + $(sed -n "$(expr $RECEIVED_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:) - 1)"
+
+if [ -z "$RECEIVED_END" ]; then
+    write_log 'Cannot find end of received from line'
+    exit 99
+fi
+
+RECEIVED_LINE="$(sed -n "$RECEIVED_START,$RECEIVED_END{p}" "$1")"
 
 if [ -z "$RECEIVED_LINE" ]; then
     write_log 'Received from line is empty'

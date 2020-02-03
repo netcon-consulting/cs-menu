@@ -44,7 +44,7 @@ write_log() {
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $(basename $0) file_to_scan log_file"
+    echo "Usage: $(basename "$0") file_to_scan log_file"
     exit 99
 fi
 

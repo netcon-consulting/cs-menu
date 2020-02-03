@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# clean_subject.sh V1.0.0
+# clean_subject.sh V1.1.0
 #
-# Copyright (c) 2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
+# Copyright (c) 2019-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
@@ -34,19 +34,17 @@ write_log() {
 # return values:
 # header field
 get_header() {
+    declare HEADER_START HEADER_END
+
     HEADER_START="$(grep -i -n "^$2:" "$1" | head -1 | cut -f1 -d\:)"
 
-    if [ -z "$HEADER_START" ]; then
-        write_log "Cannot find start of '$2' header line"
-        exit 99
-    fi
+    [ -z "$HEADER_START" ] && return 1
 
-    HEADER_END="$(expr $HEADER_START + $(sed -n "$(expr $HEADER_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:) - 1)"
+    HEADER_END="$(sed -n "$(expr "$HEADER_START" + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:)"
 
-    if [ -z "$HEADER_END" ]; then
-        write_log 'Cannot find end of '$2' header line'
-        exit 99
-    fi
+    [ -z "$HEADER_END" ] && return 1
+
+    HEADER_END="$(expr "$HEADER_START" + "$HEADER_END" - 1)"
 
     echo $(sed -n "$HEADER_START,$HEADER_END p" "$1") | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}'
 }
@@ -59,6 +57,8 @@ get_header() {
 # return values:
 # none
 replace_header() {
+    declare HEADER_START HEADER_END
+
     HEADER_START="$(grep -i -n "^$2:" "$1" | head -1 | cut -f1 -d\:)"
 
     if [ -z "$HEADER_START" ]; then
@@ -66,19 +66,21 @@ replace_header() {
         exit 99
     fi
 
-    HEADER_END="$(expr $HEADER_START + $(sed -n "$(expr $HEADER_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:) - 1)"
+    HEADER_END="$(sed -n "$(expr $HEADER_START + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:)"
 
     if [ -z "$HEADER_END" ]; then
         write_log 'Cannot find end of '$2' header line'
         exit 99
     fi
 
+    HEADER_END="$(expr "$HEADER_START" + "$HEADER_END" - 1)"
+
     sed -i "$HEADER_START,$HEADER_END d" "$1"
     sed -i "$HEADER_START i $2: $3" "$1"
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $(basename $0) email_file log_file"
+    echo "Usage: $(basename "$0") email_file log_file"
     exit 99
 fi
 

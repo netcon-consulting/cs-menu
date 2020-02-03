@@ -40,7 +40,7 @@ write_debug() {
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $(basename $0) encrypted_zip log_file"
+    echo "Usage: $(basename "$0") encrypted_zip log_file"
     exit 99
 fi
 

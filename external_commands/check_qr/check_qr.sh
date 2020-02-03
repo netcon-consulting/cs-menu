@@ -29,7 +29,7 @@ write_log() {
 }
 
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $(basename $0) image_file log_file"
+    echo "Usage: $(basename "$0") image_file log_file"
     exit 99
 fi
 
