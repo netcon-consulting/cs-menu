@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# menu.sh V1.89.0 for Clearswift SEG >= 4.8
+# menu.sh V1.90.0 for Clearswift SEG >= 4.8
 #
-# Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
+# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Authors:
 # Uwe Sommer (u.sommer@netcon-consulting.com)
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - code cleanup
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2073,13 +2073,13 @@ create_rule() {
     ACTION_REJECT="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/Reject" -v @uuid -n $LAST_CONFIG)"
     ACTION_TAG="$(xmlstarlet sel -t -m "Configuration/DisposalCollection/TagAndDeliver" -v @uuid -n $LAST_CONFIG)"
 
-    for DISPOSAL in $(echo "$LIST_DISPOSAL" | awk -F, '{print $2}'); do
+    while read DISPOSAL; do
         if ! echo "$DISPOSAL" | grep -E -q '^(drop|ndr|deliver|none|reject|tag)$' && ! grep -q " name=\"$DISPOSAL\" notificationEnabled=" "$FILE_DISPOSAL"; then
             UUID_DISPOSAL="$(uuidgen)"
             sed -i "s/<\/DisposalCollection>/<MessageArea auditorNotificationAuditor=\"admin\" auditorNotificationAuditorAddress=\"\" auditorNotificationEnabled=\"false\" auditorNotificationpwdOtherAddress=\"\" auditorNotificationPlainBody=\"A message was released by %RELEASEDBY% which violated the policy %POLICYVIOLATED%. A version of the email has been attached.\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" auditorNotificationSender=\"admin\" auditorNotificationSubject=\"A message which violated policy %POLICYVIOLATED% has been released.\" delayedReleaseDelay=\"15\" expiry=\"30\" name=\"$DISPOSAL\" notificationEnabled=\"false\" notificationOtherAddress=\"\" notificationPlainBody=\"A message you sent has been released by the administrator\&#10;\&#10;To: %RCPTS%\&#10;Subject: %SUBJECT%\&#10;Date sent: %DATE%\" notificationSender=\"admin\" notificationSubject=\"A message you sent has been released\" notspam=\"true\" pmm=\"false\" releaseRate=\"10000\" releaseScheduleType=\"throttle\" scheduleEnabled=\"false\" system=\"false\" uuid=\"$UUID_DISPOSAL\"><PMMAddressList\/><WeeklySchedule mode=\"ONE_HOUR\"><DailyScheduleList><DailySchedule day=\"1\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"2\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"3\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"4\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"5\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"6\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><DailySchedule day=\"7\" mode=\"ONE_HOUR\">000000000000000000000000<\/DailySchedule><\/DailyScheduleList><\/WeeklySchedule><\/MessageArea><\/DisposalCollection>/" "$FILE_DISPOSAL"
             LIST_AREA+=$'\n'"$DISPOSAL,$UUID_DISPOSAL"
         fi
-    done
+    done < <(echo "$LIST_DISPOSAL" | awk -F, '{print $2}')
 
     UUID_RULE="$(uuidgen)"
 
