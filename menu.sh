@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.88.0 for Clearswift SEG >= 4.8
+# menu.sh V1.89.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,9 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - moved installation option for Pyzor & Razor to submenu 'Install feature'
-# - removed installation option for zbar
-# - for setup of bounce quarantine extract domain name from Postfix config
+# - code cleanup
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -5095,13 +5093,13 @@ check_update() {
     TMP_UPDATE='/tmp/TMPupdate'
     wget "$LINK_UPDATE" -O "$TMP_UPDATE" &>/dev/null
     VERSION="$(grep '^# menu.sh V' "$TMP_UPDATE" | awk -FV '{print $2}' | awk '{print $1}')"
-    MAJOR_DL="$(echo $VERSION | awk -F. '{print $1}')"
-    MINOR_DL="$(echo $VERSION | awk -F. '{print $2}')"
-    BUILD_DL="$(echo $VERSION | awk -F. '{print $3}')"
+    MAJOR_DL="$(echo "$VERSION" | awk -F. '{print $1}')"
+    MINOR_DL="$(echo "$VERSION" | awk -F. '{print $2}')"
+    BUILD_DL="$(echo "$VERSION" | awk -F. '{print $3}')"
     VERSION="$(grep '^# menu.sh V' "$0" | awk -FV '{print $2}' | awk '{print $1}')"
-    MAJOR_CURRENT="$(echo $VERSION | awk -F. '{print $1}')"
-    MINOR_CURRENT="$(echo $VERSION | awk -F. '{print $2}')"
-    BUILD_CURRENT="$(echo $VERSION | awk -F. '{print $3}')"
+    MAJOR_CURRENT="$(echo "$VERSION" | awk -F. '{print $1}')"
+    MINOR_CURRENT="$(echo "$VERSION" | awk -F. '{print $2}')"
+    BUILD_CURRENT="$(echo "$VERSION" | awk -F. '{print $3}')"
     if [ "$MAJOR_DL" -gt "$MAJOR_CURRENT" ] ||
        ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" -gt "$MINOR_CURRENT" ]) ||
        ([ "$MAJOR_DL" = "$MAJOR_CURRENT" ] && [ "$MINOR_DL" = "$MINOR_CURRENT" ] && [ "$BUILD_DL" -gt "$BUILD_CURRENT" ]); then
