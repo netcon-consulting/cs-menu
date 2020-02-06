@@ -1,4 +1,4 @@
-check_filename.sh V1.1.0
+check_filename.sh V1.2.0
 ========================
 
 Check filenames of attachments and quarantine blacklisted filenames into 'Blacklisted filename'. 

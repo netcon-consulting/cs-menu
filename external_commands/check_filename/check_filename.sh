@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_filename.sh V1.1.0
+# check_filename.sh V1.2.0
 #
 # Copyright (c) 2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -45,7 +45,7 @@ get_header() {
         if ! [ -z "$HEADER_END" ]; then
             HEADER_END="$(expr "$HEADER_START" + "$HEADER_END" - 1)"
 
-            sed -n "$HEADER_START,$HEADER_END p" "$1" | tr '\n' ' ' | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}' | sed -E 's/ $//'
+            sed -n "$HEADER_START,$HEADER_END p" "$1" | tr '\n' ' ' | sed 's/ $//' | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}'
         fi
     done
 }
