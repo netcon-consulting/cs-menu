@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_filename.sh V1.0.0
+# check_filename.sh V1.1.0
 #
 # Copyright (c) 2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -40,12 +40,12 @@ get_header() {
     [ -z "$LIST_START" ] && return 1
 
     for HEADER_START in $LIST_START; do
-        HEADER_END="$(sed -n "$(expr "$HEADER_START" + 1),\$ p" "$1" | grep -n '^\S' | head -1 | cut -f1 -d\:)"
+        HEADER_END="$(sed -n "$(expr "$HEADER_START" + 1),\$ p" "$1" | grep -E -n '^(\S|$)' | head -1 | cut -f1 -d\:)"
 
         if ! [ -z "$HEADER_END" ]; then
             HEADER_END="$(expr "$HEADER_START" + "$HEADER_END" - 1)"
 
-            sed -n "$HEADER_START,$HEADER_END p" "$1" | tr '\n' ' ' | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}'
+            sed -n "$HEADER_START,$HEADER_END p" "$1" | tr '\n' ' ' | awk 'match($0, /^[^ ]+: *(.*)/, a) {print a[1]}' | sed -E 's/ $//'
         fi
     done
 }
@@ -76,13 +76,13 @@ if ! [ -z "$LIST_LEXICAL" ]; then
     LIST_FILE="$(get_header "$1" 'content-\(disposition\|type\)' | awk 'match($0, /(file)?name="?([^"]+)"?/, a) {print a[2]}')"
 
     if ! [ -z "$LIST_FILE" ]; then
-        for REGEXP in $LIST_LEXICAL; do
-            if echo "$LIST_FILE" | grep -E -q "^$REGEXP$"; then
+        while read REGEXP; do
+            if echo "$LIST_FILE" | grep -P -q "^$REGEXP$"; then
                 write_log "$REGEXP"
 
                 exit 1
             fi
-        done
+        done < <(echo "$LIST_LEXICAL")
     fi
 fi
 
