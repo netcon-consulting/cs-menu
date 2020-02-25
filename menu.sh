@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.91.0 for Clearswift SEG >= 4.8
+# menu.sh V1.92.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option for toggling SNMP support to 'Other config' submenu.
+# - for SNMP support also manage firewall port for client
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -4785,24 +4785,36 @@ toggle_snmp() {
     "$DIALOG" --backtitle 'Clearswift Configuration' --title 'Toggle SNMP support' --yesno "SNMP support is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
     if [ "$?" = 0 ]; then
         if [ $STATUS_CURRENT = 'disabled' ]; then
-            grep -q '^agentAddress tcp:161$' "$CONFIG_SNMP" || echo 'agentAddress tcp:161' >> "$CONFIG_SNMP"
-
             exec 3>&1
-            USER_NAME="$("$DIALOG" --clear --backtitle 'SNMP support' --title 'SNMP V3 configuration' --inputbox 'Enter user name' 0 50 2>&1 1>&3)"
+            CLIENT_IP="$("$DIALOG" --clear --backtitle 'SNMP support' --title 'SNMP V3 configuration' --inputbox 'Enter client IP' 0 50 2>&1 1>&3)"
             RET_CODE="$?"
             exec 3>&-
 
-            if [ "$RET_CODE" = 0 ] && ! [ -z "$USER_NAME" ]; then
+            if [ "$RET_CODE" = 0 ] && ! [ -z "$CLIENT_IP" ]; then
                 exec 3>&1
-                PASS_PHRASE="$("$DIALOG" --clear --backtitle 'SNMP support' --title 'SNMP V3 configuration' --inputbox 'Enter passphrase' 0 50 2>&1 1>&3)"
+                USER_NAME="$("$DIALOG" --clear --backtitle 'SNMP support' --title 'SNMP V3 configuration' --inputbox 'Enter user name' 0 50 2>&1 1>&3)"
                 RET_CODE="$?"
                 exec 3>&-
 
-                if [ "$RET_CODE" = 0 ] && ! [ -z "$PASS_PHRASE" ]; then
-                    net-snmp-create-v3-user -ro -a SHA -x AES -A "$PASS_PHRASE" -X "$PASS_PHRASE" "$USER_NAME" &>/dev/null
+                if [ "$RET_CODE" = 0 ] && ! [ -z "$USER_NAME" ]; then
+                    exec 3>&1
+                    PASS_PHRASE="$("$DIALOG" --clear --backtitle 'SNMP support' --title 'SNMP V3 configuration' --inputbox 'Enter passphrase' 0 50 2>&1 1>&3)"
+                    RET_CODE="$?"
+                    exec 3>&-
 
-                    service snmpd start &>/dev/null
-                    chkconfig snmpd on    
+                    if [ "$RET_CODE" = 0 ] && ! [ -z "$PASS_PHRASE" ]; then
+                        grep -q '^agentAddress tcp:161$' "$CONFIG_SNMP" || echo 'agentAddress tcp:161' >> "$CONFIG_SNMP"
+
+                        net-snmp-create-v3-user -ro -a SHA -x AES -A "$PASS_PHRASE" -X "$PASS_PHRASE" "$USER_NAME" &>/dev/null
+
+                        service snmpd start &>/dev/null
+                        chkconfig snmpd on
+
+                        echo "-I INPUT 4 -i eth0 -p tcp --dport 161 -s $CLIENT_IP -j ACCEPT" >> "$CONFIG_FW"
+                        iptables -I INPUT 4 -i eth0 -p tcp --dport 161 -s "$CLIENT_IP" -j ACCEPT
+
+                        "$DIALOG" --backtitle 'SNMP support' --title 'SNMP info' --clear --msgbox 'SNMP enabled on TCP port 161.'$'\n\n''Test connection:'$'\n'"snmpget -v3 -u $USER_NAME -l authPriv -a SHA -x AES -A $PASS_PHRASE -X $PASS_PHRASE tcp:$CLIENT_IP SNMPv2-MIB::sysName.0" 0 0
+                    fi
                 fi
             fi
         else
@@ -4810,6 +4822,11 @@ toggle_snmp() {
 
             service snmpd stop &>/dev/null
             chkconfig snmpd off
+
+            FW_RULE="$(grep -e '^-I INPUT 4 -i eth0 -p tcp --dport 161 -s \S\+ -j ACCEPT$' "$CONFIG_FW")"
+
+            sed -i "/^$FW_RULE$/d" "$CONFIG_FW"
+            iptables $(echo "$FW_RULE" | sed 's/^-I INPUT 4/-D INPUT/')
         fi
     fi
 }
