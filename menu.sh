@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.92.0 for Clearswift SEG >= 4.8
+# menu.sh V1.93.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - for SNMP support also manage firewall port for client
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -4775,7 +4775,7 @@ toggle_logging() {
 toggle_snmp() {
     CONFIG_SNMP='/etc/snmp/snmpd.conf'
 
-    if service snmpd status &>/dev/null; then
+    if grep -E -q '^rouser \S+$' "$CONFIG_SNMP"; then
         STATUS_CURRENT='enabled'
         STATUS_TOGGLE='Disable'
     else
@@ -4805,6 +4805,8 @@ toggle_snmp() {
                     if [ "$RET_CODE" = 0 ] && ! [ -z "$PASS_PHRASE" ]; then
                         grep -q '^agentAddress tcp:161$' "$CONFIG_SNMP" || echo 'agentAddress tcp:161' >> "$CONFIG_SNMP"
 
+                        service snmpd stop &>/dev/null
+
                         net-snmp-create-v3-user -ro -a SHA -x AES -A "$PASS_PHRASE" -X "$PASS_PHRASE" "$USER_NAME" &>/dev/null
 
                         service snmpd start &>/dev/null
@@ -4813,7 +4815,7 @@ toggle_snmp() {
                         echo "-I INPUT 4 -i eth0 -p tcp --dport 161 -s $CLIENT_IP -j ACCEPT" >> "$CONFIG_FW"
                         iptables -I INPUT 4 -i eth0 -p tcp --dport 161 -s "$CLIENT_IP" -j ACCEPT
 
-                        "$DIALOG" --backtitle 'SNMP support' --title 'SNMP info' --clear --msgbox 'SNMP enabled on TCP port 161.'$'\n\n''Test connection:'$'\n'"snmpget -v3 -u $USER_NAME -l authPriv -a SHA -x AES -A $PASS_PHRASE -X $PASS_PHRASE tcp:$CLIENT_IP SNMPv2-MIB::sysName.0" 0 0
+                        "$DIALOG" --backtitle 'SNMP support' --title 'SNMP info' --clear --msgbox 'SNMP enabled on TCP port 161.'$'\n\n''Test connection:'$'\n'"snmpget -v3 -u $USER_NAME -l authPriv -a SHA -x AES -A $PASS_PHRASE -X $PASS_PHRASE tcp:$(hostname -I | awk '{print $1}') SNMPv2-MIB::sysName.0" 0 0
                     fi
                 fi
             fi
