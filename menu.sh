@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.93.0 for Clearswift SEG >= 4.8
+# menu.sh V1.94.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - replaced acmetool with acme.sh
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -93,7 +93,7 @@ CONFIG_ELASTIC='/etc/rspamd/local.d/elastic.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
-DIR_CERT="/var/lib/acme/live/$(hostname)"
+DIR_CERT="/root/.acme.sh/$(hostname)"
 DIR_COMMANDS='/opt/cs-gateway/scripts/netcon'
 DIR_MAPS='/etc/postfix/maps'
 DIR_ADDRLIST='/tmp/TMPaddresslist'
@@ -429,31 +429,35 @@ install_pyzorrazor() {
     service rspamd restart
     get_keypress
 }
-# install ACME Tool
+# install acme.sh
 # parameters:
 # none
 # return values:
 # none
 install_letsencrypt() {
-    ## Firewall settings
-    ## letsencrypt validate cert requests
-    TMP_REPONSE="/tmp/TMPreponse"
+    PACKED_SCRIPT='
+    H4sIAIbGV14AA5WQsQ7CMAxE93yFEXMaBgZWVBi6VB3KB6RpRIqa2kosEH9PWrIglnY6WXenZ3u/
+    U90wqU5HJ4RCYmWivGu2L/1enDRGG56DsQYnDjhCZCRg9EbzlgZ5L1ScA9kFx0z9YmZjINbdaCPI
+    Cqq6ubVwBJlYhkD6r8ieMDCcDiAfcC7La9OmvQMiq0Ibb4voVNYUNgGnJA69hd+Q+ENeMnIFcO3V
+    OhU3PmquzJ/6ACg8o8CYAQAA
+    '
     clear
-    if ! [ -f "$CONFIG_FW" ] || ! grep -q '\-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' "$CONFIG_FW"; then
-        echo '-I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT' >> "$CONFIG_FW"
-        iptables -I INPUT 4 -i eth0 -p tcp --dport 80 -j ACCEPT
-    fi
-    yum-config-manager --add-repo https://copr.fedorainfracloud.org/coprs/hlandau/acmetool/repo/epel-6/hlandau-acmetool-epel-6.repo
-    yum install -y acmetool
-    echo '"acmetool-quickstart-choose-server": https://acme-v01.api.letsencrypt.org/directory' > "$TMP_REPONSE"
-    echo '"acmetool-quickstart-choose-method": listen' >> "$TMP_REPONSE"
-    acmetool quickstart --response-file "$TMP_REPONSE"
-    acmetool want "$(hostname)"
-    if [ $? = 0 ]; then
-        # import cert and key into CS keystore
+    wget -O - https://get.acme.sh 2>/dev/null | sh
+    cs-servicecontrol stop tomcat
+    cs-servicecontrol stop pmm
+    service httpd stop
+    iptables -I INPUT 4 -p tcp -m tcp --dport 80 -j ACCEPT
+    /root/.acme.sh/acme.sh --issue --standalone -d "$(hostname)"
+    iptables -D INPUT -p tcp -m tcp --dport 80 -j ACCEPT
+    cs-servicecontrol start tomcat
+    cs-servicecontrol start pmm
+    if [ -f "$DIR_CERT/$(hostname).cer" ]; then
+        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /root/.acme.sh/get_cert.sh
+        chmod +x /root/.acme.sh/get_cert.sh
+        crontab -l 2>/dev/null | sed 's/"\/root\/.acme.sh"\/acme.sh --cron --home "\/root\/.acme.sh" > \/dev\/null/\/root\/.acme.sh\/get_cert.sh > \/dev\/null/' | crontab -
         mv -f /var/cs-gateway/keystore /var/cs-gateway/keystore.old
         cd /home/cs-admin
-        openssl pkcs12 -export -name tomcat -in "$DIR_CERT/cert" -inkey "$DIR_CERT/privkey" -out keystore.p12 -passout "pass:$PASSWORD_KEYSTORE"
+        openssl pkcs12 -export -name tomcat -in "$DIR_CERT/$(hostname).cer" -inkey "$DIR_CERT/$(hostname).key" -out keystore.p12 -passout "pass:$PASSWORD_KEYSTORE"
         keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore keystore.p12 -srcstoretype pkcs12 -deststorepass "$PASSWORD_KEYSTORE" -srcstorepass "$PASSWORD_KEYSTORE"
         keytool -list -keystore /var/cs-gateway/keystore -storepass "$PASSWORD_KEYSTORE"
         cs-servicecontrol restart tomcat &>/dev/null
@@ -539,7 +543,7 @@ check_installed_pyzorrazor() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_letsencrypt() {
-    which acmetool &>/dev/null
+    [ -f /root/.acme.sh/acme.sh ]
     return "$?"
 }
 # check whether Auto update is installed
@@ -566,8 +570,8 @@ check_installed_vmware_tools() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_local_dns() {
-    RET_CODE=$(grep -q "dnssec-validation auto;" $CONFIG_BIND || grep -q "#include" $CONFIG_BIND || grep -q "named.ca" $CONFIG_BIND)
-    return "$RET_CODE"
+    grep -q "dnssec-validation auto;" $CONFIG_BIND || grep -q "#include" $CONFIG_BIND || grep -q "named.ca" $CONFIG_BIND
+    return "$?"
 }
 ###################################################################################################
 # print info for installed feature
@@ -606,7 +610,7 @@ install_feature() {
 dialog_install() {
     DIALOG_RSPAMD="Rspamd"
     DIALOG_PYZORRAZOR="Pyzor & Razor for Rspamd"
-    DIALOG_LETSENCRYPT="ACME Tool"
+    DIALOG_LETSENCRYPT="Acme.sh"
     DIALOG_AUTO_UPDATE="Auto update"
     DIALOG_VMWARE_TOOLS="VMware Tools"
     DIALOG_LOCAL_DNS="Local DNS resolver"
@@ -743,18 +747,18 @@ disable_rspamd() {
 # return values:
 # none
 enable_letsencrypt() {
-    if [ -f "$DIR_CERT/privkey" ] && [ -f "$DIR_CERT/fullchain" ]; then
-        for OPTION in                                       \
-            "smtpd_tls_key_file=$DIR_CERT/privkey"          \
-            "smtpd_tls_cert_file=$DIR_CERT/fullchain"; do
+    if [ -f "$DIR_CERT/$(hostname).key" ] && [ -f "$DIR_CERT/fullchain.cer" ]; then
+        for OPTION in                                           \
+            "smtpd_tls_key_file=$DIR_CERT/$(hostname).key"      \
+            "smtpd_tls_cert_file=$DIR_CERT/fullchain.cer"; do
             if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
                 echo "$OPTION" >> "$PF_IN"
             fi
             postmulti -i postfix-inbound -x postconf "$OPTION"
         done
-        for OPTION in                                       \
-            "smtp_tls_key_file=$DIR_CERT/privkey"          \
-            "smtp_tls_cert_file=$DIR_CERT/fullchain"; do
+        for OPTION in                                           \
+            "smtp_tls_key_file=$DIR_CERT/$(hostname).key"       \
+            "smtp_tls_cert_file=$DIR_CERT/fullchain.cer"; do
             if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
                 echo "$OPTION" >> "$PF_OUT"
             fi
@@ -770,14 +774,14 @@ enable_letsencrypt() {
 # return values:
 # none
 disable_letsencrypt() {
-    for OPTION in                                       \
-        "smtpd_tls_key_file=$DIR_CERT/privkey"          \
-        "smtpd_tls_cert_file=$DIR_CERT/fullchain"; do
+    for OPTION in                                           \
+        "smtpd_tls_key_file=$DIR_CERT/$(hostname).key"      \
+        "smtpd_tls_cert_file=$DIR_CERT/fullchain.cer"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
-    for OPTION in                                       \
-        "smtp_tls_key_file=$DIR_CERT/privkey"          \
-        "smtp_tls_cert_file=$DIR_CERT/fullchain"; do
+    for OPTION in                                           \
+        "smtp_tls_key_file=$DIR_CERT/$(hostname).key"       \
+        "smtp_tls_cert_file=$DIR_CERT/fullchain.cer"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
     done    
 }
@@ -788,15 +792,15 @@ disable_letsencrypt() {
 # none
 enable_tls() {
     [ -f /etc/postfix/dh1024.pem ] || openssl dhparam -out /etc/postfix/dh1024.pem 1024 &>/dev/null
-    for OPTION in                                                  \
+    for OPTION in                   \
         'smtpd_tls_loglevel=1'; do
         if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
             echo "$OPTION" >> "$PF_IN"
         fi
         postmulti -i postfix-inbound -x postconf "$OPTION"
     done
-    for OPTION in                                                   \
-        'smtp_tls_note_starttls_offer=yes'                          \
+    for OPTION in                           \
+        'smtp_tls_note_starttls_offer=yes'  \
         'smtp_tls_loglevel=1'; do
         if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
             echo "$OPTION" >> "$PF_OUT"
@@ -1214,11 +1218,11 @@ check_enabled_rspamd() {
 # Let's Encrypt cert status
 check_enabled_letsencrypt() {
     if [ -f "$PF_IN" ]                                                          \
-        && grep -q "smtpd_tls_key_file=$DIR_CERT/privkey" "$PF_IN"              \
-        && grep -q "smtpd_tls_cert_file=$DIR_CERT/fullchain" "$PF_IN"           \
+        && grep -q "smtpd_tls_key_file=$DIR_CERT/$(hostname).key" "$PF_IN"      \
+        && grep -q "smtpd_tls_cert_file=$DIR_CERT/fullchain.cer" "$PF_IN"       \
         && [ -f "$PF_OUT" ]                                                     \
-        && grep -q "smtp_tls_key_file=$DIR_CERT/privkey" "$PF_OUT"              \
-        && grep -q "smtp_tls_cert_file=$DIR_CERT/fullchain" "$PF_OUT"; then
+        && grep -q "smtp_tls_key_file=$DIR_CERT/$(hostname).key" "$PF_OUT"      \
+        && grep -q "smtp_tls_cert_file=$DIR_CERT/fullchain.cer" "$PF_OUT"; then
         echo on
     else
         echo off
@@ -5218,7 +5222,7 @@ while true; do
         check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_CONFIG_RSPAMD" '')
         ARRAY_MAIN+=("$DIALOG_OTHER" '')
         ARRAY_MAIN+=("$DIALOG_SHOW" '')
-        [ $APPLY_NEEDED = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" '')
+        [ "$APPLY_NEEDED" = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" '')
     else
         ARRAY_MAIN+=("$DIALOG_SEG" '')
     fi
