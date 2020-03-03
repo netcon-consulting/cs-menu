@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.94.0 for Clearswift SEG >= 4.8
+# menu.sh V1.95.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - replaced acmetool with acme.sh
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2736,7 +2736,7 @@ gui_timeout() {
     DIALOG_RET="$("$DIALOG" --clear --backtitle 'Clearswift Configuration' --title 'WebUI Timeout' --inputbox 'Enter timeout for WebUI (in minutes)' 0 50 $TIMEOUT_CURRENT 2>&1 1>&3)"
     RET_CODE="$?"
     exec 3>&-
-    if [ "$RET_CODE" = 0 ] & [ "$DIALOG_RET" != "$TIMEOUT_CURRENT" ]; then
+    if [ "$RET_CODE" = 0 ] && [ "$DIALOG_RET" != "$TIMEOUT_CURRENT" ]; then
         sed -i "s/<session-timeout>$TIMEOUT_CURRENT<\/session-timeout>/<session-timeout>$DIALOG_RET<\/session-timeout>/" "$DIR_APPLIANCE/$FILE_APPLIANCE"
         cd "$DIR_APPLIANCE"
         zip -r "$FILE_ZIP" "$FILE_APPLIANCE" &>/dev/null
