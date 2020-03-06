@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# remove_block.sh V1.1.0
+# remove_block.sh V1.2.0
 #
 # Copyright (c) 2019-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -11,9 +11,12 @@
 # 1 - one or more blocks removed
 # 99 - unrecoverable error
 
-# list of blocks defined by the first and last line (separated by comma)
-LIST_BLOCK='\\** Externe Email **,--------------------------------'
-LIST_BLOCK+=$'\n''<p class=\"MsoNormal\"><o:p>&nbsp;</o:p></p>,-------------------------------- <o:p></o:p></p>'
+SEPERATOR='#'
+
+# list of blocks defined by the first and last line (separated by SEPERATOR)
+LIST_BLOCK=()
+LIST_BLOCK+=("_\*\*Externe Email\*\*_ Links und Anhänge nur öffnen, wenn der Absender vertrauenswürdig und Sie Anhänge als sicher einstufen können   _\*\*_${SEPERATOR}_\*\*Externe Email\*\*_ Links und Anhänge nur öffnen, wenn der Absender vertrauenswürdig und Sie Anhänge als sicher einstufen können   _\*\*_")
+LIST_BLOCK+=("<p class=\"MsoNormal\"><span style=\"font-size:9.0pt;color:red;background:yellow\">_<i>\*\*Externe Email\*\*</i>_${SEPERATOR}<o:p></o:p></p>")
 
 LOG_PREFIX='>>>>'
 LOG_SUFFIX='<<<<'
@@ -55,10 +58,10 @@ remove_block() {
     BLOCK_START="$(echo "$1" | grep -n "^$2" | head -1 | cut -f1 -d\:)"
 
     if ! [ -z "$BLOCK_START" ]; then
-        BLOCK_END="$(echo "$1" | sed -n "$(expr "$BLOCK_START" + 1),\$ p" | grep -n "^$3" | head -1 | cut -f1 -d\:)"
+        BLOCK_END="$(echo "$1" | sed -n "$BLOCK_START,\$ p" | grep -n "^$3" | head -1 | cut -f1 -d\:)"
 
         if ! [ -z "$BLOCK_END" ]; then
-            BLOCK_END="$(expr "$BLOCK_START" + "$BLOCK_END")"
+            BLOCK_END="$(expr "$BLOCK_START" + "$BLOCK_END" - 1)"
 
             echo "$1" | sed "$BLOCK_START,$BLOCK_END d"
 
@@ -75,11 +78,11 @@ clean_part() {
     MODIFIED=''
     PART_CLEANED="$1"
 
-    while read BLOCK; do
-        PART_CLEANED="$(remove_block "$PART_CLEANED" "$(echo "$BLOCK" | awk -F, '{print $1}')" "$(echo "$BLOCK" | awk -F, '{print $2}')")"
+    for BLOCK in "${LIST_BLOCK[@]}"; do
+        PART_CLEANED="$(remove_block "$PART_CLEANED" "$(echo "$BLOCK" | awk -F "$SEPERATOR" '{print $1}')" "$(echo "$BLOCK" | awk -F "$SEPERATOR" '{print $2}')")"
 
         [ "$?" = 1 ] && MODIFIED=1
-    done < <(echo "$LIST_BLOCK")
+    done
 
     echo "$PART_CLEANED"
     [ "$MODIFIED" = 1 ] && return 1
