@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.95.0 for Clearswift SEG >= 4.8
+# menu.sh V1.96.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - for external commands added option in the rules config for creating address list
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2036,6 +2036,20 @@ create_rule() {
     if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
         echo "rule '$NAME_RULE' already exists"
         return 10
+    fi
+
+    LIST_ADDRESS="$(echo "$1" | sed -n '/address_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+
+    if ! [ -z "$LIST_ADDRESS" ]; then
+        while read NAME_LIST; do
+            if ! grep -q "AddressList name=\"$NAME_LIST\"" "$DIR_ADDRESS/*.xml" 2>/dev/null; then
+                UUID_ADDRESS="$(uuidgen)"
+                FILE_ADDRESS="$DIR_ADDRESS/$UUID_ADDRESS.xml"
+                echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><AddressList name=\"$NAME_LIST\" type=\"static\" uuid=\"$UUID_ADDRESS\"><Address>dummy@dummy.com</Address></AddressList>" > "$FILE_ADDRESS"
+                chown cs-tomcat:cs-adm "$FILE_ADDRESS"
+                chmod g+w "$FILE_ADDRESS"
+            fi
+        done < <(echo "$LIST_ADDRESS")
     fi
 
     LIST_URL="$(echo "$1" | sed -n '/url_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
