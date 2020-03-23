@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# check_ratelimit.sh V1.0.0
+# check_ratelimit.sh V1.1.0
 #
 # Copyright (c) 2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -15,7 +15,7 @@ RATE_LIMIT=1000
 TIME_EXPIRE=86400 # 24 hours
 NAME_ADDRLIST='Rate limit whitelist'
 
-LAST_CONFIG='/var/cs-gateway/deployments/lastAppliedConfiguration.xml'
+DIR_ADDRESS='/var/cs-gateway/uicfg/policy/addresslists'
 
 LOG_PREFIX='>>>>'
 LOG_SUFFIX='<<<<'
@@ -72,7 +72,8 @@ if ! [ -z "$FROM_LINE" ]; then
         redis-cli setex "$EMAIL_SENDER:$(date +%s.%N):$(uuidgen)" "$TIME_EXPIRE" 1 &>/dev/null
 
         if [ "$(redis-cli KEYS "$EMAIL_SENDER:*" | wc -l)" -gt "$RATE_LIMIT" ]; then
-            LIST_ADDRESS="$(xmlstarlet sel -t -m "Configuration/AddressListTable/AddressList[@name='$NAME_ADDRLIST']/Address" -v . -n "$LAST_CONFIG")"
+            FILE_ADDRESS="$(grep -l "AddressList name=\"$NAME_ADDRLIST\"" $DIR_ADDRESS/*.xml 2>/dev/null)"
+            [ -z "$FILE_ADDRESS" ] || LIST_ADDRESS="$(xmlstarlet sel -t -m "AddressList/Address" -v . -n "$FILE_ADDRESS")"
 
             if [ -z "$LIST_ADDRESS" ]; then
                 write_log "Empty address list"

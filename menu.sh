@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.96.0 for Clearswift SEG >= 4.8
+# menu.sh V1.97.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - for external commands added option in the rules config for creating address list
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1963,6 +1963,7 @@ export_address_list() {
 create_rule() {
     DIR_CFG='/var/cs-gateway/uicfg'
     DIR_RULES="$DIR_CFG/policy/rules"
+    DIR_ADDRESS="$DIR_CFG/policy/addresslists"
     DIR_URL="$DIR_CFG/policy/urllists"
     DIR_LEXICAL="$DIR_CFG/policy/ta"
     FILE_DISPOSAL="$DIR_CFG/policy/disposals.xml"
