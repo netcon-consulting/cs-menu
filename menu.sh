@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.97.0 for Clearswift SEG >= 4.8
+# menu.sh V1.98.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -2864,23 +2864,24 @@ toggle_backup() {
 # none
 toggle_ldap() {
     PACKED_SCRIPT='
-    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
+    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
+    QQUcCAAA
     '
     if [ -f "$CRON_LDAP" ]; then
         STATUS_CURRENT='enabled'

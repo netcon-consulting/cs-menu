@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# ldap_watchdog.sh V1.4.0
+# ldap_watchdog.sh V1.5.0
 #
-# Copyright (c) 2018-2019 NetCon Unternehmensberatung GmbH, netcon-consulting.com
+# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
@@ -46,6 +46,8 @@ if ! [ -z "$LIST_NAME" ]; then
 
         date +%F > "$TMP_LDAP"
     fi
+
+    kill "$(pidof LdapAgent)" >/dev/null 2>&1
 
     /opt/cs-gateway/bin/cs-servicecontrol restart ldap
 fi
