@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.99.0 for Clearswift SEG >= 4.8
+# menu.sh V1.100.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option for PSQL cleanup to 'Clearswift config' submenu
+# - added option for setup of whitelist server to 'Other configs' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -3165,6 +3165,57 @@ anomaly_detect() {
         fi
     done
 }
+# add public key for SSH authentication for whitelist in dialog inputbox
+# parameters:
+# none
+# return values:
+# error code - 0 for added, 1 for cancel
+add_client() {
+    exec 3>&1
+    DIALOG_RET="$("$DIALOG" --clear --backtitle 'Manage whitelist clients' --title 'Add public SSH key' --inputbox 'Enter public key for SSH authentication for whitelist' 0 50 2>&1 1>&3)"
+    RET_CODE="$?"
+    exec 3>&-
+    if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
+        echo "command=\"/home/whitelist/print_whitelist.sh\" $DIALOG_RET" >> '/home/whitelist/.ssh/authorized_keys'
+        return 0
+    else
+        return 1
+    fi
+}
+# add/remove public keys for SSH authentication for whitelist in dialog menu
+# parameters:
+# none
+# return values:
+# none
+whitelist_client() {
+    SSH_WHITELIST='/home/whitelist/.ssh/authorized_keys'
+    while true; do
+        LIST_KEY=''
+        [ -f "$SSH_WHITELIST" ] && LIST_KEY="$(sed 's/ /,/g' "$SSH_WHITELIST")"
+        if [ -z "$LIST_KEY" ]; then
+            add_client || break
+        else
+            ARRAY_KEY=()
+            for SSH_KEY in $LIST_KEY; do
+                ARRAY_KEY+=("$(echo "$SSH_KEY" | sed 's/,/ /g')" '')
+            done
+            exec 3>&1
+            DIALOG_RET="$("$DIALOG" --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
+                --menu 'Add/remove public keys for SSH authentication for whitelist' 0 0 0 "${ARRAY_KEY[@]}" 2>&1 1>&3)"
+            RET_CODE="$?"
+            exec 3>&-
+            if [ "$RET_CODE" = 0 ]; then
+                add_client
+            else
+                if [ "$RET_CODE" = 3 ]; then
+                    sed -i "/$(echo "$DIALOG_RET" | sed 's/\//\\\//g')/d" "$SSH_WHITELIST"
+                else
+                    break
+                fi
+            fi
+        fi
+    done
+}
 # get status of defined recipient validation
 # parameters:
 # $1 - validation
@@ -4886,6 +4937,62 @@ toggle_snmp() {
         fi
     fi
 }
+# manage monthly sender anomaly detection in dialog menu
+# parameters:
+# none
+# return values:
+# none
+dialog_whitelist() {
+    DIALOG_STATUS='Current status: '
+    DIALOG_CLIENT='Add/remove whitelist client'
+    USER_WHITELIST='whitelist'
+    DIR_WHITELIST='/home/whitelist'
+    SCRIPT_WHITELIST="$DIR_WHITELIST/print_whitelist.sh"
+    while true; do
+        [ -d "$DIR_WHITELIST" ] && STATUS_CURRENT='enabled' || STATUS_CURRENT='disabled'
+        ARRAY_WHITELIST=()
+        ARRAY_WHITELIST+=("$DIALOG_STATUS$STATUS_CURRENT" '')
+        if [ "$STATUS_CURRENT" = 'enabled' ]; then
+            ARRAY_WHITELIST+=("$DIALOG_CLIENT" '')
+        fi
+        exec 3>&1
+        DIALOG_RET="$("$DIALOG" --clear --backtitle 'Other configurations'              \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Whitelist server' 0 40 0    \
+            "${ARRAY_WHITELIST[@]}" 2>&1 1>&3)"
+        RET_CODE="$?"
+        exec 3>&-
+        if [ "$RET_CODE" = 0 ]; then
+            case "$DIALOG_RET" in
+                "$DIALOG_STATUS$STATUS_CURRENT")
+                    if [ "$STATUS_CURRENT" = 'enabled' ]; then
+                        userdel -rf "$USER_WHITELIST"
+                    else
+                        PACKED_SCRIPT='
+                        H4sIADvZil4AA21PS2vCQBC+76+YxkBUmmzqscVSMbYKtgft4xCibJIxWbrZDbsbrdAf31Qt5NCB
+                        gZn5HnzTu6IplzRlpiSkB7Xm0m4PJbcouLEmMCW83wRhEJJeC09VfdS8KC30swGMwlEIL2inSsKb
+                        tKgllhVKk6JmtpEFPFXp/Bok2kxJv23TCMtlEWSqOtlNGlsqfQvPTGcQcdSfBiX0qyC/zA//ageE
+                        RIvVdhJFq9l6PfbonmmaGb9gFg/sSBue7QpaK8GzI2V5rtGY0zceITul4XGxnP2pgUtw+4XGGnwB
+                        3uTMXrZskKzCsRNvnGQYHz6SuJwnMV8ksX1NYpwlsVied7M+336JjgduJxsdBl+VgNE9zXFPZSPE
+                        4A5yRaCtFjCWaYEWDArwLfgVOJ0A9DI74O8hAF+C43ajO11f+G5dcvDoxqW5R3IlkfwAaTf4D9wB
+                        AAA=
+                        '
+                        useradd -m -d "$DIR_WHITELIST" "$USER_WHITELIST"
+                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$SCRIPT_WHITELIST"
+                        chmod 700 "$SCRIPT_WHITELIST"
+                        mkdir "$DIR_WHITELIST/.ssh"
+                        chmod 700 "$DIR_WHITELIST/.ssh"
+                        touch "$DIR_WHITELIST/.ssh/authorized_keys"
+                        chmod 600 "$DIR_WHITELIST/.ssh/authorized_keys"
+                        chown -R "$USER_WHITELIST:$USER_WHITELIST" "$DIR_WHITELIST"
+                    fi;;
+                "$DIALOG_CLIENT")
+                    whitelist_client;;
+            esac
+        else
+            break
+        fi
+    done
+}
 # select other configuration to manage in dialog menu
 # parameters:
 # none
@@ -4901,6 +5008,7 @@ dialog_other() {
     DIALOG_ANOMALY='Sender anomaly detection'
     DIALOG_LOG='DNS query logging'
     DIALOG_SNMP='SNMP support'
+    DIALOG_WHITELIST='Whitelist server'
     ARRAY_OTHER=()
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
@@ -4911,6 +5019,7 @@ dialog_other() {
     ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
     ARRAY_OTHER+=("$DIALOG_LOG" '')
     ARRAY_OTHER+=("$DIALOG_SNMP" '')
+    ARRAY_OTHER+=("$DIALOG_WHITELIST" '')
     while true; do
         exec 3>&1
         DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN"                                \
@@ -4939,6 +5048,8 @@ dialog_other() {
                     toggle_logging;;
                 "$DIALOG_SNMP")
                     toggle_snmp;;
+                "$DIALOG_WHITELIST")
+                    dialog_whitelist;;
             esac
         else
             break

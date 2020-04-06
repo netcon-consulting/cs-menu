@@ -1,5 +1,5 @@
-NetCon Clearswift Configuration V1.99.0
-=======================================
+NetCon Clearswift Configuration V1.100.0
+========================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
 
