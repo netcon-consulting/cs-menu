@@ -1,4 +1,4 @@
-clean_subject.sh V1.0.0
+clean_subject.sh V1.2.0
 =======================
 
 Remove keywords from subject header field.

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# clean_subject.sh V1.1.0
+# clean_subject.sh V1.2.0
 #
-# Copyright (c) 2019-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
+# Copyright (c) 2019-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 
@@ -93,28 +93,25 @@ fi
 
 HEADER_SUBJECT="$(get_header "$1" 'subject')"
 
-if [ -z "$HEADER_SUBJECT" ]; then
-    write_log 'Subject line is empty'
-    exit 99
-fi
+if ! [ -z "$HEADER_SUBJECT" ]; then
+    FILE_LEXICAL="$(grep -l "name=\"$NAME_LEXICAL\"" $DIR_LEXICAL/*.xml 2>/dev/null)"
+    [ -z "$FILE_LEXICAL" ] || LIST_LEXICAL="$(xmlstarlet sel -t -m "TextualAnalysis/Phrase" -v @text -n "$FILE_LEXICAL")"
 
-FILE_LEXICAL="$(grep -l "name=\"$NAME_LEXICAL\"" $DIR_LEXICAL/*.xml 2>/dev/null)"
-[ -z "$FILE_LEXICAL" ] || LIST_LEXICAL="$(xmlstarlet sel -t -m "TextualAnalysis/Phrase" -v @text -n "$FILE_LEXICAL")"
+    if ! [ -z "$LIST_LEXICAL" ]; then
+        MODIFIED=0
 
-if ! [ -z "$LIST_LEXICAL" ]; then
-    MODIFIED=0
+        for KEYWORD in $LIST_LEXICAL; do
+            if echo "$HEADER_SUBJECT" | grep -q "$KEYWORD"; then
+                HEADER_SUBJECT="$(echo "$HEADER_SUBJECT" | sed "s/$KEYWORD *//g")"
 
-    for KEYWORD in $LIST_LEXICAL; do
-        if echo "$HEADER_SUBJECT" | grep -q "$KEYWORD"; then
-            HEADER_SUBJECT="$(echo "$HEADER_SUBJECT" | sed "s/$KEYWORD *//g")"
+                MODIFIED=1
+            fi
+        done
 
-            MODIFIED=1
+        if [ "$MODIFIED" = 1 ]; then
+            replace_header "$1" 'subject' "$HEADER_SUBJECT"
+            exit 1
         fi
-    done
-
-    if [ "$MODIFIED" = 1 ]; then
-        replace_header "$1" 'subject' "$HEADER_SUBJECT"
-        exit 1
     fi
 fi
 

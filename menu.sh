@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# menu.sh V1.100.0 for Clearswift SEG >= 4.8
+# menu.sh V1.101.0 for Clearswift SEG >= 4.8
 #
-# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
+# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
 # Authors:
 # Uwe Sommer (u.sommer@netcon-consulting.com)
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option for setup of whitelist server to 'Other configs' submenu
+# - fixed yum-cron not being autostarted
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -473,7 +473,8 @@ install_letsencrypt() {
 install_auto_update() {
     clear
     yum install -y yum-cron
-    /etc/init.d/yum-cron start
+    chkconfig yum-cron on
+    service yum-cron start
     get_keypress
 }
 # install VMware Tools
