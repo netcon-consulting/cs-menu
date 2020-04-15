@@ -1,4 +1,4 @@
-keyword_encryption = "encrypt"
+keyword_encryption = "[encrypt]"
 
 password_length = 32
 
