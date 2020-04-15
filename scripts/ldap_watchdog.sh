@@ -2,7 +2,7 @@
 
 # ldap_watchdog.sh V1.5.0
 #
-# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, netcon-consulting.com
+# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
 

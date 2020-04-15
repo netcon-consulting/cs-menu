@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.101.0 for Clearswift SEG >= 4.8
+# menu.sh V1.102.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - fixed yum-cron not being autostarted
+# - added support for Python3 external commands
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -1666,10 +1666,17 @@ install_command() {
         RET_CODE="$?"
         exec 3>&-
         if [ "$RET_CODE" = 0 ]; then
-            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.sh" -O "$DIR_COMMANDS/$DIALOG_RET.sh" 2>/dev/null
-            chown cs-admin:cs-adm "$DIR_COMMANDS/$DIALOG_RET.sh"
-            chmod +x "$DIR_COMMANDS/$DIALOG_RET.sh"
-            RESULT="$(create_rule "$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/rule.cfg" -O - 2>/dev/null)")"
+            CONFIG_RULE="$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/rule.cfg" -O - 2>/dev/null)"
+            if echo "$CONFIG_RULE" | sed -n '/cmd_path/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p' | grep -q '\.py$'; then
+                FILE_SCRIPT="$DIALOG_RET.py"
+                wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.toml" -O "$DIR_COMMANDS/$DIALOG_RET.toml" 2>/dev/null
+            else
+                FILE_SCRIPT="$DIALOG_RET.sh"
+            fi
+            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$FILE_SCRIPT" -O "$DIR_COMMANDS/$FILE_SCRIPT" 2>/dev/null
+            chown cs-admin:cs-adm "$DIR_COMMANDS/$FILE_SCRIPT"
+            chmod +x "$DIR_COMMANDS/$FILE_SCRIPT"
+            RESULT="$(create_rule "$CONFIG_RULE")"
             if [ "$?" = 0 ]; then
                 APPLY_NEEDED=1
             else
@@ -2030,15 +2037,29 @@ create_rule() {
         for DEPENDENCY in $LIST_DEPENDENCY; do
             yum install -y "$DEPENDENCY" --enablerepo=cs-* &>/dev/null
             if [ "$?" != 0 ]; then
-                echo "cannot install '$DEPENDENCY'"
+                echo "cannot install dependency '$DEPENDENCY'"
                 return 9
             fi
         done
     fi
 
+    if echo "$CMD_PATH" | grep -q '\.py$'; then
+        LIST_MODULE="$(echo "$1" | sed -n '/modules/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
+
+        if ! [ -z "$LIST_MODULE" ]; then
+            for MODULE in $LIST_MODULE; do
+                pip3 install "$MODULE" &>/dev/null
+                if [ "$?" != 0 ]; then
+                    echo "cannot install module '$MODULE'"
+                    return 10
+                fi
+            done
+        fi
+    fi
+
     if ! [ -z "$(xmlstarlet sel -t -m "Configuration/PolicyRuleCollection/ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n "$LAST_CONFIG")" ] || ! [ -z "$(xmlstarlet sel -t -m "ExecutablePolicyRule[@name='$NAME_RULE']" -v @uuid -n $DIR_RULES/*.xml)" ]; then
         echo "rule '$NAME_RULE' already exists"
-        return 10
+        return 11
     fi
 
     LIST_ADDRESS="$(echo "$1" | sed -n '/address_lists/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p')"
@@ -2196,7 +2217,7 @@ create_rule() {
 
     if [ "$?" != 0 ]; then
         echo 'error restarting Tomcat'
-        return 11
+        return 12
     fi
 }
 # create policy rule from rule config file
@@ -5285,6 +5306,10 @@ init_cs() {
     which tmux &>/dev/null || yum install -y tmux --enablerepo=cs-* &>/dev/null
     # install mail
     which mail &>/dev/null || yum install -y mailx --enablerepo=cs-* &>/dev/null
+    # install python3
+    which python3 &>/dev/null || yum install -y python34 --enablerepo=cs-* &>/dev/null
+    # install pip3
+    which pip3 &>/dev/null || yum install -y python34-pip --enablerepo=cs-* &>/dev/null
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch $CONFIG_PF
