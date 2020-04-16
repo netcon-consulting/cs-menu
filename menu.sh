@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.102.0 for Clearswift SEG >= 4.8
+# menu.sh V1.103.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added support for Python3 external commands
+# - updated script for whitelist server
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -4990,13 +4990,12 @@ dialog_whitelist() {
                         userdel -rf "$USER_WHITELIST"
                     else
                         PACKED_SCRIPT='
-                        H4sIADvZil4AA21PS2vCQBC+76+YxkBUmmzqscVSMbYKtgft4xCibJIxWbrZDbsbrdAf31Qt5NCB
-                        gZn5HnzTu6IplzRlpiSkB7Xm0m4PJbcouLEmMCW83wRhEJJeC09VfdS8KC30swGMwlEIL2inSsKb
-                        tKgllhVKk6JmtpEFPFXp/Bok2kxJv23TCMtlEWSqOtlNGlsqfQvPTGcQcdSfBiX0qyC/zA//ageE
-                        RIvVdhJFq9l6PfbonmmaGb9gFg/sSBue7QpaK8GzI2V5rtGY0zceITul4XGxnP2pgUtw+4XGGnwB
-                        3uTMXrZskKzCsRNvnGQYHz6SuJwnMV8ksX1NYpwlsVied7M+336JjgduJxsdBl+VgNE9zXFPZSPE
-                        4A5yRaCtFjCWaYEWDArwLfgVOJ0A9DI74O8hAF+C43ajO11f+G5dcvDoxqW5R3IlkfwAaTf4D9wB
-                        AAA=
+                        H4sIAGhhmF4AA22QQWvCQBCF7/srpjGQRJqsemyxrahtBVuK0l5KlTUZk6Wb2bC70Qr++AZrSw4d
+                        GBh4fG/eTOeCbyTxjbAFYx2ojCS33hfSoZLW2cQW8NZP+kmPdRp5rKuDkXnhIEwjGPQGPXhGN9YE
+                        r+TQEBYlkt2gEa6mHB7KzeMlELpUU9y0rZWTlCepLk92o9oV2lzBkzApTCSaT4sEYZlk5/nuXzZi
+                        bDJbrEeTyWK6XA4DvhOGpzbOhcO9OPBaptucV1rJ9MBFlhm09nRNwNhWG7ifzae/NEgCP8wNVhC/
+                        QKwgGP0A8wYAEiUOvfeV99ENb2UU/j3mWAnjCE100rwA/FYi3k2+SgWDG57hjlOtVHQNmWbQVCNY
+                        J4xCBxYVxA7iErzWTn6ePYh3kEBM4PntwF7bF46NSwYBX/k8C1imCdk35LYMBdIBAAA=
                         '
                         useradd -m -d "$DIR_WHITELIST" "$USER_WHITELIST"
                         printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$SCRIPT_WHITELIST"
