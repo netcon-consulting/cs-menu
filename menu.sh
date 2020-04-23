@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.103.0 for Clearswift SEG >= 4.8
+# menu.sh V1.104.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - updated script for whitelist server
+# - refactored external commands into separate repository
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -128,9 +128,11 @@ SSH_KEYS='/home/cs-admin/.ssh/authorized_keys'
 BLACKLISTS='zen.spamhaus.org*3 b.barracudacentral.org*2 ix.dnsbl.manitu.net*2 bl.spameatingmonkey.net bl.spamcop.net list.dnswl.org=127.0.[0..255].0*-2 list.dnswl.org=127.0.[0..255].1*-3 list.dnswl.org=127.0.[0..255].[2..3]*-4'
 FILE_PASSWORD='/tmp/TMPpassword'
 EMAIL_DEFAULT='uwe@usommer.de'
-LINK_GITHUB='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
-LINK_UPDATE="$LINK_GITHUB/menu.sh"
-LINK_CONFIG="$LINK_GITHUB/configs/sample_config.bk"
+LINK_MENU='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
+LINK_UPDATE="$LINK_MENU/menu.sh"
+LINK_CONFIG="$LINK_MENU/configs/sample_config.bk"
+LINK_LIB='https://raw.githubusercontent.com/netcon-consulting/netcon.py/master/netcon.py'
+LINK_COMMANDS='https://raw.githubusercontent.com/netcon-consulting/clearswift-external-commands/master'
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
 CRON_DKIM='/etc/cron.monthly/dkim_report.sh'
@@ -1654,7 +1656,7 @@ dialog_feature_postfix() {
 # some custom settings
 ###################################################################################################
 install_command() {
-    LIST_COMMAND="$(wget https://github.com/netcon-consulting/cs-menu/tree/master/external_commands -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
+    LIST_COMMAND="$(wget "$LINK_COMMANDS" -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
     while true; do
         ARRAY_COMMAND=()
         for NAME_COMMAND in $LIST_COMMAND; do
@@ -1666,14 +1668,15 @@ install_command() {
         RET_CODE="$?"
         exec 3>&-
         if [ "$RET_CODE" = 0 ]; then
-            CONFIG_RULE="$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/rule.cfg" -O - 2>/dev/null)"
+            CONFIG_RULE="$(wget "$LINK_COMMANDS/$DIALOG_RET/rule.cfg" -O - 2>/dev/null)"
             if echo "$CONFIG_RULE" | sed -n '/cmd_path/,/^\s*$/p' | sed '/^\s*$/d' | sed -n '1!p' | grep -q '\.py$'; then
                 FILE_SCRIPT="$DIALOG_RET.py"
-                wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$DIALOG_RET.toml" -O "$DIR_COMMANDS/$DIALOG_RET.toml" 2>/dev/null
+                wget "$LINK_LIB" -O "$DIR_COMMANDS/netcon.py" 2>/dev/null
+                wget "$LINK_COMMANDS/$DIALOG_RET/$DIALOG_RET.toml" -O "$DIR_COMMANDS/$DIALOG_RET.toml" 2>/dev/null
             else
                 FILE_SCRIPT="$DIALOG_RET.sh"
             fi
-            wget "$LINK_GITHUB/external_commands/$DIALOG_RET/$FILE_SCRIPT" -O "$DIR_COMMANDS/$FILE_SCRIPT" 2>/dev/null
+            wget "$LINK_COMMANDS/$DIALOG_RET/$FILE_SCRIPT" -O "$DIR_COMMANDS/$FILE_SCRIPT" 2>/dev/null
             chown cs-admin:cs-adm "$DIR_COMMANDS/$FILE_SCRIPT"
             chmod +x "$DIR_COMMANDS/$FILE_SCRIPT"
             RESULT="$(create_rule "$CONFIG_RULE")"
@@ -2270,7 +2273,7 @@ email_sample() {
 # stderr - 0 for success, else for error
 # stdout - error message
 create_config() {
-    LINK_TEMPLATE="$LINK_GITHUB/configs/template_config.xml"
+    LINK_TEMPLATE="$LINK_MENU/configs/template_config.xml"
     TEMPLATE_CONFIG='/tmp/TMPtemplate_config.xml'
 
     wget "$LINK_TEMPLATE" -O "$TEMPLATE_CONFIG" 2>/dev/null
