@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.104.0 for Clearswift SEG >= 4.8
+# menu.sh V1.105.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - refactored external commands into separate repository
+# - bugfix
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -132,6 +132,7 @@ LINK_MENU='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
 LINK_UPDATE="$LINK_MENU/menu.sh"
 LINK_CONFIG="$LINK_MENU/configs/sample_config.bk"
 LINK_LIB='https://raw.githubusercontent.com/netcon-consulting/netcon.py/master/netcon.py'
+REPO_COMMANDS='https://github.com/netcon-consulting/clearswift-external-commands/tree/master/'
 LINK_COMMANDS='https://raw.githubusercontent.com/netcon-consulting/clearswift-external-commands/master'
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
@@ -1656,7 +1657,7 @@ dialog_feature_postfix() {
 # some custom settings
 ###################################################################################################
 install_command() {
-    LIST_COMMAND="$(wget "$LINK_COMMANDS" -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
+    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
     while true; do
         ARRAY_COMMAND=()
         for NAME_COMMAND in $LIST_COMMAND; do
