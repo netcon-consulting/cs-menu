@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.105.0 for Clearswift SEG >= 4.8
+# menu.sh V1.106.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - updated LDAP watchdog and get certificate scripts
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -440,10 +440,10 @@ install_pyzorrazor() {
 # none
 install_letsencrypt() {
     PACKED_SCRIPT='
-    H4sIAIbGV14AA5WQsQ7CMAxE93yFEXMaBgZWVBi6VB3KB6RpRIqa2kosEH9PWrIglnY6WXenZ3u/
-    U90wqU5HJ4RCYmWivGu2L/1enDRGG56DsQYnDjhCZCRg9EbzlgZ5L1ScA9kFx0z9YmZjINbdaCPI
-    Cqq6ubVwBJlYhkD6r8ieMDCcDiAfcC7La9OmvQMiq0Ibb4voVNYUNgGnJA69hd+Q+ENeMnIFcO3V
-    OhU3PmquzJ/6ACg8o8CYAQAA
+    H4sIALKtol4AA5VQMQ7CMAzc+woj5sQMDKyoMHRBHcoD0jTQoqaOEquI35OULIilTCf77nQ+bzfY
+    DhO2KvRFIQENa3SebsNoZIc6iFn5IBOJ5Dgt7orNU70WWxyD8fOgjaaJPY0QmBwwWa34H4eztsCQ
+    BJmFntl1C5mJwbFqRxNAVFBd6msDexAxSzsQ9gOic+QZDjsQDziW5blu4t2eiFEqbU3sgRmjWHua
+    IvRkDXyLip/IU45cEbi2tYrGPx+VLOlTbzeJHOy1AQAA
     '
     clear
     wget -O - https://get.acme.sh 2>/dev/null | sh
@@ -1687,7 +1687,7 @@ install_command() {
                 "$DIALOG" --backtitle 'Manage configuration' --title 'Error importing policy rule' --clear --msgbox "Error: $RESULT" 0 0
             fi
         elif [ "$RET_CODE" = 3 ]; then
-            INFO_COMMAND="$(wget "$LINK_GITHUB/external_commands/$DIALOG_RET/README.md" -O - 2>/dev/null)"
+            INFO_COMMAND="$(wget "$LINK_COMMANDS/$DIALOG_RET/README.md" -O - 2>/dev/null)"
             [ -z "$INFO_COMMAND" ] || "$DIALOG" --backtitle 'Manage configuration' --title 'External command info' --clear --msgbox "$INFO_COMMAND" 0 0
         else
             break
@@ -2891,24 +2891,24 @@ toggle_backup() {
 # none
 toggle_ldap() {
     PACKED_SCRIPT='
-    H4sIAIX9fV4AA5VVa2/iRhT97l9x47gxTmIMrFZqsyUKAtIiAYnA6bYCYjn2gK3YY2tmyGOX/Pfe
-    8QNMQqTWSsTYc++Zcx9n7vGR9RBS68HlgaIcQ+S7qfPsCi/wk1WdB/BXs/613lCOca+bpK8sXAUC
-    ap4BrUbzV7PVaDVgTEQ3oXBHBWGUBDGh/IEwV6zpCv6IH/48B0qEl1AT//k6EiFd1b0kzjA7axEk
-    7AJGLvOgFxL2yAmFWlz3i/XVQV9DUXqDiTPsdW7buvXkMsvj5soV5Nl9tWQMumJPOuPp7c3EdkaZ
-    EcJYacLFMnwxk7V4SNbUtwRzKU8TJupx5jO6LTFFnFr4mmP17iYde3AzRqi/2/qXRkNX+qPOYOhM
-    +t3B7aA/ttu647z75Di6otiDUd8Z33xvq1rNR35w9gs3VEUZDqa2M+6M+m0drZYJg+vBsA8hBa0W
-    cdDK6Cwu0Ms6hQ2sGEnBfAI9crnQdOMb+IkC+Eztjt2XB7jPj6DHsng1rXEOuW9brc1c88fi1FCt
-    c3AN+JmykApwZ83Fmw6qJg9WkZOEyujak38OocljbRYSXyI2zN/+B+L0rtvtT6efoU7Xnkc4/8+4
-    GXC4hBl+KxmrcNQuX4vjVFh8AxEQmtlXfLKE5Q4hTVmCmeUcrWGzyfZr5CVlJRgWTwUTy0K8INk7
-    cAOc+KBzqz7/+WX+plmWbhhouxJoVm2Zj0TkI6PJW0AtwLMAEVbmyLy2QC8SoI2v3/Qin+WzbaCz
-    tqbPqX4gtb93fF9GNgy5mN1fLk6pG2ftcK9+nuNd43kB8dcR8S1ty1StkFiGSvHjJ5QoCub2CLNn
-    /kCQLbn9yEuTpUxjIbVq2j1XVHeMoqalcK6Nj4nc6UidvlIPrweQvhBhzLB0Q+QPqK4LtUjSjpmy
-    xejdoHDHFS2r22K/k7Ra1ka9UnfVae0Vp/AYdlBEu69l1NVLSYZ+crLnoNUylav32ntSoH50z9lU
-    eWybB/TZfI5/i4X+GdGiVrvjD/LxwxWccbyjBZzRxKecEw/iF9kp7xhmgpB2JmW4FJh8MJsHSFY4
-    ZIL8SOOAWvKCdF1KEwE+wVETh5RALE9hJHJf9+VBXkIBze0nEnFyAK7aqJscy+SYOtlC5vdiCi5A
-    dlbeVnlH6WBOgccibVd5X7S+ovgZ3hQBjhmpNeNqtwbTNw40VFVO23XZ73BZlYNSNXsMo0hKIw39
-    ZAlDnFKdFaECFXJp+eTJomvcb12eNHNzK0lFdUTKkY+vnLCn0CM4WwVLZB5xYmAB5dBT8KR/AUY/
-    QQUcCAAA
+    H4sIAM2sol4AA5VWf2/qNhT9P5/iNs0a0jYx8LRp6xtVI0o3JKAV0L1NhaIQGxI1caLYlPa99rvv
+    OiSQtlTaIhCOfe/xuT+OzeEBmYeczD0RaNohRNRLZ2tP+gFNlo4I4K+G84tT1w5xrZ2kz1m4DCTU
+    fAua9cavdrPerMOAyXbC4ZZLlnEWxIyLOcs8ueJL+COe/3kKgZSpOCNkvV47nEk/4TZ+xSqSIV86
+    fhLn+O5KBkl2Bn0v8+EyZNmDYBxqsUOL8cVeX0vTHCC4QtIsWYQRcyjxhf3oZcJRQV12h7PepXvT
+    MgnOqaWlJ9naeyYqWFMbD93B6OZ6OJ71c6McKRFyET7ZyUrOkxWnRGYeF2mSSSfOffo3JaaMU4Kv
+    G6zL26E77l4PEOrvlvmlXje1Tt/t9mbDTrt70+0Mxi1zNns3NZuZmjbu9juzwfW3lm7UKPKDk5+E
+    pWtarzsazwZuv9My0WqRZHDV7XUg5GDUIgFGGR0REr3IMbzAMmMp2I9gRp6Qhml9BZpogM9o7I47
+    agNv/QBmrKpcM+qnsPFt6bU7z/4+PbZ0cgqeBT/SLOQSvLvG9NUE3VAb68hJQeV0x8N/9qGpbcdZ
+    yKhCrNu//Q/E0W273RmNPkMdrXyfCfGfcXPgcAF3OFcy1uGgVb4W2+kw/QoyYDy3r/jkCds4hBy7
+    CzMrBFrDy0u+XmNPaVaCYfF0sLEszA+SNxu+gGAUTEGcyY8vk1eDENOy0HYp0azaMh+JqEdFs2kB
+    vQDPA0RYlSP7ioBZJMAYXL2aRT7LZ9tAJy3DnHBzT2p/dylVkfVCIe/uz6fH3IvzdrjXP8/xrvH8
+    gNFVxCgxtkz1ColFqBU/NOFM0zC3B5g9+zuCbMm9jbw0Wag0FlKrpt33ZHXFKmpaCufK+pjInY70
+    0TP38ewA5QsRxgwLD48NCqiuM71I0o6ZtsW4vEbhDipa1rfFfidpvayNfqHvqtN8U5zCo+eiiHaz
+    ZdTVQ0mFfnT0xsGo5SrX7433pED/6L5hU+WxbR4w7yYT/Eyn5mdEi1rttt/Lh4ZLOBF4gEs44Qnl
+    QjAf4ifVKe8Y5oJQdjbPcCgx+WA39pCscMgF+ZHGHrVsCtL2OE8kUIZ3UhxyBrHaJWOR9/xWHuwp
+    lNDYTrFIsD1w1UZ92WDZAlOnWsj+VlyXU1CdtWmrTUeZYI9AxDJtVXmfNX9G8Wd4UgR4zSitWRe7
+    MdjU2tNQVTltx2W/w3lVDlrV7CGMIiWNNKTJAnp4S7lLxiUq5JxQ9kj4Cteb50eNjTlJUlm9ItV/
+    A3wVLHsMfYYXr8wSlUe8MbCA6tLTcKd/AWkW3lBFCAAA
     '
     if [ -f "$CRON_LDAP" ]; then
         STATUS_CURRENT='enabled'

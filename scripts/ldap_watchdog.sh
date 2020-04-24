@@ -1,10 +1,12 @@
 #!/bin/bash
 
-# ldap_watchdog.sh V1.5.0
+# ldap_watchdog.sh V1.6.0
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
 # Author: Marc Dierksen (m.dierksen@netcon-consulting.com)
+
+. /etc/profile.d/cs-vars.sh
 
 DIR_LDAP='/var/cs-gateway/ldap'
 TRANSPORT_MAP='/etc/postfix-outbound/transport.map'

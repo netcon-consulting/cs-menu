@@ -1,5 +1,7 @@
 #!/bin/bash
 
+. /etc/profile.d/cs-vars.sh
+
 /opt/cs-gateway/bin/cs-servicecontrol stop tomcat
 /opt/cs-gateway/bin/cs-servicecontrol stop pmm
 /sbin/service httpd stop
