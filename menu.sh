@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.106.0 for Clearswift SEG >= 4.8
+# menu.sh V1.107.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - updated LDAP watchdog and get certificate scripts
+# - make sure gcc is installed
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -5309,6 +5309,8 @@ init_cs() {
     which tmux &>/dev/null || yum install -y tmux --enablerepo=cs-* &>/dev/null
     # install mail
     which mail &>/dev/null || yum install -y mailx --enablerepo=cs-* &>/dev/null
+    # install gcc
+    which gcc &>/dev/null || yum install -y gcc --enablerepo=cs-* &>/dev/null
     # install python3
     which python3 &>/dev/null || yum install -y python34 --enablerepo=cs-* &>/dev/null
     # install pip3
