@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.107.0 for Clearswift SEG >= 4.8
+# menu.sh V1.108.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - make sure gcc is installed
+# - store TLS certificates from acme.sh in /etc/ssl/
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -94,6 +94,7 @@ FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
 DIR_CERT="/root/.acme.sh/$(hostname)"
+DIR_SSL='/etc/ssl'
 DIR_COMMANDS='/opt/cs-gateway/scripts/netcon'
 DIR_MAPS='/etc/postfix/maps'
 DIR_ADDRLIST='/tmp/TMPaddresslist'
@@ -440,10 +441,13 @@ install_pyzorrazor() {
 # none
 install_letsencrypt() {
     PACKED_SCRIPT='
-    H4sIALKtol4AA5VQMQ7CMAzc+woj5sQMDKyoMHRBHcoD0jTQoqaOEquI35OULIilTCf77nQ+bzfY
-    DhO2KvRFIQENa3SebsNoZIc6iFn5IBOJ5Dgt7orNU70WWxyD8fOgjaaJPY0QmBwwWa34H4eztsCQ
-    BJmFntl1C5mJwbFqRxNAVFBd6msDexAxSzsQ9gOic+QZDjsQDziW5blu4t2eiFEqbU3sgRmjWHua
-    IvRkDXyLip/IU45cEbi2tYrGPx+VLOlTbzeJHOy1AQAA
+    H4sIAD+dul4AA5VTwU7DMAy99yuMOKcBxAFxm2ASOzAmMc5VlnlrWJtEiTfY3+N0HaUMpu1k2e/Z
+    frbsyws5M1bOVCyzLAeJpKUPbmEqzOdSR7FRIeYJlM5TCiwV4YfaNmnsRgwbo1E7S8FVEMl5IFdr
+    Redk+LrOZEyEFoWSyM8bMGsR40nNKowgRjAaT96mcAuCm2kPot4ZMfcuENxdgXiHwcPDcDLl7OAc
+    yVzpGnkQ2Vom6+Asm9LVCH3SYcvHtuUpDROw+FVRFsXTy+u0GA+eh0XR93KNYbf5GKtD6Px6K9z+
+    V4+hU+ot1lWlS2VsX1svnGXOo+Uw+JWO1zcg8LPZhrCKN7o7AhDGHpktwcfVgnBrasWyywcRMPep
+    m1cxJizZe1Zll2goYw45Pith6iRmnwJijrHzJJ/1z9PsaDHojvVHV8Ybj7YevwdPtZto0gJ7LR25
+    Fz79lRQv88xfSinpmb4AcemeHNgDAAA=
     '
     clear
     wget -O - https://get.acme.sh 2>/dev/null | sh
@@ -451,18 +455,22 @@ install_letsencrypt() {
     cs-servicecontrol stop pmm
     service httpd stop
     iptables -I INPUT 4 -p tcp -m tcp --dport 80 -j ACCEPT
-    /root/.acme.sh/acme.sh --issue --standalone -d "$(hostname)"
+    HOST_NAME="$(hostname)"
+    /root/.acme.sh/acme.sh --issue --standalone -d "$HOST_NAME"
     iptables -D INPUT -p tcp -m tcp --dport 80 -j ACCEPT
     cs-servicecontrol start tomcat
     cs-servicecontrol start pmm
-    if [ -f "$DIR_CERT/$(hostname).cer" ]; then
-        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /root/.acme.sh/get_cert.sh
+    if [ -f "$DIR_CERT/$HOST_NAME.cer" ]; then
+        cp -f "$DIR_CERT/$HOST_NAME.cer" "$DIR_SSL/$HOST_NAME.cer"
+        cp -f "$DIR_CERT/$HOST_NAME.key" "$DIR_SSL/$HOST_NAME.key"
+        cp -f "$DIR_CERT/fullchain.cer" "$DIR_SSL/fullchain.cer"
+        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip | sed "s/__HOST_NAME__/$HOST_NAME/g" > /root/.acme.sh/get_cert.sh
         chmod +x /root/.acme.sh/get_cert.sh
         crontab -l 2>/dev/null | sed 's/"\/root\/.acme.sh"\/acme.sh --cron --home "\/root\/.acme.sh" > \/dev\/null/\/root\/.acme.sh\/get_cert.sh > \/dev\/null/' | crontab -
         mv -f /var/cs-gateway/keystore /var/cs-gateway/keystore.old
         cd /home/cs-admin
-        openssl pkcs12 -export -name tomcat -in "$DIR_CERT/$(hostname).cer" -inkey "$DIR_CERT/$(hostname).key" -out keystore.p12 -passout "pass:$PASSWORD_KEYSTORE"
-        keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore keystore.p12 -srcstoretype pkcs12 -deststorepass "$PASSWORD_KEYSTORE" -srcstorepass "$PASSWORD_KEYSTORE"
+        openssl pkcs12 -export -name tomcat -in "$DIR_SSL/$HOST_NAME.cer" -inkey "$DIR_SSL/$HOST_NAME.key" -out /root/keystore.p12 -passout "pass:$PASSWORD_KEYSTORE"
+        keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore /root/keystore.p12 -srcstoretype pkcs12 -deststorepass "$PASSWORD_KEYSTORE" -srcstorepass "$PASSWORD_KEYSTORE"
         keytool -list -keystore /var/cs-gateway/keystore -storepass "$PASSWORD_KEYSTORE"
         cs-servicecontrol restart tomcat &>/dev/null
     fi
@@ -752,18 +760,18 @@ disable_rspamd() {
 # return values:
 # none
 enable_letsencrypt() {
-    if [ -f "$DIR_CERT/$(hostname).key" ] && [ -f "$DIR_CERT/fullchain.cer" ]; then
+    if [ -f "$DIR_SSL/$(hostname).key" ] && [ -f "$DIR_SSL/fullchain.cer" ]; then
         for OPTION in                                           \
-            "smtpd_tls_key_file=$DIR_CERT/$(hostname).key"      \
-            "smtpd_tls_cert_file=$DIR_CERT/fullchain.cer"; do
+            "smtpd_tls_key_file=$DIR_SSL/$(hostname).key"       \
+            "smtpd_tls_cert_file=$DIR_SSL/fullchain.cer"; do
             if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
                 echo "$OPTION" >> "$PF_IN"
             fi
             postmulti -i postfix-inbound -x postconf "$OPTION"
         done
         for OPTION in                                           \
-            "smtp_tls_key_file=$DIR_CERT/$(hostname).key"       \
-            "smtp_tls_cert_file=$DIR_CERT/fullchain.cer"; do
+            "smtp_tls_key_file=$DIR_SSL/$(hostname).key"        \
+            "smtp_tls_cert_file=$DIR_SSL/fullchain.cer"; do
             if ! [ -f "$PF_OUT" ] || ! grep -q "$OPTION" "$PF_OUT"; then
                 echo "$OPTION" >> "$PF_OUT"
             fi
@@ -780,13 +788,13 @@ enable_letsencrypt() {
 # none
 disable_letsencrypt() {
     for OPTION in                                           \
-        "smtpd_tls_key_file=$DIR_CERT/$(hostname).key"      \
-        "smtpd_tls_cert_file=$DIR_CERT/fullchain.cer"; do
+        "smtpd_tls_key_file=$DIR_SSL/$(hostname).key"       \
+        "smtpd_tls_cert_file=$DIR_SSL/fullchain.cer"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
     for OPTION in                                           \
-        "smtp_tls_key_file=$DIR_CERT/$(hostname).key"       \
-        "smtp_tls_cert_file=$DIR_CERT/fullchain.cer"; do
+        "smtp_tls_key_file=$DIR_SSL/$(hostname).key"        \
+        "smtp_tls_cert_file=$DIR_SSL/fullchain.cer"; do
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_OUT"
     done    
 }
@@ -1223,11 +1231,11 @@ check_enabled_rspamd() {
 # Let's Encrypt cert status
 check_enabled_letsencrypt() {
     if [ -f "$PF_IN" ]                                                          \
-        && grep -q "smtpd_tls_key_file=$DIR_CERT/$(hostname).key" "$PF_IN"      \
-        && grep -q "smtpd_tls_cert_file=$DIR_CERT/fullchain.cer" "$PF_IN"       \
+        && grep -q "smtpd_tls_key_file=$DIR_SSL/$(hostname).key" "$PF_IN"       \
+        && grep -q "smtpd_tls_cert_file=$DIR_SSL/fullchain.cer" "$PF_IN"        \
         && [ -f "$PF_OUT" ]                                                     \
-        && grep -q "smtp_tls_key_file=$DIR_CERT/$(hostname).key" "$PF_OUT"      \
-        && grep -q "smtp_tls_cert_file=$DIR_CERT/fullchain.cer" "$PF_OUT"; then
+        && grep -q "smtp_tls_key_file=$DIR_SSL/$(hostname).key" "$PF_OUT"       \
+        && grep -q "smtp_tls_cert_file=$DIR_SSL/fullchain.cer" "$PF_OUT"; then
         echo on
     else
         echo off
