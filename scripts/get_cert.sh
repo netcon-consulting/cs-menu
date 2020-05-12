@@ -16,6 +16,7 @@ cp -f /root/.acme.sh/__HOST_NAME__/__HOST_NAME__.cer /etc/ssl/__HOST_NAME__.cer
 cp -f /root/.acme.sh/__HOST_NAME__/__HOST_NAME__.key /etc/ssl/__HOST_NAME__.key
 cp -f /root/.acme.sh/__HOST_NAME__/fullchain.cer /etc/ssl/fullchain.cer
 
+mv -f /var/cs-gateway/keystore /var/cs-gateway/keystore.old
 openssl pkcs12 -export -name tomcat -in /etc/ssl/__HOST_NAME__.cer -inkey /etc/ssl/__HOST_NAME__.key -out /root/keystore.p12 -passout pass:changeit
 keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore /root/keystore.p12 -srcstoretype pkcs12 -deststorepass changeit -srcstorepass changeit
 

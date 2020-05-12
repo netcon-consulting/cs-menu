@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.108.0 for Clearswift SEG >= 4.8
+# menu.sh V1.109.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - store TLS certificates from acme.sh in /etc/ssl/
+# - make backup copy of old keystore
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -441,13 +441,13 @@ install_pyzorrazor() {
 # none
 install_letsencrypt() {
     PACKED_SCRIPT='
-    H4sIAD+dul4AA5VTwU7DMAy99yuMOKcBxAFxm2ASOzAmMc5VlnlrWJtEiTfY3+N0HaUMpu1k2e/Z
-    frbsyws5M1bOVCyzLAeJpKUPbmEqzOdSR7FRIeYJlM5TCiwV4YfaNmnsRgwbo1E7S8FVEMl5IFdr
-    Redk+LrOZEyEFoWSyM8bMGsR40nNKowgRjAaT96mcAuCm2kPot4ZMfcuENxdgXiHwcPDcDLl7OAc
-    yVzpGnkQ2Vom6+Asm9LVCH3SYcvHtuUpDROw+FVRFsXTy+u0GA+eh0XR93KNYbf5GKtD6Px6K9z+
-    V4+hU+ot1lWlS2VsX1svnGXOo+Uw+JWO1zcg8LPZhrCKN7o7AhDGHpktwcfVgnBrasWyywcRMPep
-    m1cxJizZe1Zll2goYw45Pith6iRmnwJijrHzJJ/1z9PsaDHojvVHV8Ybj7YevwdPtZto0gJ7LR25
-    Fz79lRQv88xfSinpmb4AcemeHNgDAAA=
+    H4sIAD2gul4AA5VTTU8CMRC991eM8dytGg/GG1ESOYgk4nlTugUq24+0A8q/d7qs4IognCadN/Pe
+    vGl7eSEmxomJTHPGChAalQjRT02ti0qoxFcypiKDwgfMiZlE/SHXTRsdk44ro7TyDqOvIaEPgN4q
+    ied0BGuZSLmgRWGOGKoGZC1iAspJrRPwAQyGo7cx3AInMRWA203gVfAR4e4K+Dv0Hh76ozF1R+9R
+    FFJZTUZEG6lYRe8ozL3V0C3al3xsJU8RzMD0F6Moy6eX13E57D33y7J7KpSOm82nVO9D5/Mt9PoQ
+    H0Gn8E2Xda3m0rjubJ00Y3bVENET+XnNJEHXFvVBoPB1xXzQjighLFS6vgGuP5tNcifpNjYPCLhx
+    R/aS4eNOgfsltka34iGrBZlSxnK8J0dupg0yqkFPT5Ibm4fZGuGVTvivLeApql3VH6qENydcB701
+    nrmbbJ4FvmfZFXfSp39DScs88x/mlvwRvwBfv2WAFAQAAA==
     '
     clear
     wget -O - https://get.acme.sh 2>/dev/null | sh
@@ -468,7 +468,6 @@ install_letsencrypt() {
         chmod +x /root/.acme.sh/get_cert.sh
         crontab -l 2>/dev/null | sed 's/"\/root\/.acme.sh"\/acme.sh --cron --home "\/root\/.acme.sh" > \/dev\/null/\/root\/.acme.sh\/get_cert.sh > \/dev\/null/' | crontab -
         mv -f /var/cs-gateway/keystore /var/cs-gateway/keystore.old
-        cd /home/cs-admin
         openssl pkcs12 -export -name tomcat -in "$DIR_SSL/$HOST_NAME.cer" -inkey "$DIR_SSL/$HOST_NAME.key" -out /root/keystore.p12 -passout "pass:$PASSWORD_KEYSTORE"
         keytool -importkeystore -destkeystore /var/cs-gateway/keystore -srckeystore /root/keystore.p12 -srcstoretype pkcs12 -deststorepass "$PASSWORD_KEYSTORE" -srcstorepass "$PASSWORD_KEYSTORE"
         keytool -list -keystore /var/cs-gateway/keystore -storepass "$PASSWORD_KEYSTORE"
