@@ -62,5 +62,4 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 
 Download cs-menu and run as root:
 
-wget https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh
-bash menu.sh
+wget https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh && bash menu.sh
