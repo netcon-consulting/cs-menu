@@ -57,3 +57,10 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * automatic Rspamd updates
 * integration of Elasticsearch logging
 * management of various white-/blacklists
+
+### Installation:
+
+Download cs-menu and run as root:
+
+wget https://raw.githubusercontent.com/netcon-consulting/cs-menu/master/menu.sh
+bash menu.sh
