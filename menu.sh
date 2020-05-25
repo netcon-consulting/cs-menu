@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.109.0 for Clearswift SEG >= 4.8
+# menu.sh V1.110.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - make backup copy of old keystore
+# - added option for outbound queue monitoring to 'Clearswift config' submenu
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -148,6 +148,8 @@ CRON_RULES='/etc/cron.daily/update_rules.sh'
 CRON_UPDATE='/etc/cron.daily/update_rspamd.sh'
 CRON_LDAP='/etc/cron.hourly/ldap_watchdog.sh'
 CRON_PSQL='/etc/cron.daily/clean_psql.sh'
+SCRIPT_WATCH='/root/watch_queue.py'
+CRONTAB_WATCH="0,5,10,15,20,25,30,35,40,45,50,55 * * * * $SCRIPT_WATCH"
 MD5_RSPAMD='7ba3f694eed8e0015bdf605f9618424b'
 BACKUP_IN='/root/inbound-main.cf'
 BACKUP_OUT='/root/outbound-main.cf'
@@ -236,6 +238,34 @@ get_keypress() {
 # none
 show_wait() {
 	"$DIALOG" --backtitle "$1" --title '' --infobox 'Please wait...' 3 20
+}
+# check crontab for entry
+# parameters:
+# $1 - crontab entry
+# return values:
+# error code - 0 for entry present, 1 for missing
+check_crontab() {
+    crontab -l | grep -q "^$(echo "$1" | sed 's/\*/\\\*/g')$"
+}
+# add crontab entry
+# parameters:
+# $1 - crontab entry
+# return values:
+# none
+add_crontab() {
+    CRONTAB="$(crontab -l)"
+
+    [ -z "$CRONTAB" ] && CRONTAB="$1" || CRONTAB+=$'\n'"$1"
+
+    echo "$CRONTAB" | crontab -
+}
+# delete crontab entry
+# parameters:
+# $1 - crontab entry
+# return values:
+# none
+del_crontab() {
+    crontab -l | grep -v "^$(echo "$1" | sed 's/\*/\\\*/g')$" | crontab -
 }
 ###################################################################################################
 # Install Section
@@ -2970,6 +3000,49 @@ toggle_psql() {
         fi
     fi
 }
+# toggle outbound queue monitoring
+# parameters:
+# none
+# return values:
+# none
+toggle_watch() {
+    PACKED_SCRIPT='
+    H4sIANWzy14AA51VbW/bNhD+zl9xVYBVQh1K6bAvGVzUc9wXtFm8xBkGFIEgU2eLjUSyJGXHKPrf
+    d5Ts2FnSDSsBUeTxXp577igdPUtbZ9O5VCmqFZiNr7T6mbEj+NJii/m68KLiZgN/nvCMZ+yITsba
+    bKxcVh5ikcDL7GUGv6MfawXXyqNVWDWo3Bxt4Vu1hLfN/N0AKu+NO03T9XrNFXqh1TE9rq29VEsu
+    dEOORy1Ft6dwXlgBZxLtrUMFccPL7fr1k5YJY7Ix2npA1Ta7tds4trC6AVP4qpZz2MqntO0PtNvJ
+    LDZ6hfeW7dxYLdA5xqIoYuMKxS3UqJa+Ar2AqXZ+Ie9At36uW1X2VHG48trcH0rVn0nlfKEEglyA
+    JIR3ArF08Mf15HqSn4/+GgDWDoGUKDIp9GrrwpFIG4MlzHGhLfIOCpuOZu/yzhiGXSpxlK4Kmzqj
+    dZ2aPvjxDlla4gKtxTJKesur2Wh2fbU3tVr7lLvGG6nybUDSZffwSPWXLGNsNjmffhzNJvn4/Ixk
+    kdOtpaRSqkdKZC1kjbxMhTsmMI676ldItfFBsCw8rotN12K0dWhXUiBV0Ftdw9dv0EeHn14R2lWq
+    2rqmPEVdOAeX6FurxrrEOJSWv1d+Qu/klAGNQEh491ogSI2zTpLBMejbbnlCS6JA2wcmFx8oiaxb
+    Ti4vLy5pd8IYsQVNIVW8DUAlz7vadsqdiEoBpbQovLYbKi58ojrZWHpsku4wrILcFmqJcTaAkyyB
+    G3hBitEoGkD0W5jGYToL0yRMbyK46UM+DPtiGDbxJ1U02HnvFuR93wb8s5YqtHh8DyvhBMLSNk5C
+    OwUbLl0eahQnN0mfCB3s47wa7htyjyPYag8HjcPxTjrvdvzsxva2EEv7q8On2hD0w77hlEFT+DgK
+    jRYlA3AV1vVwZltMnvIX7nbTKimog+It7N3wdvMQQxhdxFCOA8gUJlpHCRe1dsHLoX64jMY/9mOs
+    VARzXKiQv7BIAMIN9a2DwCI8//rtebRL5zDYP1CGYfvu3Lcy7zqu08OaOP53fv8/t/Qh+R65/0Hs
+    I1L77+IjSvcOn2LwIXu9ix9i73vMsacPLz7Qf2ABeR4aPs9hSJ+pPA/3Oc+jHiL9EwLFPu5vecL+
+    Bk1bJBH/BgAA
+    '
+    if check_crontab "$CRONTAB_WATCH"; then
+        STATUS_CURRENT='enabled'
+        STATUS_TOGGLE='Disable'
+    else
+        STATUS_CURRENT='disabled'
+        STATUS_TOGGLE='Enable'
+    fi
+    "$DIALOG" --backtitle 'Clearswift Configuration' --title 'Toggle outbound queue monitoring' --yesno "Outbound queue monitoring is currently $STATUS_CURRENT. $STATUS_TOGGLE?" 0 60
+    if [ "$?" = 0 ]; then
+        if [ $STATUS_CURRENT = 'disabled' ]; then
+            printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$SCRIPT_WATCH"
+            chmod 700 "$SCRIPT_WATCH"
+            add_crontab "$CRONTAB_WATCH"
+        else
+            del_crontab "$CRONTAB_WATCH"
+            rm -f "$SCRIPT_WATCH"
+        fi
+    fi
+}
 # add zone name and IP in dialog inputbox
 # parameters:
 # none
@@ -3645,6 +3718,7 @@ dialog_clearswift() {
     DIALOG_TOGGLE_BACKUP='Email config backup'
     DIALOG_TOGGLE_LDAP='LDAP-sync monitoring'
     DIALOG_TOGGLE_PSQL='PSQL cleanup'
+    DIALOG_TOGGLE_WATCH='Outbound queue montoring'
     while true; do
         exec 3>&1
         DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN"                                  \
@@ -3668,6 +3742,7 @@ dialog_clearswift() {
             "$DIALOG_TOGGLE_BACKUP" ''                                                             \
             "$DIALOG_TOGGLE_LDAP" ''                                                               \
             "$DIALOG_TOGGLE_PSQL" ''                                                               \
+            "$DIALOG_TOGGLE_WATCH" ''                                                              \
             2>&1 1>&3)"
         RET_CODE="$?"
         exec 3>&-
@@ -3713,6 +3788,8 @@ dialog_clearswift() {
                     toggle_ldap;;
                 "$DIALOG_TOGGLE_PSQL")
                     toggle_psql;;
+                "$DIALOG_TOGGLE_WATCH")
+                    toggle_watch;;
             esac
         else
             break
