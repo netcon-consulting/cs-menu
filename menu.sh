@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.110.0 for Clearswift SEG >= 4.8
+# menu.sh V1.111.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added option for outbound queue monitoring to 'Clearswift config' submenu
+# - updated script for outbound queue monitoring
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -3007,22 +3007,32 @@ toggle_psql() {
 # none
 toggle_watch() {
     PACKED_SCRIPT='
-    H4sIANWzy14AA51VbW/bNhD+zl9xVYBVQh1K6bAvGVzUc9wXtFm8xBkGFIEgU2eLjUSyJGXHKPrf
-    d5Ts2FnSDSsBUeTxXp577igdPUtbZ9O5VCmqFZiNr7T6mbEj+NJii/m68KLiZgN/nvCMZ+yITsba
-    bKxcVh5ikcDL7GUGv6MfawXXyqNVWDWo3Bxt4Vu1hLfN/N0AKu+NO03T9XrNFXqh1TE9rq29VEsu
-    dEOORy1Ft6dwXlgBZxLtrUMFccPL7fr1k5YJY7Ix2npA1Ta7tds4trC6AVP4qpZz2MqntO0PtNvJ
-    LDZ6hfeW7dxYLdA5xqIoYuMKxS3UqJa+Ar2AqXZ+Ie9At36uW1X2VHG48trcH0rVn0nlfKEEglyA
-    JIR3ArF08Mf15HqSn4/+GgDWDoGUKDIp9GrrwpFIG4MlzHGhLfIOCpuOZu/yzhiGXSpxlK4Kmzqj
-    dZ2aPvjxDlla4gKtxTJKesur2Wh2fbU3tVr7lLvGG6nybUDSZffwSPWXLGNsNjmffhzNJvn4/Ixk
-    kdOtpaRSqkdKZC1kjbxMhTsmMI676ldItfFBsCw8rotN12K0dWhXUiBV0Ftdw9dv0EeHn14R2lWq
-    2rqmPEVdOAeX6FurxrrEOJSWv1d+Qu/klAGNQEh491ogSI2zTpLBMejbbnlCS6JA2wcmFx8oiaxb
-    Ti4vLy5pd8IYsQVNIVW8DUAlz7vadsqdiEoBpbQovLYbKi58ojrZWHpsku4wrILcFmqJcTaAkyyB
-    G3hBitEoGkD0W5jGYToL0yRMbyK46UM+DPtiGDbxJ1U02HnvFuR93wb8s5YqtHh8DyvhBMLSNk5C
-    OwUbLl0eahQnN0mfCB3s47wa7htyjyPYag8HjcPxTjrvdvzsxva2EEv7q8On2hD0w77hlEFT+DgK
-    jRYlA3AV1vVwZltMnvIX7nbTKimog+It7N3wdvMQQxhdxFCOA8gUJlpHCRe1dsHLoX64jMY/9mOs
-    VARzXKiQv7BIAMIN9a2DwCI8//rtebRL5zDYP1CGYfvu3Lcy7zqu08OaOP53fv8/t/Qh+R65/0Hs
-    I1L77+IjSvcOn2LwIXu9ix9i73vMsacPLz7Qf2ABeR4aPs9hSJ+pPA/3Oc+jHiL9EwLFPu5vecL+
-    Bk1bJBH/BgAA
+    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
+    xqDGzcAPvH8AbHD9vTYPAAA=
     '
     if check_crontab "$CRONTAB_WATCH"; then
         STATUS_CURRENT='enabled'
