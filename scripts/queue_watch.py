@@ -10,7 +10,7 @@ import enum
 import sys
 from pathlib import Path
 from os import remove
-import subprocess
+from subprocess import Popen, PIPE, DEVNULL
 import re
 
 DESCRIPTION = "automatic manangement for temporary suspension of Postfix inbound instance depending on length of Postfix outbound queue"
@@ -54,7 +54,7 @@ def status_smtpin():
 
     :rtype: StatusSmtpin
     """
-    process = subprocess.Popen(TEMPLATE_CMD.format("status"), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=True)
+    process = Popen(TEMPLATE_CMD.format("status"), stdout=PIPE, stderr=DEVNULL, shell=True)
 
     (stdout, _) = process.communicate()
 
@@ -96,8 +96,7 @@ def main(args):
         len_queue += len([item for item in PATH_QUEUE.joinpath(directory).iterdir() if item.is_file()])
 
     if len_queue >= args.upper and not smtpin_stopped:
-        process = subprocess.Popen(TEMPLATE_CMD.format("stop"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
-        process.communicate()
+        Popen(TEMPLATE_CMD.format("stop"), stdout=DEVNULL, stderr=DEVNULL, shell=True).communicate()
 
         try:
             open(str(PATH_STATUS), "w").close()
@@ -106,8 +105,7 @@ def main(args):
 
             return ReturnCode.ERROR
     elif len_queue < args.lower and smtpin_stopped:
-        process = subprocess.Popen(TEMPLATE_CMD.format("start"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
-        process.communicate()
+        Popen(TEMPLATE_CMD.format("start"), stdout=DEVNULL, stderr=DEVNULL, shell=True).communicate()
 
         try:
             remove(str(PATH_STATUS))

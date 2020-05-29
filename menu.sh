@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.111.0 for Clearswift SEG >= 4.8
+# menu.sh V1.112.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,7 +63,8 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - updated script for outbound queue monitoring
+# - changed whitelist server option to more flexible addresslist server
+# - updated LDAP watchdog script
 #
 ###################################################################################################
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
@@ -2928,24 +2929,25 @@ toggle_backup() {
 # none
 toggle_ldap() {
     PACKED_SCRIPT='
-    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
+    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
+    SBmnWKzkbXvLewka+Q8IjRHF8ggAAA==
     '
     if [ -f "$CRON_LDAP" ]; then
         STATUS_CURRENT='enabled'
@@ -3007,32 +3009,32 @@ toggle_psql() {
 # none
 toggle_watch() {
     PACKED_SCRIPT='
-    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
-    xqDGzcAPvH8AbHD9vTYPAAA=
+    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
+    5ugNvL8BvA8CkbkOAAA=
     '
     if check_crontab "$CRONTAB_WATCH"; then
         STATUS_CURRENT='enabled'
@@ -3281,50 +3283,50 @@ anomaly_detect() {
         fi
     done
 }
-# add public key for SSH authentication for whitelist in dialog inputbox
+# add public key for SSH authentication for addresslist in dialog inputbox
 # parameters:
 # none
 # return values:
 # error code - 0 for added, 1 for cancel
 add_client() {
     exec 3>&1
-    DIALOG_RET="$("$DIALOG" --clear --backtitle 'Manage whitelist clients' --title 'Add public SSH key' --inputbox 'Enter public key for SSH authentication for whitelist' 0 50 2>&1 1>&3)"
+    DIALOG_RET="$("$DIALOG" --clear --backtitle 'Manage addresslist clients' --title 'Add public SSH key' --inputbox 'Enter public key for SSH authentication for addresslist' 0 50 2>&1 1>&3)"
     RET_CODE="$?"
     exec 3>&-
     if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
-        echo "command=\"/home/whitelist/print_whitelist.sh\" $DIALOG_RET" >> '/home/whitelist/.ssh/authorized_keys'
+        echo "command=\"/home/addresslist/print_addresslist.py \$(echo \\\"\$SSH_ORIGINAL_COMMAND\\\" | sed -E 's/( |^)\\+e /\\1-e /' | sed -E 's/( |^)\\+l /\\1-l /')\" $DIALOG_RET" >> '/home/addresslist/.ssh/authorized_keys'
         return 0
     else
         return 1
     fi
 }
-# add/remove public keys for SSH authentication for whitelist in dialog menu
+# add/remove public keys for SSH authentication for addresslist in dialog menu
 # parameters:
 # none
 # return values:
 # none
-whitelist_client() {
-    SSH_WHITELIST='/home/whitelist/.ssh/authorized_keys'
+addresslist_client() {
+    SSH_ADDRESSLIST='/home/addresslist/.ssh/authorized_keys'
     while true; do
         LIST_KEY=''
-        [ -f "$SSH_WHITELIST" ] && LIST_KEY="$(sed 's/ /,/g' "$SSH_WHITELIST")"
+        [ -f "$SSH_ADDRESSLIST" ] && LIST_KEY="$(awk 'match($0, /^command=".+" (.+)$/, a) {print a[1]}' "$SSH_ADDRESSLIST")"
         if [ -z "$LIST_KEY" ]; then
             add_client || break
         else
             ARRAY_KEY=()
-            for SSH_KEY in $LIST_KEY; do
-                ARRAY_KEY+=("$(echo "$SSH_KEY" | sed 's/,/ /g')" '')
-            done
+            while read SSH_KEY; do
+                ARRAY_KEY+=("$SSH_KEY" '')
+            done < <(echo "$LIST_KEY")
             exec 3>&1
             DIALOG_RET="$("$DIALOG" --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
-                --menu 'Add/remove public keys for SSH authentication for whitelist' 0 0 0 "${ARRAY_KEY[@]}" 2>&1 1>&3)"
+                --menu 'Add/remove public keys for SSH authentication for addresslist' 0 0 0 "${ARRAY_KEY[@]}" 2>&1 1>&3)"
             RET_CODE="$?"
             exec 3>&-
             if [ "$RET_CODE" = 0 ]; then
                 add_client
             else
                 if [ "$RET_CODE" = 3 ]; then
-                    sed -i "/$(echo "$DIALOG_RET" | sed 's/\//\\\//g')/d" "$SSH_WHITELIST"
+                    sed -i "/^command=\".\+\" $(echo "$DIALOG_RET" | sed 's/\//\\\//g')$/d" "$SSH_ADDRESSLIST"
                 else
                     break
                 fi
@@ -5057,55 +5059,73 @@ toggle_snmp() {
         fi
     fi
 }
-# manage monthly sender anomaly detection in dialog menu
+# manage addresslist server in dialog menu
 # parameters:
 # none
 # return values:
 # none
-dialog_whitelist() {
+dialog_addresslist() {
     DIALOG_STATUS='Current status: '
-    DIALOG_CLIENT='Add/remove whitelist client'
-    USER_WHITELIST='whitelist'
-    DIR_WHITELIST='/home/whitelist'
-    SCRIPT_WHITELIST="$DIR_WHITELIST/print_whitelist.sh"
+    DIALOG_CLIENT='Add/remove addresslist client'
+    ADDRESSLIST_USER='addresslist'
+    ADDRESSLIST_DIR='/home/addresslist'
+    ADDRESSLIST_SCRIPT="$ADDRESSLIST_DIR/print_addresslist.py"
     while true; do
-        [ -d "$DIR_WHITELIST" ] && STATUS_CURRENT='enabled' || STATUS_CURRENT='disabled'
-        ARRAY_WHITELIST=()
-        ARRAY_WHITELIST+=("$DIALOG_STATUS$STATUS_CURRENT" '')
+        [ -d "$ADDRESSLIST_DIR" ] && STATUS_CURRENT='enabled' || STATUS_CURRENT='disabled'
+        ARRAY_ADDRESSLIST=()
+        ARRAY_ADDRESSLIST+=("$DIALOG_STATUS$STATUS_CURRENT" '')
         if [ "$STATUS_CURRENT" = 'enabled' ]; then
-            ARRAY_WHITELIST+=("$DIALOG_CLIENT" '')
+            ARRAY_ADDRESSLIST+=("$DIALOG_CLIENT" '')
         fi
         exec 3>&1
-        DIALOG_RET="$("$DIALOG" --clear --backtitle 'Other configurations'              \
-            --cancel-label 'Back' --ok-label 'Edit' --menu 'Whitelist server' 0 40 0    \
-            "${ARRAY_WHITELIST[@]}" 2>&1 1>&3)"
+        DIALOG_RET="$("$DIALOG" --clear --backtitle 'Other configurations'                \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'Addresslist server' 0 40 0    \
+            "${ARRAY_ADDRESSLIST[@]}" 2>&1 1>&3)"
         RET_CODE="$?"
         exec 3>&-
         if [ "$RET_CODE" = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_STATUS$STATUS_CURRENT")
                     if [ "$STATUS_CURRENT" = 'enabled' ]; then
-                        userdel -rf "$USER_WHITELIST"
+                        userdel -rf "$ADDRESSLIST_USER"
                     else
                         PACKED_SCRIPT='
-                        H4sIAGhhmF4AA22QQWvCQBCF7/srpjGQRJqsemyxrahtBVuK0l5KlTUZk6Wb2bC70Qr++AZrSw4d
-                        GBh4fG/eTOeCbyTxjbAFYx2ojCS33hfSoZLW2cQW8NZP+kmPdRp5rKuDkXnhIEwjGPQGPXhGN9YE
-                        r+TQEBYlkt2gEa6mHB7KzeMlELpUU9y0rZWTlCepLk92o9oV2lzBkzApTCSaT4sEYZlk5/nuXzZi
-                        bDJbrEeTyWK6XA4DvhOGpzbOhcO9OPBaptucV1rJ9MBFlhm09nRNwNhWG7ifzae/NEgCP8wNVhC/
-                        QKwgGP0A8wYAEiUOvfeV99ENb2UU/j3mWAnjCE100rwA/FYi3k2+SgWDG57hjlOtVHQNmWbQVCNY
-                        J4xCBxYVxA7iErzWTn6ePYh3kEBM4PntwF7bF46NSwYBX/k8C1imCdk35LYMBdIBAAA=
+                        H4sIABiaz14AA7VXX2vjOBB/96fQOS/2kTjt3lsgcCGbdst22yXpHQvHYRR7kpjaspGUbcKy3/1G
+                        khXLjpMeBxcoVqX5Pz/NjAa/jPeCj9cZGwP7Tqqj3JXsN88bkIpnTMY0TTkIkWdCRtWR/Hkb3UY3
+                        3gDP52V15Nl2J0mQhOTDzYcb8gRyXjLyB5PAGewKYGINnMo925L7Yv1pSHZSVmIyHr+9vUUMZFKy
+                        Ef6JfS4zto2SskDBsz3awCfkC+UJ+ZgBfxXASFBEab3+vZcz9LysqEouCeXbinIB9n9g+8KuxVHY
+                        JQdvw8uCHIo8EvRA6u2CvkKs+TnaS1maq8Vq9m1xSKCSWck87+NiNV8+fH15eH4iU+LrUJE6VETF
+                        SgxJqWlpnh/JJssxIpCS9RG1buGASmSyA0EwWoqcMFoAQV0ECprlVpTvecvF/eJb/PiwelGKol/9
+                        emfxZfbwaLe8x9nqJZ4/P9093Ku98XfKx4kYbamEN3ocp1Dl5RHTIcU4p0LOqirPIMVcbbLtHhOE
+                        hkYYBpSU4LkgS5B7zuZlCoEKXvTA5AK/4cQj+PN9X38NFUmQLPL0zg0ZkfJVL29xCZyXvMXy/Bnt
+                        u9HLxXL5vMT/bq1SN8R3GcvEDtLA3eyon++FxPS5FGRTcoK7VYWgICqJ6ks3GH2CmSAZ25SYU0HW
+                        gJDiQNOoJTKFDYlj1C3jOBCQb2qV6if2FfAgjE7n/goVWSV+aN34ZCAzMyl8xOwGNYoiDLjEJNQU
+                        /e4khsYiT3tkEarWcJCcJlL75QKOaCzPV0oAZvU/Y+6dgAyNsFhJsGvN70TKMqvfRB4rcHgmmB7e
+                        e6qltI9dQUp5VFGpSouWhNDhoC5+leUQNBrCfhbjZA+Psb7NpOS4pQ/51CfokKkIWlu6piK3lYCn
+                        dzTHenRRB1I8lQy8y2ALvVM+hKRcLnJQ97nOiTJkSNBTLpw8ZBvCSnlmTkNgiRQQpuiCg1lfI8NX
+                        Rz5eGyO7zal+bgQ0yV+G5W/vjBQVYewFYFXfBWfZHDaiwnM1vRE/rVvkkKOiDq1ypeukf66lLy2d
+                        tF9J8QvfQ5OkZEfVNQUu6hTV97qdnndTcyFiGrN9Mi+6EtGqApYGlqWxFHfPwdRB0UWAvOvAmSH/
+                        wlY9bNT2Bp1cDnuyFIZttF27mxeS176fGkN9Tr/QdQ4d5HCaCehtXk2MtyAdKaLbWtw6VzdVbXm5
+                        adf4qPFzwlXpnJAW/l053MjpDa7n1UbZTR2o4EJlHxI1M8Smr0ydUaPTwBamM/1fbUnruNxOrrQS
+                        c+Q44Rx1w2idMQMgIsMZB+s6YGNmO/S0r+Vf6pKOcLzZsj0RBB3RNa4lPzZYqXn1J3B8MpJBY7AX
+                        ja4IIYzkGiQdtVEXrqEBDDrAAhyubY9p2dXTMs8ApngNGHVIhkRv6MCYnZYTzVSHAxscHPvVuB0o
+                        6i7am7k10uOlIVBjU+BUENfUUDU3gXM/zppdF9pF8HIRM/b4g8GA/PhJ8ONHqBJx3Sjtlihlkr0n
+                        /Qb0FHWjx557fTb4YSuxTjyeP+P7SA1z2qZYV7Y4VimN47qinTBvH1DRjG/3qjN8NfhPQSQ80zmZ
+                        Ok+gWmeNTF1Ya77AH+X+kPijkXJtpHOM/xcgKT5Rpr5618T6QYO76iZO8WIOVcmk+LCbNo8ffIlB
+                        Xk19UzJU9EwhUWPwqWoIEljOHz/DUxIaKWF4xVAwhmo0nluq31vvmqqprtnaqmnXDdayLG7URcHE
+                        uJdf2S7sXIjP2ggOmQyaOxp6/wD4I5HR3A8AAA==
                         '
-                        useradd -m -d "$DIR_WHITELIST" "$USER_WHITELIST"
-                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$SCRIPT_WHITELIST"
-                        chmod 700 "$SCRIPT_WHITELIST"
-                        mkdir "$DIR_WHITELIST/.ssh"
-                        chmod 700 "$DIR_WHITELIST/.ssh"
-                        touch "$DIR_WHITELIST/.ssh/authorized_keys"
-                        chmod 600 "$DIR_WHITELIST/.ssh/authorized_keys"
-                        chown -R "$USER_WHITELIST:$USER_WHITELIST" "$DIR_WHITELIST"
+                        useradd -m -d "$ADDRESSLIST_DIR" "$ADDRESSLIST_USER"
+                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$ADDRESSLIST_SCRIPT"
+                        chmod 700 "$ADDRESSLIST_SCRIPT"
+                        mkdir "$ADDRESSLIST_DIR/.ssh"
+                        chmod 700 "$ADDRESSLIST_DIR/.ssh"
+                        touch "$ADDRESSLIST_DIR/.ssh/authorized_keys"
+                        chmod 600 "$ADDRESSLIST_DIR/.ssh/authorized_keys"
+                        chown -R "$ADDRESSLIST_USER:$ADDRESSLIST_USER" "$ADDRESSLIST_DIR"
                     fi;;
                 "$DIALOG_CLIENT")
-                    whitelist_client;;
+                    addresslist_client;;
             esac
         else
             break
@@ -5127,7 +5147,7 @@ dialog_other() {
     DIALOG_ANOMALY='Sender anomaly detection'
     DIALOG_LOG='DNS query logging'
     DIALOG_SNMP='SNMP support'
-    DIALOG_WHITELIST='Whitelist server'
+    DIALOG_ADDRESSLIST='Addresslist server'
     ARRAY_OTHER=()
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
@@ -5138,7 +5158,7 @@ dialog_other() {
     ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
     ARRAY_OTHER+=("$DIALOG_LOG" '')
     ARRAY_OTHER+=("$DIALOG_SNMP" '')
-    ARRAY_OTHER+=("$DIALOG_WHITELIST" '')
+    ARRAY_OTHER+=("$DIALOG_ADDRESSLIST" '')
     while true; do
         exec 3>&1
         DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN"                                \
@@ -5167,8 +5187,8 @@ dialog_other() {
                     toggle_logging;;
                 "$DIALOG_SNMP")
                     toggle_snmp;;
-                "$DIALOG_WHITELIST")
-                    dialog_whitelist;;
+                "$DIALOG_ADDRESSLIST")
+                    dialog_addresslist;;
             esac
         else
             break

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ldap_watchdog.sh V1.6.0
+# ldap_watchdog.sh V1.7.0
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -17,6 +17,7 @@ EMAIL_RECIPIENT='__EMAIL_RECIPIENT__'
 TIME_NOW="$(date +%s)"
 
 LIST_NAME=''
+LIST_FILE=''
 
 for FILE in $(ls $DIR_LDAP/state/* | grep -v 'last$'); do
     STATE="$(awk 'match($0, /state="([a-z]*)"/, a) {print a[1]}' "$FILE")"
@@ -26,6 +27,7 @@ for FILE in $(ls $DIR_LDAP/state/* | grep -v 'last$'); do
     if [ "$TIME_TRY" != "$TIME_SUCCESS" ]; then
         if [ "$STATE" != "inprogress" ] || [ "$(expr "$TIME_NOW" - $(echo "$TIME_TRY" | sed 's/.\{3\}$//'))" -gt "$DURATION_MAX" ]; then
             FILE_NAME="$(echo $FILE | awk -F/ '{print $NF}')"
+            LIST_FILE+=" $FILE_NAME"
             LIST_NAME+=$'\n'"$(awk 'match($0, /<AddressList[^>]*name="([^"]*)"/, a) {print a[1]}' "$DIR_LDAP/scheduled/$FILE_NAME")"
         fi
     fi
@@ -52,4 +54,8 @@ if ! [ -z "$LIST_NAME" ]; then
     kill "$(pidof LdapAgent)" >/dev/null 2>&1
 
     /opt/cs-gateway/bin/cs-servicecontrol restart ldap
+
+    for NAME_FILE in LIST_FILE; do
+        cp -r "$DIR_LDAP/scheduled/$FILE_NAME" "$DIR_LDAP/pending/$FILE_NAME"
+    done
 fi
