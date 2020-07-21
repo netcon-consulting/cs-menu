@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.113.0 for Clearswift SEG >= 4.8
+# menu.sh V1.114.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,10 +63,11 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - error logging
+# - ported to Clearswift version 5
+# - bugfix
 #
 ###################################################################################################
-LOG_MENU='/var/log/menu.log'
+LOG_MENU='menu.log'
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
 DIALOG='dialog'
 TXT_EDITOR='vim'
@@ -206,7 +207,7 @@ TITLE_MAIN='NetCon Clearswift Configuration'
 # error code - 0 for install, 1 for cancel
 confirm_install() {
     exec 3>&1
-    "$DIALOG" --backtitle "Install features" --yesno "Install '$1'?" 0 40 2>&1 1>&3
+    "$DIALOG" --backtitle "Install features" --yesno "Install '$1'?" 0 0 2>&1 1>&3
     RET_CODE="$?"
     exec 3>&-
     return "$RET_CODE"
@@ -218,7 +219,7 @@ confirm_install() {
 # error code - 0 for install, 1 for cancel
 confirm_reinstall() {
     exec 3>&1
-    "$DIALOG" --backtitle "Install features" --yesno "'$1' already installed. Reinstall?" 0 60 2>&1 1>&3
+    "$DIALOG" --backtitle "Install features" --yesno "'$1' already installed. Reinstall?" 0 0 2>&1 1>&3
     RET_CODE="$?"
     exec 3>&-
     return "$RET_CODE"
@@ -351,8 +352,7 @@ install_pyzorrazor() {
     fi
 
     clear
-    yum install -y python34-setuptools python34-devel perl-Razor-Agent
-    python3 /usr/lib/python3.4/site-packages/easy_install.py pip
+    yum install -y perl-Razor-Agent
     pip3 install pyzor
     PACKED_SCRIPT='
     H4sIAANBq1wAA5VVbW/TMBD+TH6FFWlqKnVRWiiISt2XDQkJ2CaEQLypcpJrGpbaxXZUyrT/zp2d
@@ -431,18 +431,18 @@ install_pyzorrazor() {
     useradd -g razorsocket razorsocket
     mkdir -p /opt/razorsocket/bin/
     PACKED_SCRIPT='
-    H4sIAHhCq1wAA31UUW/TMBB+Jr/CmIc6oktBvKBJfYBpaAhNqlh5GpPlJZfWm2MH29lWEP+ds+Ok
-    WdXhl9iXu+/O932+N68XnbOLW6kX7c5vjf6QyaY11hNhN62wDoYzNEKqIprsgc0oWe4Gm3HD7s4Z
-    Pexdd9taU4JzWW1NQ5wp78Ej1ANYknzWZ6uraJiT9daCqKTeXMqnr3pOrjyem+/wqwPnL4SuFBaR
-    ZaUSzpHnZnbMNz/NMoKrgppso4k5UDWaSVplU5ElCcbC1lJBEQpQUgPLiwpKU+Hm+vTk/c0YIes+
-    aEno2cX52Te6BwsrQvW5eLmF8p7l439QDo54P1rpgYe2sT8UrDWWnhLa6XttHjUpTdMgHP2bH94l
-    4R/cqKcKLzVlrvi88+BWcc964pZTFoury/VqX2jjNgiQQuOH7VuU6girRi/TgmZ04Zt2sb5cWfEb
-    y58T+kj3cOmKDGEL4bjzFilm+dShVAaTTKAtuE75wM0ooaIUSrFrOko3JjuJXQgpn9dwk2evpqQN
-    gEvy7hkHPQWR+77K29AqNnOtaGZzMvux/nLycZb/h8WXELYHACN9E8JD7JxUE/7u8M7hV1F1TetY
-    lZO3hP7UNHsx3V0BuldqPj6O/kWxwwc1vrWUsEVfjAlFoRo0S+YwBLCMYRYUn+yma0D7JKAKXGll
-    66XRS3r+1CJ1JDadGE1EeuSJ/4BRiKriImEwiqcgkS2odhkPyC3xhijpPGjEeDk0DIwxNE6P43Eu
-    Vd+LNwC4QVwhIf5lwRbQcexIhI7HgDgQ5ewDuqU+9n4HwyW6ebvbc4cxRRxuvDYWQmDvVEuN0j3m
-    aPmo/AxFyrkWDXAexwvngRPO04TpCcr+AZfHVnq7BQAA
+    H4sIAAtN/F4AA31UTW/cIBC9+1dQesHqxtuqlyqSD22UKlWVKmr2lkYWMeM1iQEXcJJtlf/eAWzv
+    hzblYs8w83jMG+btm+Xg7PJO6iXoR9JvfGv0xyyTqjfWE27XPbcOJhsUl10RXfbAZzpZbyafcdPf
+    vTN6+nfDXW9NDc5ljTWKOFM/gEeoR7BkjFmdXV1Hx4KsWgtcSL2+lM/f9IJce7TVT/g9gPMXXIsO
+    SUQgD6pvZAcTyA+uQKwgGNxuvuJOltUdd47sZ7NjkPlpRnAJaEgbPcxB14zesGolSEmCs7Dh1CLQ
+    7KQGlhcCaiPw5+b05MNtNqfIJmWVhJ5dnJ99p1u0sCJWOqyqW6gfWD7vQ+fgSPSTlR6qUF32l4K1
+    xtJTQgf9oM2TJrVRCuHoS54dXGbEP7hSUhRvtStw8WXjwV3Ff5b0LXfFLq4vV1dbosqtEWBMjR+2
+    rVG+rcWT9O0RhZiQtqRLr3qaE+5Is3/p8cYMTym4q+4CNZbvwIZlwQ2dD+LMnVbUvOvYDZ3b3PI/
+    xp7EKtAFwmpkcpvvSTXBlOT9HolU+Ch5IpNYUNdzhVh08M3JJ5r/R7vXENoDgFm0HZlD7oKIHdXu
+    8aZhqxCD6h0TOXlH6C9Ns1ePuy9ApwbNpxeRXhs7fGzzOxzP6zE2ywIl7ADNRm+YD0hiGhPFZ7se
+    FGg/No0AV1vZe2l0Sc+fe+OAxPoTowkf3z/NZ6iCC1HxEYNRtCyWpYWuL6OBehJvSCedB40Yr6eG
+    MTCnxplwPM+N7FPDBgDsqlT+cCDusuAL6DiRJEJHMyBOMjn7iGFjGVPcwUBJcd5uttJhUhEHX9UY
+    CyEzUWqkxn49FmirusP6BXbYolUV+raq4kipqqBJVY1TJQmU/QNDrD+S2wUAAA==
     '
     printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > /opt/razorsocket/bin/razorsocket.py
     chown razorsocket:razorsocket /opt/razorsocket/bin/razorsocket.py
@@ -525,9 +525,13 @@ install_auto_update() {
 # none
 install_vmware_tools() {
     clear
-    echo '[vmware-tools]'$'\n''name=VMware Tools for Red Hat Enterprise Linux $releasever - $basearch'$'\n''baseurl=http://packages.vmware.com/tools/esx/latest/rhel6/$basearch'$'\n''enabled=1'$'\n''gpgcheck=1'$'\n''gpgkey=http://packages.vmware.com/tools/keys/VMWARE-PACKAGING-GPG-RSA-KEY.pub' > /etc/yum.repos.d/VMWare-Tools.repo
-    yum install -y vmware-tools-esx-nox
-    cp /etc/vmware-tools/init/vmware-tools-* /etc/init.d/
+    if [ "$VERSION_CS" > 4 ]; then
+        yum install -y open-vm-tools
+    else
+        echo '[vmware-tools]'$'\n''name=VMware Tools for Red Hat Enterprise Linux $releasever - $basearch'$'\n''baseurl=http://packages.vmware.com/tools/esx/latest/rhel6/$basearch'$'\n''enabled=1'$'\n''gpgcheck=1'$'\n''gpgkey=http://packages.vmware.com/tools/keys/VMWARE-PACKAGING-GPG-RSA-KEY.pub' > /etc/yum.repos.d/VMWare-Tools.repo
+        yum install -y vmware-tools-esx-nox
+        cp /etc/vmware-tools/init/vmware-tools-* /etc/init.d/
+    fi
     get_keypress
 }
 # install local DNS resolver
@@ -570,11 +574,7 @@ check_installed_rspamd() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_pyzorrazor() {
-    which pyzor &>/dev/null
-    PYZOR_INSTALLED="$?"
-    which razor-check &>/dev/null
-    RAZOR_INSTALLED="$?"
-    if [ "$PYZOR_INSTALLED" = 0 ] && [ "$RAZOR_INSTALLED" = 0 ]; then
+    if which pyzor &>/dev/null && which razor-check &>/dev/null; then
         return 0
     else
         return 1
@@ -586,8 +586,7 @@ check_installed_pyzorrazor() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_letsencrypt() {
-    [ -f /root/.acme.sh/acme.sh ]
-    return "$?"
+    [ -f /root/.acme.sh/acme.sh ] && return 0 || return 1
 }
 # check whether Auto update is installed
 # parameters:
@@ -595,8 +594,11 @@ check_installed_letsencrypt() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_auto_update() {
-    [ -f /etc/init.d/yum-cron ]
-    return "$?"
+    if [ "$VERSION_CS" > 4 ]; then
+        which yum-cron &>/dev/null && return 0 || return 1
+    else
+        [ -f /etc/init.d/yum-cron ] && return 0 || return 1
+    fi
 }
 # check whether Auto update is installed
 # parameters:
@@ -604,8 +606,7 @@ check_installed_auto_update() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_vmware_tools() {
-    which vmware-toolbox-cmd &>/dev/null
-    return "$?"
+    which vmware-toolbox-cmd &>/dev/null && return 0 || return 1
 }
 # check whether local DNS resolver is installed
 # parameters:
@@ -674,8 +675,10 @@ dialog_install() {
         MENU_INSTALL+=("$DIALOG_AUTO_UPDATE_INSTALLED" '')
         check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS (installed)" || DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS"
         MENU_INSTALL+=("$DIALOG_VMWARE_TOOLS_INSTALLED" '')
-        check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS (installed)" || DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
-        MENU_INSTALL+=("$DIALOG_LOCAL_DNS_INSTALLED" '')
+        if [ "$VERSION_CS" < 5 ]; then
+            check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS (installed)" || DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
+            MENU_INSTALL+=("$DIALOG_LOCAL_DNS_INSTALLED" '')
+        fi
         exec 3>&1
             DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN"           \
                 --cancel-label "Back" --ok-label "Apply"                        \
@@ -1695,7 +1698,7 @@ dialog_feature_postfix() {
 # some custom settings
 ###################################################################################################
 install_command() {
-    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | sed -n '/<tr class="js-navigation-item">/,/<\/tr>/p' | awk 'match($0, / title="([^"]+)" /, a) {print a[1]}')"
+    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | awk 'match($0, /<span class="css-truncate css-truncate-target d-block width-fit"><a class="js-navigation-open link-gray-dark" title="([^"]+)" id/, a) {print a[1]}')"
     while true; do
         ARRAY_COMMAND=()
         for NAME_COMMAND in $LIST_COMMAND; do
@@ -3731,31 +3734,34 @@ dialog_clearswift() {
     DIALOG_TOGGLE_LDAP='LDAP-sync monitoring'
     DIALOG_TOGGLE_PSQL='PSQL cleanup'
     DIALOG_TOGGLE_WATCH='Outbound queue montoring'
+
+    MENU_CLEARSWIFT=()
+    MENU_CLEARSWIFT+=("$DIALOG_INSTALL_COMMAND" '')
+    MENU_CLEARSWIFT+=("$DIALOG_EDIT_COMMAND" '')
+    MENU_CLEARSWIFT+=("$DIALOG_LDAP" '')
+    MENU_CLEARSWIFT+=("$DIALOG_SSH" '')
+    MENU_CLEARSWIFT+=("$DIALOG_SMTP" '')
+    [ "$VERSION_CS" < 5 ] && MENU_CLEARSWIFT+=("$DIALOG_KEY_AUTH" '')
+    MENU_CLEARSWIFT+=("$DIALOG_IMPORT_KEYSTORE" '')
+    MENU_CLEARSWIFT+=("$DIALOG_EXPORT_ADDRESS" '')
+    MENU_CLEARSWIFT+=("$DIALOG_RULE" '')
+    MENU_CLEARSWIFT+=("$DIALOG_SAMPLE" '')
+    MENU_CLEARSWIFT+=("$DIALOG_POLICY" '')
+    MENU_CLEARSWIFT+=("$DIALOG_BOUNCE" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TOMCAT" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TIMEOUT" '')
+    [ "$VERSION_CS" < 5 ] && MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_PASSWORD" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_CLEANUP" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_BACKUP" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_LDAP" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_PSQL" '')
+    MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_WATCH" '')
+
     while true; do
         exec 3>&1
         DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN"                                  \
             --cancel-label 'Back' --ok-label 'Edit' --menu 'Manage Clearswift configuration' 0 0 0 \
-            "$DIALOG_INSTALL_COMMAND" ''                                                           \
-            "$DIALOG_EDIT_COMMAND" ''                                                              \
-            "$DIALOG_LDAP" ''                                                                      \
-            "$DIALOG_SSH" ''                                                                       \
-            "$DIALOG_SMTP" ''                                                                      \
-            "$DIALOG_KEY_AUTH" ''                                                                  \
-            "$DIALOG_IMPORT_KEYSTORE" ''                                                           \
-            "$DIALOG_EXPORT_ADDRESS" ''                                                            \
-            "$DIALOG_RULE" ''                                                                      \
-            "$DIALOG_SAMPLE" ''                                                                    \
-            "$DIALOG_POLICY" ''                                                                    \
-            "$DIALOG_BOUNCE" ''                                                                    \
-            "$DIALOG_TOMCAT" ''                                                                    \
-            "$DIALOG_TIMEOUT" ''                                                                   \
-            "$DIALOG_TOGGLE_PASSWORD" ''                                                           \
-            "$DIALOG_TOGGLE_CLEANUP" ''                                                            \
-            "$DIALOG_TOGGLE_BACKUP" ''                                                             \
-            "$DIALOG_TOGGLE_LDAP" ''                                                               \
-            "$DIALOG_TOGGLE_PSQL" ''                                                               \
-            "$DIALOG_TOGGLE_WATCH" ''                                                              \
-            2>&1 1>&3)"
+            "${MENU_CLEARSWIFT[@]}" 2>&1 1>&3)"
         RET_CODE="$?"
         exec 3>&-
         if [ "$RET_CODE" = 0 ]; then
@@ -5409,7 +5415,9 @@ init_cs() {
     # enable CS RHEL repo
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     # install epel
-    if ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
+    if [ "$VERSION_CS" > 4 ]; then
+        yum install -y epel-release &>/dev/null
+    elif ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
         wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -O /tmp/epel-release-6-8.noarch.rpm &>/dev/null
         rpm -ivh /tmp/epel-release-6-8.noarch.rpm &>/dev/null
     fi
@@ -5505,6 +5513,7 @@ check_update() {
 # return values:
 # none
 menu_main() {
+    VERSION_CS="$(awk -F_ '{print $1}' /opt/cs-gateway/.patchlevel)"
     grep -q 'alias menu=/root/menu.sh' /root/.bashrc || echo 'alias menu=/root/menu.sh' >> /root/.bashrc
     check_update
     check_installed_seg && init_cs
