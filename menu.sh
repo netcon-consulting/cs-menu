@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.112.0 for Clearswift SEG >= 4.8
+# menu.sh V1.113.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,10 +63,10 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - changed whitelist server option to more flexible addresslist server
-# - updated LDAP watchdog script
+# - error logging
 #
 ###################################################################################################
+LOG_MENU='/var/log/menu.log'
 VERSION_MENU="$(grep '^# menu.sh V' $0 | awk '{print $3}')"
 DIALOG='dialog'
 TXT_EDITOR='vim'
@@ -5431,11 +5431,11 @@ init_cs() {
     which pip3 &>/dev/null || yum install -y python34-pip --enablerepo=cs-* &>/dev/null
     # create custom settings dirs
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
-    touch $CONFIG_PF
-    chmod +x $CONFIG_PF
-    chown cs-admin:cs-adm $CONFIG_PF
-    grep -q $CONFIG_PF $PF_CUSTOMISE || echo $'\n'"$CONFIG_PF" >> $PF_CUSTOMISE
-    head -1 $CONFIG_PF | grep -q '^#!/bin/bash' || echo '#!/bin/bash' >> $CONFIG_PF
+    touch "$CONFIG_PF"
+    chmod +x "$CONFIG_PF"
+    chown cs-admin:cs-adm "$CONFIG_PF"
+    grep -q "$CONFIG_PF" "$PF_CUSTOMISE" || echo $'\n'"$CONFIG_PF" >> "$PF_CUSTOMISE"
+    head -1 "$CONFIG_PF" | grep -q '^#!/bin/bash' || echo '#!/bin/bash' >> "$CONFIG_PF"
     grep -q '*filter' "$CONFIG_FW" || echo '*filter' >> "$CONFIG_FW"
     grep -q ':INPUT DROP \[0:0\]' "$CONFIG_FW" || echo ':INPUT DROP [0:0]' >> "$CONFIG_FW"
     grep -q ':FORWARD DROP \[0:0\]' "$CONFIG_FW" || echo ':FORWARD DROP [0:0]'  >> "$CONFIG_FW"
@@ -5443,7 +5443,9 @@ init_cs() {
     chown -R cs-admin:cs-adm /opt/cs-gateway/custom
     # create alias shortcuts for menu and Mail Logs
     grep -q 'alias pflogs' /root/.bashrc || echo 'alias pflogs="tail -f /var/log/cs-gateway/mail.$(date +%Y-%m-%d).log"' >> /root/.bashrc
-    grep -q "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
+    if [ -f /home/cs-admin/.bash_profile ]; then
+        grep -q "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
+    fi
     # create custom commands directory
     mkdir -p "$DIR_COMMANDS"
     chown cs-admin:cs-adm "$DIR_COMMANDS"
@@ -5497,71 +5499,75 @@ check_update() {
 ###################################################################################################
 # Main Dialog
 ###################################################################################################
-# root menu; select option in dialog menu
+# main menu, select option in dialog menu
 # parameters:
 # none
 # return values:
 # none
-grep -q 'alias menu=/root/menu.sh' /root/.bashrc || echo 'alias menu=/root/menu.sh' >> /root/.bashrc
-check_update
-check_installed_seg && init_cs
-write_examples
-print_info
-DIALOG_SEG='Install Clearswift SEG'
-DIALOG_INSTALL='Install features'
-DIALOG_FEATURE_POSTFIX='Postfix features'
-DIALOG_POSTFIX='Postfix configs'
-DIALOG_CLEARSWIFT='Clearswift configs'
-DIALOG_FEATURE_RSPAMD='Rspamd features'
-DIALOG_CONFIG_RSPAMD='Rspamd configs'
-DIALOG_OTHER='Other configs'
-DIALOG_SHOW='Postfix infos & stats'
-DIALOG_APPLY='Apply configuration'
-while true; do
-    ARRAY_MAIN=()
-    if check_installed_seg; then
-        ARRAY_MAIN+=("$DIALOG_INSTALL" '')
-        ARRAY_MAIN+=("$DIALOG_FEATURE_POSTFIX" '')
-        ARRAY_MAIN+=("$DIALOG_POSTFIX" '')
-        ARRAY_MAIN+=("$DIALOG_CLEARSWIFT" '')
-        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_FEATURE_RSPAMD" '')
-        check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_CONFIG_RSPAMD" '')
-        ARRAY_MAIN+=("$DIALOG_OTHER" '')
-        ARRAY_MAIN+=("$DIALOG_SHOW" '')
-        [ "$APPLY_NEEDED" = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" '')
-    else
-        ARRAY_MAIN+=("$DIALOG_SEG" '')
-    fi
-    exec 3>&1
-    DIALOG_RET="$("$DIALOG" --clear --title "$TITLE_MAIN $VERSION_MENU" --cancel-label 'Exit' --menu '' 0 0 0 "${ARRAY_MAIN[@]}" 2>&1 1>&3)"
-    RET_CODE="$?"
-    exec 3>&-
-    if [ "$RET_CODE" = 0 ]; then
-        case "$DIALOG_RET" in
-            "$DIALOG_SEG")
-                install_seg;;
-            "$DIALOG_INSTALL")
-                dialog_install;;
-            "$DIALOG_FEATURE_POSTFIX")
-                dialog_feature_postfix;;
-            "$DIALOG_POSTFIX")
-                dialog_postfix;;
-            "$DIALOG_CLEARSWIFT")
-                dialog_clearswift;;
-            "$DIALOG_FEATURE_RSPAMD")
-                dialog_feature_rspamd;;
-            "$DIALOG_CONFIG_RSPAMD")
-                dialog_config_rspamd;;
-            "$DIALOG_OTHER")
-                dialog_other;;
-            "$DIALOG_SHOW")
-                dialog_show;;
-            "$DIALOG_APPLY")
-                apply_config;;
-        esac
-    else
-        break
-    fi
-done
-clear
+menu_main() {
+    grep -q 'alias menu=/root/menu.sh' /root/.bashrc || echo 'alias menu=/root/menu.sh' >> /root/.bashrc
+    check_update
+    check_installed_seg && init_cs
+    write_examples
+    print_info
+    DIALOG_SEG='Install Clearswift SEG'
+    DIALOG_INSTALL='Install features'
+    DIALOG_FEATURE_POSTFIX='Postfix features'
+    DIALOG_POSTFIX='Postfix configs'
+    DIALOG_CLEARSWIFT='Clearswift configs'
+    DIALOG_FEATURE_RSPAMD='Rspamd features'
+    DIALOG_CONFIG_RSPAMD='Rspamd configs'
+    DIALOG_OTHER='Other configs'
+    DIALOG_SHOW='Postfix infos & stats'
+    DIALOG_APPLY='Apply configuration'
+    while true; do
+        ARRAY_MAIN=()
+        if check_installed_seg; then
+            ARRAY_MAIN+=("$DIALOG_INSTALL" '')
+            ARRAY_MAIN+=("$DIALOG_FEATURE_POSTFIX" '')
+            ARRAY_MAIN+=("$DIALOG_POSTFIX" '')
+            ARRAY_MAIN+=("$DIALOG_CLEARSWIFT" '')
+            check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_FEATURE_RSPAMD" '')
+            check_installed_rspamd && ARRAY_MAIN+=("$DIALOG_CONFIG_RSPAMD" '')
+            ARRAY_MAIN+=("$DIALOG_OTHER" '')
+            ARRAY_MAIN+=("$DIALOG_SHOW" '')
+            [ "$APPLY_NEEDED" = 1 ] && ARRAY_MAIN+=("$DIALOG_APPLY" '')
+        else
+            ARRAY_MAIN+=("$DIALOG_SEG" '')
+        fi
+        exec 3>&1
+        DIALOG_RET="$("$DIALOG" --clear --title "$TITLE_MAIN $VERSION_MENU" --cancel-label 'Exit' --menu '' 0 0 0 "${ARRAY_MAIN[@]}" 2>&1 1>&3)"
+        RET_CODE="$?"
+        exec 3>&-
+        if [ "$RET_CODE" = 0 ]; then
+            case "$DIALOG_RET" in
+                "$DIALOG_SEG")
+                    install_seg;;
+                "$DIALOG_INSTALL")
+                    dialog_install;;
+                "$DIALOG_FEATURE_POSTFIX")
+                    dialog_feature_postfix;;
+                "$DIALOG_POSTFIX")
+                    dialog_postfix;;
+                "$DIALOG_CLEARSWIFT")
+                    dialog_clearswift;;
+                "$DIALOG_FEATURE_RSPAMD")
+                    dialog_feature_rspamd;;
+                "$DIALOG_CONFIG_RSPAMD")
+                    dialog_config_rspamd;;
+                "$DIALOG_OTHER")
+                    dialog_other;;
+                "$DIALOG_SHOW")
+                    dialog_show;;
+                "$DIALOG_APPLY")
+                    apply_config;;
+            esac
+        else
+            break
+        fi
+    done
+    clear
+}
+
+menu_main 2> "$LOG_MENU"
 ###################################################################################################
