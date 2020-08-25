@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.114.0 for Clearswift SEG >= 4.8
+# menu.sh V1.115.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -63,8 +63,8 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - ported to Clearswift version 5
-# - bugfix
+# - added support for MIME header checks
+# - disable DNS forwarding and query logging for Clearswift version 5
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -111,6 +111,7 @@ WHITELIST_POSTFIX="$DIR_MAPS/check_client_access_ips"
 WHITELIST_POSTSCREEN="$DIR_MAPS/check_postscreen_access_ips"
 HEADER_REWRITE="$DIR_MAPS/smtp_header_checks"
 MILTER_BYPASS="$DIR_MAPS/smtpd_milter_map"
+MIME_HEADER="$DIR_MAPS/mime_header_checks"
 WHITELIST_IP='/var/lib/rspamd/whitelist_sender_ip'
 WHITELIST_DOMAIN='/var/lib/rspamd/whitelist_sender_domain'
 WHITELIST_FROM='/var/lib/rspamd/whitelist_sender_from'
@@ -1000,6 +1001,31 @@ disable_milter_bypass() {
         sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
     done
 }
+# enable MIME header checks
+# parameters:
+# none
+# return values:
+# none
+enable_mime_header() {
+    for OPTION in                                                             \
+        "mime_header_checks=regexp:$MIME_HEADER"; do
+        if ! [ -f "$PF_IN" ] || ! grep -q "$OPTION" "$PF_IN"; then
+            echo "$OPTION" >> "$PF_IN"
+        fi
+        postmulti -i postfix-inbound -x postconf "$OPTION"
+    done
+}
+# disable MIME header checks
+# parameters:
+# none
+# return values:
+# none
+disable_mime_header() {
+    for OPTION in                                                             \
+        "mime_header_checks=regexp:$MIME_HEADER"; do
+        sed -i "/$(echo "$OPTION" | sed 's/\//\\\//g')/d" "$PF_IN"
+    done
+}
 # enable inbound bounce notification
 # parameters:
 # $1 - notification email address
@@ -1358,6 +1384,19 @@ check_enabled_milter_bypass() {
         echo off
     fi
 }
+# check whether MIME header checks is enabled
+# parameters:
+# none
+# return values:
+# MIME header checks status
+check_enabled_mime_header() {
+    if [ -f "$PF_IN" ]                                                                                              \
+        && grep -q "mime_header_checks=regexp:$MIME_HEADER" "$PF_IN"; then
+        echo on
+    else
+        echo off
+    fi
+}
 # check whether inbound bounce notification is enabled
 # parameters:
 # none
@@ -1477,13 +1516,14 @@ dialog_feature_postfix() {
     DIALOG_SENDER_REWRITE='Sender rewrite'
     DIALOG_SENDER_ROUTING='Sender dependent routing'
     DIALOG_MILTER_BYPASS='Milter bypass'
+    DIALOG_MIME_HEADER='MIME header checks'
     DIALOG_BOUNCE_IN='Inbound-Bounce'
     DIALOG_BOUNCE_OUT='Outbound-Bounce'
     DIALOG_OFFICE365='Office365 IP-range whitelisting'
     DIALOG_VERIFY='Address verify negative cache disabled'
     DIALOG_POSTSCREEN='Postscreen'
     DIALOG_POSTSCREEN_DEEP='PS Deep'
-    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing milter_bypass bounce_in bounce_out office365 verify postscreen postscreen_deep; do
+    for FEATURE in rspamd letsencrypt tls esmtp_filter dane sender_rewrite sender_routing milter_bypass mime_header bounce_in bounce_out office365 verify postscreen postscreen_deep; do
         declare STATUS_${FEATURE^^}="$(check_enabled_$FEATURE)"
     done
     [ "$STATUS_BOUNCE_IN" = 'on' ] && EMAIL_BOUNCE_IN="$(grep '^bounce_notice_recipient=' $PF_IN | awk -F\= '{print $2}' | tr -d \')" || EMAIL_BOUNCE_IN=''
@@ -1497,6 +1537,7 @@ dialog_feature_postfix() {
     ARRAY_ENABLE+=("$DIALOG_SENDER_REWRITE" '' "$STATUS_SENDER_REWRITE")
     ARRAY_ENABLE+=("$DIALOG_SENDER_ROUTING" '' "$STATUS_SENDER_ROUTING")
     ARRAY_ENABLE+=("$DIALOG_MILTER_BYPASS" '' "$STATUS_MILTER_BYPASS")
+    ARRAY_ENABLE+=("$DIALOG_MIME_HEADER" '' "$STATUS_MIME_HEADER")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_IN" '' "$STATUS_BOUNCE_IN")
     ARRAY_ENABLE+=("$DIALOG_BOUNCE_OUT" '' "$STATUS_BOUNCE_OUT")
     ARRAY_ENABLE+=("$DIALOG_OFFICE365" '' "$STATUS_OFFICE365")
@@ -1609,6 +1650,18 @@ dialog_feature_postfix() {
         else
             if [ "$STATUS_MILTER_BYPASS" = 'on' ]; then
                 disable_milter_bypass
+                APPLY_NEEDED=1
+            fi
+        fi
+        if echo "$DIALOG_RET" | grep -q "$DIALOG_MIME_HEADER"; then
+            if [ "$STATUS_MIME_HEADER" = 'off' ]; then
+                enable_mime_header
+                POSTFIX_RESTART=1
+            fi
+            LIST_ENABLED+=$'\n''MIME header checks'
+        else
+            if [ "$STATUS_MIME_HEADER" = 'on' ]; then
+                disable_mime_header
                 APPLY_NEEDED=1
             fi
         fi
@@ -3605,6 +3658,12 @@ write_examples() {
         echo '#127.0.0.0/8    DISABLE' >> "$MILTER_BYPASS"
         echo '#127.0.0.0/8    inet:127.0.0.1:19127' >> "$MILTER_BYPASS"
     fi
+    if ! [ -f "$MIME_HEADER" ]; then
+        echo '######################' >> "$MIME_HEADER"
+        echo '# MIME header checks #' >> "$MIME_HEADER"
+        echo '######################' >> "$MIME_HEADER"
+        echo '/^\s*Content.(Disposition|Type).*name\s*=\s*"?(.+.(exe|pif|com|dll|vbs|bat|doc|dot|xls|xla|xlt|xlw|ppr|pot|ppa|pps|mdb|vsd|vdx))"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
+    fi
 }
 ###################################################################################################
 # select Postfix configuration to edit in dialog menu
@@ -3623,6 +3682,7 @@ dialog_postfix() {
     DIALOG_HEADER_REWRITE='Header rewrite'
     DIALOG_SENDER_ROUTING='Sender dependent routing'
     DIALOG_MILTER_BYPASS='Milter bypass'
+    DIALOG_MIME_HEADER='MIME header'
     DIALOG_RESTRICTIONS='Postfix restrictions'
     DIALOG_BACKUP='Backup Postfix feature config'
     DIALOG_RESTORE='Restore Postfix feature config'
@@ -3640,6 +3700,7 @@ dialog_postfix() {
             "$DIALOG_HEADER_REWRITE" ''                                                         \
             "$DIALOG_SENDER_ROUTING" ''                                                         \
             "$DIALOG_MILTER_BYPASS" ''                                                          \
+            "$DIALOG_MIME_HEADER" ''                                                            \
             "$DIALOG_RESTRICTIONS" ''                                                           \
             "$DIALOG_BACKUP" ''                                                                 \
             "$DIALOG_RESTORE" ''                                                                \
@@ -3669,6 +3730,8 @@ dialog_postfix() {
                     postmap "$SENDER_ROUTING";;
                 "$DIALOG_MILTER_BYPASS")
                     "$TXT_EDITOR" "$MILTER_BYPASS";;
+                "$DIALOG_MIME_HEADER")
+                    "$TXT_EDITOR" "$MIME_HEADER";;
                 "$DIALOG_RESTRICTIONS")
                     dialog_restrictions;;
                 "$DIALOG_BACKUP")
@@ -5158,11 +5221,11 @@ dialog_other() {
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
     ARRAY_OTHER+=("$DIALOG_RECENT_UPDATES" '')
-    ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
+    [ "$VERSION_CS" < 5 ] && ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
     ARRAY_OTHER+=("$DIALOG_REPORT" '')
     ARRAY_OTHER+=("$DIALOG_DKIM" '')
     ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
-    ARRAY_OTHER+=("$DIALOG_LOG" '')
+    [ "$VERSION_CS" < 5 ] && ARRAY_OTHER+=("$DIALOG_LOG" '')
     ARRAY_OTHER+=("$DIALOG_SNMP" '')
     ARRAY_OTHER+=("$DIALOG_ADDRESSLIST" '')
     while true; do
