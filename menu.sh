@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.116.0 for Clearswift SEG >= 4.8
+# menu.sh V1.117.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added whitelist for MIME header checks
+# - updated MIME header checks examples
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -3662,8 +3662,10 @@ write_examples() {
         echo '######################' >> "$MIME_HEADER"
         echo '# MIME header checks #' >> "$MIME_HEADER"
         echo '######################' >> "$MIME_HEADER"
+        echo '# example file extension blacklist:' >> "$MIME_HEADER"
         echo '#/^\s*Content.(Disposition|Type).*name\s*=\s*"?.+\.(exe|pif|com|dll|vbs|bat|doc|dot|xls|xla|xlt|xlw|ppr|pot|ppa|pps|mdb|vsd|vdx)"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
-        echo '#/^\s*Content.(Disposition|Type).*name\s*=\s*"?.+\.((?!txt|png|jpg).)*"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
+        echo '# example file extension whitelist:' >> "$MIME_HEADER"
+        echo '#/^\s*Content.(Disposition|Type).*name\s*=\s*"?.+\.((?!txt|png|jpg|gif|tif|bmp|svg|pdf|zip|ics|pgp|gpg|key|p7s).)*"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
     fi
 }
 ###################################################################################################
