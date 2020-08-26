@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.115.0 for Clearswift SEG >= 4.8
+# menu.sh V1.116.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -51,6 +51,7 @@
 # - Office365 IP-range whitelisting
 # - sender dependent routing
 # - milter bypass
+# - MIME header checks
 #
 # Rspamd
 # - Rspamd installation and integration as milter
@@ -63,8 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added support for MIME header checks
-# - disable DNS forwarding and query logging for Clearswift version 5
+# - added whitelist for MIME header checks
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -3662,7 +3662,8 @@ write_examples() {
         echo '######################' >> "$MIME_HEADER"
         echo '# MIME header checks #' >> "$MIME_HEADER"
         echo '######################' >> "$MIME_HEADER"
-        echo '/^\s*Content.(Disposition|Type).*name\s*=\s*"?(.+.(exe|pif|com|dll|vbs|bat|doc|dot|xls|xla|xlt|xlw|ppr|pot|ppa|pps|mdb|vsd|vdx))"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
+        echo '#/^\s*Content.(Disposition|Type).*name\s*=\s*"?.+\.(exe|pif|com|dll|vbs|bat|doc|dot|xls|xla|xlt|xlw|ppr|pot|ppa|pps|mdb|vsd|vdx)"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
+        echo '#/^\s*Content.(Disposition|Type).*name\s*=\s*"?.+\.((?!txt|png|jpg).)*"?\s*$/ REJECT unwanted attachment' >> "$MIME_HEADER"
     fi
 }
 ###################################################################################################

@@ -1,4 +1,4 @@
-NetCon Clearswift Configuration V1.115.0
+NetCon Clearswift Configuration V1.117.0
 ========================================
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
@@ -47,6 +47,7 @@ Config tool for missing features on Clearswift Secure E-Mail Gateway. These sett
 * Office365 IP-range whitelisting
 * sender dependent routing
 * milter bypass
+* MIME header checks
 
 ### Rspamd:
 * Rspamd installation and integration as milter
