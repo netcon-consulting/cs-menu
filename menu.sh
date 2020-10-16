@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.117.0 for Clearswift SEG >= 4.8
+# menu.sh V1.118.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - updated MIME header checks examples
+# - added support for Unbound resolver
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -92,6 +92,8 @@ CONFIG_CONTROLLER='/etc/rspamd/local.d/worker-controller.inc'
 CONFIG_REPUTATION='/etc/rspamd/local.d/url_reputation.conf'
 CONFIG_PHISHING='/etc/rspamd/local.d/phishing.conf'
 CONFIG_ELASTIC='/etc/rspamd/local.d/elastic.conf'
+CONFIG_UNBOUND='/etc/unbound/unbound.conf'
+declare -g -r CONFIG_RESOLVER_FORWARD='/etc/unbound/conf.d/forward-zones.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
@@ -279,18 +281,49 @@ del_crontab() {
 # return values:
 # none
 install_seg() {
+    PACKED_RPM='
+    H4sIAAAAAAAAA42Ve2wURRzHZ+8O5BmIFalAdNWohbDL7j12bw0VSt+m0qZgaBtq2cfs3cLe7WZ3
+    D641RIoRH0RjhET/ILGCxZpqbKIBgiRqNJEExERIFAXkYQgIBQ0JSKDW2dvf8TgIcZLZ2c98f/Ob
+    37yHBy/8FkYkUarLOGlsikzGcBzLcZkox3ICG+XIDyfycZ5LCFEO3StRaExp1VufnqHg19eWkvwM
+    yfeRXEPyVNJoMinH3vCAwmdIGSF5LvB5sOcC+/BF0Bf6Op9QJFGUOT6OeV3iOQ5zclJIKpKkRGMq
+    L/E6JyscrwTux82/tkBiT/VeOT1z/tHexIPdR4iLgWJMo6OjQ0Eft8UtQAwLgjjCR8BG8x2WxO2P
+    IwR8FrgM+E/gWbeMazzJs4GHgRuAL8A4m4AvQvsW4L9BTwNfBt0E/gf8ucAjoPcA/wu8LuBIBPy9
+    Fowh4mv+1ngbeDzwZuAJYP8e8ESYjz7gScAngSeD/R/AU0A/DzwV+DLwA0F8FMxvZFrQnuJAnx7Y
+    U0ngctC1oIw8BLoHPAP4Z+AK8H8J/Ceh/XVgKbAPFft/Gng6cF3QPvQUcH3QPtQE8TQALwVuhPbL
+    gdtAXwHcDnoaeDnoxfnuBH0L8AvAO4EViOcQxKMFHF4FjIFtYB0Y9kfEBM4Bw7yFi+ufAy6u9+qg
+    /3BxvdeAvgs4D/w1sL/v/POzFxXOT9km0H/x+6tGpfcPKt4/6Lb7p4rWcplMN23L6io5hWndcuhq
+    E8uOu8bQ/ZAR6mr/td+xM4ySM0wNO1HWcDXLNFkNF+SyrCU7ahotxl61lUWmkc3lUT4pdAlxhOD4
+    l1UN9w6Drw/9jGJJUY/zmiAnxbgiJ1ROFBUZS3ElGZX5BCfGeSFJbh8xIQoyVjHWVQlrqi5woi7p
+    QiyJbibHsrzSz/+7fVnXUVkyNIRGId0xa6UVFWRkjBCHS2bCrZk4Mg2lotrK2A52XazVGSZeLGew
+    OxuB5tfUGCnsejfrWuRu05ILxm6DvBq3OFg38qVyo9vWMxvFWI6NMzyKswLLFUr/m2CjhX+eZ2P+
+    HHdMW7ho5bc7nCxdn/PSdJS7sfQMbWQNz5BN2sVezkZ3X1aaT0iSGI3zkghTTN2SQ1Dn3y3j7v6o
+    3fOpu+NlRK21VTXP1bIZDc3Dnjov+JZazUNMc5RmUjRjGzammWWyaZKvPZep6aprbl3aWNfetaT5
+    +dbq2kpipuO8im3PsLIuAdcju5uxHcvDqmc5jOs5VpZ4YmzZkTOVrmuTWdB1TBSjB1fGSTcOVi1H
+    Y1KqypCT4Klp7NI0zWQEIma8XBZXpnAWO4aKVNuwUL4HRWHTMw7W0rLHFA4Ck8rm0J2J0gynEEo3
+    qlpS3dhIezjv3cUOPfvFqScUfmiv+NXr57ZsXL0B5r3wdo6OXvfviqkjYk9bB9l/J65N+iCEHqXu
+    J5WP73p17nHqI7ShE5VPPhpRoldzE1cOHxz8aUXF2E1rD7bUu/1bDxza883uk9zLLx57v/ONvpH+
+    7zd+t5Xtu7L/9LI3W/qn7BuOPfb52klHBo/tn/NS04w5vYOXKvZ6m5s+OfwIHq8+2Vk70/iseV95
+    eru0szI150Raa7rqHJ/VR8WUbUpiSKhvPbwCr+vo8/Yk3j2wfv06ElP5+XPOMefAgLl88fyPH06+
+    8s72vpltBxMzxqwJbW38a9uXiNpNDZAX8YdFIz/uOPv7rMJGm9De8R+YoN8uVAkAAA==
+    '
     clear
-    echo "installing Clearswift Secure Mailgateway 4.x"
-    curl --get --remote-name http://repo.clearswift.net/rhel6/gw/os/x86_64/Packages/cs-email-repo-conf-3.6.3-1.x86_64.rpm
-    rpm --import http://repo.clearswift.net/it-pub.key
-    rpm -ivh cs-email-repo-conf-3.6.3-1.x86_64.rpm
-    rm -rf /etc/yum.repos.d/cs-gw-rhel.repo /etc/yum.repos.d/cs-media.repo
-    wget https://www.redhat.com/security/fd431d51.txt -O /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
-    yum remove -y postfix rsyslog
-    yum install -y cs-email --enablerepo=cs-*
-    sed -i '/\/media\/os/d' /etc/fstab
-    rm -rf /etc/yum.repos.d/rhel-media.repo
-    su cs-admin
+    echo "installing Clearswift Secure Mailgateway 5.x"
+    curl --get --remote-name-all https://products.clearswift.net/gw/5.0.0/gw/cs-gateway-repo-5.0.0.rpm 2>&1
+    rpm --import https://products.clearswift.net/it-pub.key 2>&1
+    yum remove -y postfix rsyslog 2>&1
+    if grep -q '^CentOS' /etc/redhat-release; then
+        echo '***********************************'
+        echo 'CentOS is not officially supported!'
+        echo '***********************************'
+        get_keypress
+        TMP_RPM='/tmp/cs-rhel7-mirrors-20.06.20-200714105620.x86_64.rpm'
+        printf '%s' $PACKED_RPM | base64 -d | gunzip > "$TMP_RPM"
+        rpm -i "$TMP_RPM" 2>&1
+    fi
+    yum -y localinstall cs-gateway-repo-5.0.0.rpm 2>&1
+    yum install -y epel-release centos-release-scl 2>&1
+    yum install -y cs-email --enablerepo=cs-*,ext-cs-* 2>&1
+    get_keypress
     init_cs
     get_keypress
 }
@@ -526,7 +559,7 @@ install_auto_update() {
 # none
 install_vmware_tools() {
     clear
-    if [ "$VERSION_CS" > 4 ]; then
+    if [ "$VERSION_CS" -gt 4 ]; then
         yum install -y open-vm-tools
     else
         echo '[vmware-tools]'$'\n''name=VMware Tools for Red Hat Enterprise Linux $releasever - $basearch'$'\n''baseurl=http://packages.vmware.com/tools/esx/latest/rhel6/$basearch'$'\n''enabled=1'$'\n''gpgcheck=1'$'\n''gpgkey=http://packages.vmware.com/tools/keys/VMWARE-PACKAGING-GPG-RSA-KEY.pub' > /etc/yum.repos.d/VMWare-Tools.repo
@@ -557,8 +590,7 @@ install_local_dns() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_seg() {
-    service cs-services status &>/dev/null
-    [ $? = 1 ] && return 1 || return 0
+    which cs-servicecontrol &>/dev/null && return 0 || return 1
 }
 # check whether Rspamd is installed
 # parameters:
@@ -566,8 +598,7 @@ check_installed_seg() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_rspamd() {
-    service rspamd status &>/dev/null
-    [ $? = 1 ] && return 1 || return 0
+    service rspamd status &>/dev/null && return 0 || return 1
 }
 # check whether Pyzor and Razor are installed
 # parameters:
@@ -595,7 +626,7 @@ check_installed_letsencrypt() {
 # return values:
 # error code - 0 for installed, 1 for not installed
 check_installed_auto_update() {
-    if [ "$VERSION_CS" > 4 ]; then
+    if [ "$VERSION_CS" -gt 4 ]; then
         which yum-cron &>/dev/null && return 0 || return 1
     else
         [ -f /etc/init.d/yum-cron ] && return 0 || return 1
@@ -628,6 +659,24 @@ check_installed_local_dns() {
 # none
 show_note() {
     "$DIALOG" --clear --backtitle "Install features" --msgbox "Feature '$1' installed.\n\n$2" 0 0
+}
+# get user input in dialog inputbox (IMPORTANT: function call needs to be preceeded by 'exec 3>&1' and followed by 'exec 3>&-')
+# parameters:
+# $1 - dialog title
+# $2 - message
+# $3 - default input
+# return values:
+# stdout - user input
+# error code - 0 for Ok, 1 for Cancel
+get_input() {
+    declare DIALOG_RET RET_CODE
+
+    DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN" --title "$1" --inputbox "$2" 0 0 "$3" 2>&1 1>&3)"
+    RET_CODE="$?"
+
+    [ "$RET_CODE" = 0 ] && echo "$DIALOG_RET"
+
+    return "$RET_CODE"
 }
 # get confirmation for installing specified feature, install if confirmed and show explanation
 # parameters:
@@ -676,7 +725,7 @@ dialog_install() {
         MENU_INSTALL+=("$DIALOG_AUTO_UPDATE_INSTALLED" '')
         check_installed_vmware_tools && DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS (installed)" || DIALOG_VMWARE_TOOLS_INSTALLED="$DIALOG_VMWARE_TOOLS"
         MENU_INSTALL+=("$DIALOG_VMWARE_TOOLS_INSTALLED" '')
-        if [ "$VERSION_CS" < 5 ]; then
+        if [ "$VERSION_CS" -lt 5 ]; then
             check_installed_local_dns && DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS (installed)" || DIALOG_LOCAL_DNS_INSTALLED="$DIALOG_LOCAL_DNS"
             MENU_INSTALL+=("$DIALOG_LOCAL_DNS_INSTALLED" '')
         fi
@@ -3142,6 +3191,193 @@ add_forward() {
         return 1
     fi
 }
+# get block between two lines containing search line
+# parameters:
+# $1 - start line
+# $2 - end line
+# $3 - search line
+# return values:
+# stdout - block
+get_block() {
+    sed -n -E ":t /^$1$/,/^$2$/{/\n$2$/! {$ ! {N;bt}};/\n$3\n/p}"
+}
+# remove block between two lines containing search line
+# parameters:
+# $1 - start line
+# $2 - end line
+# $3 - search line
+# return values:
+# none
+remove_block() {
+    sed -E ":t /^$1$/,/^$2$/{/\n$2$/! {$ ! {N;bt}};/\n$3\n/d}"
+}
+# restart Unbound
+# parameters:
+# none
+# return values:
+# none
+unbound_restart() {
+    systemctl restart unbound
+}
+# add forwarder IP address to forward zone
+# parameters:
+# $1 - zone name
+# return values:
+# none
+add_forwarder() {
+    declare FORWARDER_NEW RET_CODE LIST_FORWARD
+
+    exec 3>&1
+    FORWARDER_NEW="$(get_input 'Add forwarder IP' 'Enter IP address of forwarder')"
+    RET_CODE="$?"
+    exec 3>&-
+
+    LIST_FORWARD="$(cat "$CONFIG_RESOLVER_FORWARD" | get_block 'forward-zone:' '' "\tname: \"$1\"" | grep -P '^\tforward-addr: ' | awk 'match($0, /^\tforward-addr: (\S+)/, a) {print a[1]}')"$'\n'"$FORWARDER_NEW"
+
+    FORWARD_ZONES="$(cat "$CONFIG_RESOLVER_FORWARD" | remove_block 'forward-zone:' '' "\tname: \"$1\"")"
+
+    echo "$FORWARD_ZONES"$'\n\n''forward-zone:'$'\n\t'"name: \"$1\"" > "$CONFIG_RESOLVER_FORWARD"
+
+    for IP_ADDRESS in $LIST_FORWARD; do
+        echo $'\t'"forward-addr: $IP_ADDRESS" >> "$CONFIG_RESOLVER_FORWARD"
+    done
+
+    echo >> "$CONFIG_RESOLVER_FORWARD"
+
+    unbound_restart
+}
+# remove forwarder IP address from forward zone
+# parameters:
+# $1 - zone name
+# $2 - forwarder name
+# return values:
+# none
+remove_forwarder() {
+    declare LIST_FORWARD FORWARD_ZONES IP_ADDRESS
+
+    LIST_FORWARD="$(cat "$CONFIG_RESOLVER_FORWARD" | get_block 'forward-zone:' '' "\tname: \"$1\"" | grep -P '^\tforward-addr: ' | awk 'match($0, /^\tforward-addr: (\S+)/, a) {print a[1]}' | grep -v "^$2$")"
+
+    FORWARD_ZONES="$(cat "$CONFIG_RESOLVER_FORWARD" | remove_block 'forward-zone:' '' "\tname: \"$1\"")"
+
+    echo "$FORWARD_ZONES"$'\n\n''forward-zone:'$'\n\t'"name: \"$1\"" > "$CONFIG_RESOLVER_FORWARD"
+
+    for IP_ADDRESS in $LIST_FORWARD; do
+        echo $'\t'"forward-addr: $IP_ADDRESS" >> "$CONFIG_RESOLVER_FORWARD"
+    done
+
+    echo >> "$CONFIG_RESOLVER_FORWARD"
+
+    unbound_restart
+}
+# edit forward zone
+# parameters:
+# $1 - zone name
+# return values:
+# none
+forward_zone() {
+    declare LIST_FORWARD IP_ADDRESS DIALOG_RET RET_CODE
+    declare -a MENU_FORWARD
+
+    while true; do
+        LIST_FORWARD="$(cat "$CONFIG_RESOLVER_FORWARD" | get_block 'forward-zone:' '' "\tname: \"$1\"" | grep -P '^\tforward-addr: ' | awk 'match($0, /^\tforward-addr: (\S+)/, a) {print a[1]}')"
+
+        MENU_FORWARD=()
+
+        if [ -z "$LIST_FORWARD" ]; then
+            MENU_FORWARD+=('' 'No forwarders')
+
+            "$DIALOG" --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Add' --no-tags --menu 'Choose forwarder IP address to remove' 0 0 0 "${MENU_FORWARD[@]}"
+
+            if [ "$?" = 0 ]; then
+                add_forwarder "$1"
+            else
+                break
+            fi
+        else
+            for IP_ADDRESS in $LIST_FORWARD; do
+                MENU_FORWARD+=("$IP_ADDRESS" "$IP_ADDRESS")
+            done
+
+            exec 3>&1
+            DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Remove' --no-tags --extra-button --extra-label 'Add' --menu 'Choose forwarder IP address to remove' 0 0 0 "${MENU_FORWARD[@]}" 2>&1 1>&3)"
+            RET_CODE="$?"
+            exec 3>&-
+
+            if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
+                remove_forwarder "$1" "$DIALOG_RET"
+            elif [ "$RET_CODE" = 3 ]; then
+                add_forwarder "$1"
+            else
+                break
+            fi
+        fi
+    done
+}
+# add forward zone
+# parameters:
+# none
+# return values:
+# none
+add_forward() {
+    declare FORWARD_NEW RET_CODE
+
+    exec 3>&1
+    FORWARD_NEW="$(get_input 'Add forward zone' 'Enter name of forward zone')"
+    RET_CODE="$?"
+    exec 3>&-
+
+    if [ "$RET_CODE" = 0 ] && ! [ -z "$FORWARD_NEW" ]; then
+        echo 'forward-zone:'$'\n\t'"name: \"$FORWARD_NEW\""$'\n' >> "$CONFIG_RESOLVER_FORWARD"
+
+        forward_zone "$FORWARD_NEW"
+
+        unbound_restart
+    fi
+}
+# manage forward zones in dialog menu
+# parameters:
+# none
+# return values:
+# none
+resolver_forward() {
+    declare LIST_FORWARD DIALOG_RET RET_CODE ZONE_FORWARD
+    declare -a MENU_FORWARD
+
+    while true; do
+        [ -f "$CONFIG_RESOLVER_FORWARD" ] && LIST_FORWARD="$(grep -P '^\tname: "\S+"$' "$CONFIG_RESOLVER_FORWARD" | awk 'match($0, /^\tname: "([^"]+)"$/, a) {print a[1]}' | sort)"
+
+        MENU_FORWARD=()
+
+        if [ -z "$LIST_FORWARD" ]; then
+            MENU_FORWARD+=('' 'No forward zones')
+
+            "$DIALOG" --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Add' --no-tags --menu 'Choose forward zone to edit' 0 0 0 "${MENU_FORWARD[@]}"
+
+            if [ "$?" = 0 ]; then
+                add_forward
+            else
+                break
+            fi
+        else
+            for ZONE_FORWARD in $LIST_FORWARD; do
+                MENU_FORWARD+=("$ZONE_FORWARD" "$ZONE_FORWARD")
+            done
+
+            exec 3>&1
+            DIALOG_RET="$("$DIALOG" --clear --backtitle "$TITLE_MAIN" --cancel-label 'Back' --ok-label 'Edit' --no-tags --extra-button --extra-label 'Add' --menu 'Choose forward zone to edit' 0 0 0 "${MENU_FORWARD[@]}" 2>&1 1>&3)"
+            RET_CODE="$?"
+            exec 3>&-
+
+            if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
+                forward_zone "$DIALOG_RET"
+            elif [ "$RET_CODE" = 3 ]; then
+                add_forward
+            else
+                break
+            fi
+        fi
+    done
+}
 # add/remove zones for internal DNS forwarding in dialog menu
 # parameters:
 # none
@@ -3807,7 +4043,7 @@ dialog_clearswift() {
     MENU_CLEARSWIFT+=("$DIALOG_LDAP" '')
     MENU_CLEARSWIFT+=("$DIALOG_SSH" '')
     MENU_CLEARSWIFT+=("$DIALOG_SMTP" '')
-    [ "$VERSION_CS" < 5 ] && MENU_CLEARSWIFT+=("$DIALOG_KEY_AUTH" '')
+    [ "$VERSION_CS" -lt 5 ] && MENU_CLEARSWIFT+=("$DIALOG_KEY_AUTH" '')
     MENU_CLEARSWIFT+=("$DIALOG_IMPORT_KEYSTORE" '')
     MENU_CLEARSWIFT+=("$DIALOG_EXPORT_ADDRESS" '')
     MENU_CLEARSWIFT+=("$DIALOG_RULE" '')
@@ -3816,7 +4052,7 @@ dialog_clearswift() {
     MENU_CLEARSWIFT+=("$DIALOG_BOUNCE" '')
     MENU_CLEARSWIFT+=("$DIALOG_TOMCAT" '')
     MENU_CLEARSWIFT+=("$DIALOG_TIMEOUT" '')
-    [ "$VERSION_CS" < 5 ] && MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_PASSWORD" '')
+    [ "$VERSION_CS" -lt 5 ] && MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_PASSWORD" '')
     MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_CLEANUP" '')
     MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_BACKUP" '')
     MENU_CLEARSWIFT+=("$DIALOG_TOGGLE_LDAP" '')
@@ -5224,11 +5460,11 @@ dialog_other() {
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
     ARRAY_OTHER+=("$DIALOG_RECENT_UPDATES" '')
-    [ "$VERSION_CS" < 5 ] && ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
+    ARRAY_OTHER+=("$DIALOG_FORWARDING" '')
     ARRAY_OTHER+=("$DIALOG_REPORT" '')
     ARRAY_OTHER+=("$DIALOG_DKIM" '')
     ARRAY_OTHER+=("$DIALOG_ANOMALY" '')
-    [ "$VERSION_CS" < 5 ] && ARRAY_OTHER+=("$DIALOG_LOG" '')
+    [ "$VERSION_CS" -lt 5 ] && ARRAY_OTHER+=("$DIALOG_LOG" '')
     ARRAY_OTHER+=("$DIALOG_SNMP" '')
     ARRAY_OTHER+=("$DIALOG_ADDRESSLIST" '')
     while true; do
@@ -5248,7 +5484,7 @@ dialog_other() {
                 "$DIALOG_RECENT_UPDATES")
                     "$DIALOG" --backtitle "Other configurations" --title "Recently updated packages" --clear --msgbox "$(tail -20 /var/log/yum.log)" 0 0;;
                 "$DIALOG_FORWARDING")
-                    internal_forwarding;;
+                    [ "$VERSION_CS" -gt 4 ] && resolver_forward || internal_forwarding;;
                 "$DIALOG_REPORT")
                     dialog_report;;
                 "$DIALOG_DKIM")
@@ -5481,7 +5717,7 @@ init_cs() {
     # enable CS RHEL repo
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     # install epel
-    if [ "$VERSION_CS" > 4 ]; then
+    if [ "$VERSION_CS" -gt 4 ]; then
         yum install -y epel-release &>/dev/null
     elif ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
         wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -O /tmp/epel-release-6-8.noarch.rpm &>/dev/null
@@ -5489,8 +5725,6 @@ init_cs() {
     fi
     # install vim editor
     which vim &>/dev/null || yum install -y vim --enablerepo=cs-* &>/dev/null
-    # install dialog
-    which dialog &>/dev/null || yum install -y dialog --enablerepo=cs-* &>/dev/null
     # install zip
     which zip &>/dev/null || yum install -y zip --enablerepo=cs-* &>/dev/null
     # install tmux
@@ -5523,6 +5757,16 @@ init_cs() {
     # create custom commands directory
     mkdir -p "$DIR_COMMANDS"
     chown cs-admin:cs-adm "$DIR_COMMANDS"
+    # configure unbound
+    if [ "$VERSION_CS" -gt 4 ] && grep -q '^include: /etc/unbound/conf\.d/\*\.conf$' "$CONFIG_UNBOUND"; then
+        sed -i "s/^include: \/etc\/unbound\/conf\.d\/\*\.conf$/include: $(echo "$CONFIG_RESOLVER_FORWARD" | sed 's/\//\\\//g')/" "$CONFIG_UNBOUND"
+        echo 'forward-zone:'$'\n\t''name: "."' > "$CONFIG_RESOLVER_FORWARD"
+        for IP_ADDRESS in "$(awk 'match($0, /^forward-addr: (\S+)/, a) {print a[1]}' /etc/unbound/conf.d/cs-local-dns-forwarding.conf)"; do
+            echo $'\t'"forward-addr: $IP_ADDRESS" >> "$CONFIG_RESOLVER_FORWARD"
+        done
+        echo >> "$CONFIG_RESOLVER_FORWARD"
+        unbound_restart
+    fi
 }
 # print program information in dialog msgbox
 # parameters:
@@ -5579,8 +5823,12 @@ check_update() {
 # return values:
 # none
 menu_main() {
-    VERSION_CS="$(awk -F_ '{print $1}' /opt/cs-gateway/.patchlevel)"
+    [ -f /opt/cs-gateway/.patchlevel ] && VERSION_CS="$(awk -F_ '{print $1}' /opt/cs-gateway/.patchlevel)"
     grep -q 'alias menu=/root/menu.sh' /root/.bashrc || echo 'alias menu=/root/menu.sh' >> /root/.bashrc
+    # install wget
+    which wget &>/dev/null || yum install -y wget --enablerepo=cs-* &>/dev/null
+    # install dialog
+    which dialog &>/dev/null || yum install -y dialog --enablerepo=cs-* &>/dev/null
     check_update
     check_installed_seg && init_cs
     write_examples
