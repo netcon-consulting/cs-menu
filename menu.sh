@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.118.0 for Clearswift SEG >= 4.8
+# menu.sh V1.119.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - added support for Unbound resolver
+# - ported generation of base policy for CS 5.0
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -93,7 +93,7 @@ CONFIG_REPUTATION='/etc/rspamd/local.d/url_reputation.conf'
 CONFIG_PHISHING='/etc/rspamd/local.d/phishing.conf'
 CONFIG_ELASTIC='/etc/rspamd/local.d/elastic.conf'
 CONFIG_UNBOUND='/etc/unbound/unbound.conf'
-declare -g -r CONFIG_RESOLVER_FORWARD='/etc/unbound/conf.d/forward-zones.conf'
+declare -r CONFIG_RESOLVER_FORWARD='/etc/unbound/conf.d/forward-zones.conf'
 FILE_RULES='/etc/rspamd/local.d/spamassassin.rules'
 MAP_ALIASES='/etc/aliases'
 MAP_TRANSPORT='/etc/postfix-outbound/transport.map'
@@ -2434,11 +2434,13 @@ create_config() {
         return 2
     fi
 
-    INFO_VPN="$(xmlstarlet sel -t -m "Configuration/WebSettings/VPNSettings" -v @allow_grace_period_renewal -o ',' -v @block_internet_access -o ',' -v @external_address -o ',' -v @feature_enabled -o ',' -v @grace_period -o ',' -v @max_grace_period_renewal_times -o ',' -v @network_adapter_uuid -o ',' -v @psk -o ',' -v @remote_connector_port -n "$LAST_CONFIG" 2>/dev/null)"
+    if [ "$VERSION_CS" -lt 5 ]; then
+        INFO_VPN="$(xmlstarlet sel -t -m "Configuration/WebSettings/VPNSettings" -v @allow_grace_period_renewal -o ',' -v @block_internet_access -o ',' -v @external_address -o ',' -v @feature_enabled -o ',' -v @grace_period -o ',' -v @max_grace_period_renewal_times -o ',' -v @network_adapter_uuid -o ',' -v @psk -o ',' -v @remote_connector_port -n "$LAST_CONFIG" 2>/dev/null)"
 
-    if [ -z "$INFO_VPN" ]; then
-        echo 'VPN info is empty'
-        return 3
+        if [ -z "$INFO_VPN" ]; then
+            echo 'VPN info is empty'
+            return 3
+        fi
     fi
 
     LIST_NAME="$(xmlstarlet sel -t -m "Configuration/TLSEndPointCollection/TLSEndPoint" -v @name -n "$LAST_CONFIG" 2>/dev/null)"
@@ -2574,11 +2576,13 @@ create_config() {
 
     LIST_SSH="$(xmlstarlet sel -t -m "Configuration/System/SSH/IP" -v . -n "$LAST_CONFIG" 2>/dev/null)"
 
-    KEYMAP="$(xmlstarlet sel -t -m "Configuration/System/OS" -v @keymap -n "$LAST_CONFIG" 2>/dev/null)"
+    if [ "$VERSION_CS" -lt 5 ]; then
+        KEYMAP="$(xmlstarlet sel -t -m "Configuration/System/OS" -v @keymap -n "$LAST_CONFIG" 2>/dev/null)"
 
-    if [ -z "$KEYMAP" ]; then
-        echo 'Keymap is empty'
-        return 20
+        if [ -z "$KEYMAP" ]; then
+            echo 'Keymap is empty'
+            return 20
+        fi
     fi
 
     LIST_PEER="$(xmlstarlet sel -t -m "Configuration/System/PeerAppliances/Peer" -v @address -o ',' -v @name -o ',' -v @password -o ',' -v @uuid -n "$LAST_CONFIG" 2>/dev/null)"
@@ -2620,7 +2624,9 @@ create_config() {
         sed -i "/^  <AddressList color=\"#bcda6a\" name=\"My Company\"/a\ \ \ <Address>$ADDRESS</Address>" "$TEMPLATE_CONFIG"
     done < <(echo "$LIST_ADDRESS")
 
-    sed -i "/^  <IcapSettings port=\"1344\"/i\ \ <VPNSettings allow_grace_period_renewal=\"$(echo $INFO_VPN | awk -F, '{print $1}')\" block_internet_access=\"$(echo $INFO_VPN | awk -F, '{print $2}')\" external_address=\"$(echo $INFO_VPN | awk -F, '{print $3}')\" feature_enabled=\"$(echo $INFO_VPN | awk -F, '{print $4}')\" grace_period=\"$(echo $INFO_VPN | awk -F, '{print $5}')\" max_grace_period_renewal_times=\"$(echo $INFO_VPN | awk -F, '{print $6}')\" network_adapter_uuid=\"$(echo $INFO_VPN | awk -F, '{print $7}')\" psk=\"$(echo $INFO_VPN | awk -F, '{print $8}')\" remote_connector_port=\"$(echo $INFO_VPN | awk -F, '{print $9}')\"/>" "$TEMPLATE_CONFIG"
+    if [ "$VERSION_CS" -lt 5 ]; then
+        sed -i "/^  <IcapSettings port=\"1344\"/i\ \ <VPNSettings allow_grace_period_renewal=\"$(echo $INFO_VPN | awk -F, '{print $1}')\" block_internet_access=\"$(echo $INFO_VPN | awk -F, '{print $2}')\" external_address=\"$(echo $INFO_VPN | awk -F, '{print $3}')\" feature_enabled=\"$(echo $INFO_VPN | awk -F, '{print $4}')\" grace_period=\"$(echo $INFO_VPN | awk -F, '{print $5}')\" max_grace_period_renewal_times=\"$(echo $INFO_VPN | awk -F, '{print $6}')\" network_adapter_uuid=\"$(echo $INFO_VPN | awk -F, '{print $7}')\" psk=\"$(echo $INFO_VPN | awk -F, '{print $8}')\" remote_connector_port=\"$(echo $INFO_VPN | awk -F, '{print $9}')\"/>" "$TEMPLATE_CONFIG"
+    fi
 
     while read ENDPOINT; do
         sed -i "/^ <\/TLSEndPointCollection>/i\ \ <TLSEndPoint name=\"$(echo $ENDPOINT | awk -F, '{print $1}')\" relayControl=\"$(echo $ENDPOINT | awk -F, '{print $2}')\" useclientforserver=\"false\" uuid=\"$(echo $ENDPOINT | awk -F, '{print $3}')\">\n\ \ \ <Outbound certificateValidation=\"$(echo $ENDPOINT | awk -F, '{print $4}')\" certificateValidationUserString=\"$(echo $ENDPOINT | awk -F, '{print $5}')\" cipherStrength=\"$(echo $ENDPOINT | awk -F, '{print $6}')\" enableMandatoryTls=\"$(echo $ENDPOINT | awk -F, '{print $7}')\" useGlobalCipherStrength=\"$(echo $ENDPOINT | awk -F, '{print $8}')\" useGlobalTlsVersion=\"$(echo $ENDPOINT | awk -F, '{print $9}')\" useTls10=\"$(echo $ENDPOINT | awk -F, '{print $10}')\" useTls11=\"$(echo $ENDPOINT | awk -F, '{print $11}')\" useTls12=\"$(echo $ENDPOINT | awk -F, '{print $12}')\" uuid=\"$(uuidgen)\"/>\n\ \ \ <Inbound certificateCnMatch=\"$(echo $ENDPOINT | awk -F, '{print $13}')\" certificateIssuerCnMatch=\"$(echo $ENDPOINT | awk -F, '{print $14}')\" checkCertCn=\"$(echo $ENDPOINT | awk -F, '{print $15}')\" checkCertIssuerCn=\"$(echo $ENDPOINT | awk -F, '{print $16}')\" enableMandatoryTls=\"$(echo $ENDPOINT | awk -F, '{print $17}')\" encryptionStrengthBits=\"$(echo $ENDPOINT | awk -F, '{print $18}')\" requireValidCertificate=\"$(echo $ENDPOINT | awk -F, '{print $19}')\" uuid=\"$(uuidgen)\"/>\n\ \ \ <Auth authEnabled=\"false\" authPassword=\"\" authUser=\"\" uuid=\"$(uuidgen)\"/>\ \ \ \n\ \ \ <HostList enable=\"false\">" "$TEMPLATE_CONFIG"
@@ -2686,7 +2692,9 @@ create_config() {
         sed -i "/^  <FIPSSettings enabled=/i\ \ <\/SSH>" "$TEMPLATE_CONFIG"
     fi
 
-    sed -i "/^  <\/LexicalDataImportSettings>/a\ \ <OS keymap=\"$KEYMAP\"/>" "$TEMPLATE_CONFIG"
+    if [ "$VERSION_CS" -lt 5 ]; then
+        sed -i "/^  <\/LexicalDataImportSettings>/a\ \ <OS keymap=\"$KEYMAP\"/>" "$TEMPLATE_CONFIG"
+    fi
 
     while read PEER; do
         sed -i "/^  <PeerAppliances>/a\ \ \ <Peer address=\"$(echo $PEER | awk -F, '{print $1}')\" name=\"$(echo $PEER | awk -F, '{print $2}')\" password=\"$(echo $PEER | awk -F, '{print $3}')\" pushStatus=\"Unknown\" uuid=\"$(echo $PEER | awk -F, '{print $4}')\">\n\ \ \ \ <WhatAmI manufacturer=\"Clearswift\" productParentType=\"None\" productType=\"Smtp\" whatAmIType=\"EmailGateway\"/>\n\ \ \ \ <PMMPeer authenticationMethod=\"ntlm\" digestGenerator=\"false\" mobileAuthTimeout=\"6\" mobileEnabled=\"false\" mobilePort=\"443\" portalEnabled=\"false\" protocol=\"http\">\n\ \ \ \ \ <PortalAdapter dev=\"\" gateway=\"\" name=\"\" uuid=\"$(uuidgen)\"/>\n\ \ \ \ </PMMPeer>\n\ \ \ \ <ManagementRoles emailAudit=\"false\" icapAudit=\"false\" webAudit=\"false\" webAuditV4=\"false\"/>\n\ \ \ </Peer>" "$TEMPLATE_CONFIG"
