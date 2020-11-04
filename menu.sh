@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.119.0 for Clearswift SEG >= 4.8
+# menu.sh V1.120.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - ported generation of base policy for CS 5.0
+# - bugfix
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -1800,7 +1800,7 @@ dialog_feature_postfix() {
 # some custom settings
 ###################################################################################################
 install_command() {
-    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | awk 'match($0, /<span class="css-truncate css-truncate-target d-block width-fit"><a class="js-navigation-open link-gray-dark" title="([^"]+)" id/, a) {print a[1]}')"
+    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | awk 'match($0, /href="\/netcon-consulting\/clearswift-external-commands\/tree\/master\/([^"]+)"/, a) {print a[1]}')"
     while true; do
         ARRAY_COMMAND=()
         for NAME_COMMAND in $LIST_COMMAND; do
