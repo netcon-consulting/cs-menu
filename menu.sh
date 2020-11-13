@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.120.0 for Clearswift SEG >= 4.8
+# menu.sh V1.121.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - implemented list server for address, lexical expression, filename, URL and connection lists
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -3583,33 +3583,33 @@ anomaly_detect() {
         fi
     done
 }
-# add public key for SSH authentication for addresslist in dialog inputbox
+# add public key for SSH authentication for list server in dialog inputbox
 # parameters:
 # none
 # return values:
 # error code - 0 for added, 1 for cancel
 add_client() {
     exec 3>&1
-    DIALOG_RET="$("$DIALOG" --clear --backtitle 'Manage addresslist clients' --title 'Add public SSH key' --inputbox 'Enter public key for SSH authentication for addresslist' 0 50 2>&1 1>&3)"
+    DIALOG_RET="$("$DIALOG" --clear --backtitle 'Manage list server clients' --title 'Add public SSH key' --inputbox 'Enter public key for SSH authentication for list server' 0 50 2>&1 1>&3)"
     RET_CODE="$?"
     exec 3>&-
     if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
-        echo "command=\"/home/addresslist/print_addresslist.py \$(echo \\\"\$SSH_ORIGINAL_COMMAND\\\" | sed -E 's/( |^)\\+e /\\1-e /' | sed -E 's/( |^)\\+l /\\1-l /')\" $DIALOG_RET" >> '/home/addresslist/.ssh/authorized_keys'
+        echo "command=\"/home/listserver/print_list.py \$(echo \\\"\$SSH_ORIGINAL_COMMAND\\\" | sed -E 's/( |^)\\+i /\\1-i /' | sed -E 's/( |^)\\+l /\\1-l /')\" $DIALOG_RET" >> '/home/listserver/.ssh/authorized_keys'
         return 0
     else
         return 1
     fi
 }
-# add/remove public keys for SSH authentication for addresslist in dialog menu
+# add/remove public keys for SSH authentication for list server in dialog menu
 # parameters:
 # none
 # return values:
 # none
-addresslist_client() {
-    SSH_ADDRESSLIST='/home/addresslist/.ssh/authorized_keys'
+listserver_client() {
+    SSH_LISTSERVER='/home/listserver/.ssh/authorized_keys'
     while true; do
         LIST_KEY=''
-        [ -f "$SSH_ADDRESSLIST" ] && LIST_KEY="$(awk 'match($0, /^command=".+" (.+)$/, a) {print a[1]}' "$SSH_ADDRESSLIST")"
+        [ -f "$SSH_LISTSERVER" ] && LIST_KEY="$(awk 'match($0, /^command=".+" (.+)$/, a) {print a[1]}' "$SSH_LISTSERVER")"
         if [ -z "$LIST_KEY" ]; then
             add_client || break
         else
@@ -3619,14 +3619,14 @@ addresslist_client() {
             done < <(echo "$LIST_KEY")
             exec 3>&1
             DIALOG_RET="$("$DIALOG" --clear --backtitle '' --title 'Manage configuration' --cancel-label 'Back' --ok-label 'Add' --extra-button --extra-label 'Remove'        \
-                --menu 'Add/remove public keys for SSH authentication for addresslist' 0 0 0 "${ARRAY_KEY[@]}" 2>&1 1>&3)"
+                --menu 'Add/remove public keys for SSH authentication for list server' 0 0 0 "${ARRAY_KEY[@]}" 2>&1 1>&3)"
             RET_CODE="$?"
             exec 3>&-
             if [ "$RET_CODE" = 0 ]; then
                 add_client
             else
                 if [ "$RET_CODE" = 3 ]; then
-                    sed -i "/^command=\".\+\" $(echo "$DIALOG_RET" | sed 's/\//\\\//g')$/d" "$SSH_ADDRESSLIST"
+                    sed -i "/^command=\".\+\" $(echo "$DIALOG_RET" | sed 's/\//\\\//g')$/d" "$SSH_LISTSERVER"
                 else
                     break
                 fi
@@ -5375,73 +5375,81 @@ toggle_snmp() {
         fi
     fi
 }
-# manage addresslist server in dialog menu
+# manage list server in dialog menu
 # parameters:
 # none
 # return values:
 # none
-dialog_addresslist() {
+dialog_listserver() {
     DIALOG_STATUS='Current status: '
-    DIALOG_CLIENT='Add/remove addresslist client'
-    ADDRESSLIST_USER='addresslist'
-    ADDRESSLIST_DIR='/home/addresslist'
-    ADDRESSLIST_SCRIPT="$ADDRESSLIST_DIR/print_addresslist.py"
+    DIALOG_CLIENT='Add/remove list server client'
+    LISTSERVER_USER='listserver'
+    LISTSERVER_DIR='/home/listserver'
+    LISTSERVER_SCRIPT="$LISTSERVER_DIR/print_list.py"
     while true; do
-        [ -d "$ADDRESSLIST_DIR" ] && STATUS_CURRENT='enabled' || STATUS_CURRENT='disabled'
-        ARRAY_ADDRESSLIST=()
-        ARRAY_ADDRESSLIST+=("$DIALOG_STATUS$STATUS_CURRENT" '')
+        [ -d "$LISTSERVER_DIR" ] && STATUS_CURRENT='enabled' || STATUS_CURRENT='disabled'
+        ARRAY_LISTSERVER=()
+        ARRAY_LISTSERVER+=("$DIALOG_STATUS$STATUS_CURRENT" '')
         if [ "$STATUS_CURRENT" = 'enabled' ]; then
-            ARRAY_ADDRESSLIST+=("$DIALOG_CLIENT" '')
+            ARRAY_LISTSERVER+=("$DIALOG_CLIENT" '')
         fi
         exec 3>&1
-        DIALOG_RET="$("$DIALOG" --clear --backtitle 'Other configurations'                \
-            --cancel-label 'Back' --ok-label 'Edit' --menu 'Addresslist server' 0 40 0    \
-            "${ARRAY_ADDRESSLIST[@]}" 2>&1 1>&3)"
+        DIALOG_RET="$("$DIALOG" --clear --backtitle 'Other configurations'      \
+            --cancel-label 'Back' --ok-label 'Edit' --menu 'List server' 0 40 0 \
+            "${ARRAY_LISTSERVER[@]}" 2>&1 1>&3)"
         RET_CODE="$?"
         exec 3>&-
         if [ "$RET_CODE" = 0 ]; then
             case "$DIALOG_RET" in
                 "$DIALOG_STATUS$STATUS_CURRENT")
                     if [ "$STATUS_CURRENT" = 'enabled' ]; then
-                        userdel -rf "$ADDRESSLIST_USER"
+                        userdel -rf "$LISTSERVER_USER"
                     else
                         PACKED_SCRIPT='
-                        H4sIABiaz14AA7VXX2vjOBB/96fQOS/2kTjt3lsgcCGbdst22yXpHQvHYRR7kpjaspGUbcKy3/1G
-                        khXLjpMeBxcoVqX5Pz/NjAa/jPeCj9cZGwP7Tqqj3JXsN88bkIpnTMY0TTkIkWdCRtWR/Hkb3UY3
-                        3gDP52V15Nl2J0mQhOTDzYcb8gRyXjLyB5PAGewKYGINnMo925L7Yv1pSHZSVmIyHr+9vUUMZFKy
-                        Ef6JfS4zto2SskDBsz3awCfkC+UJ+ZgBfxXASFBEab3+vZcz9LysqEouCeXbinIB9n9g+8KuxVHY
-                        JQdvw8uCHIo8EvRA6u2CvkKs+TnaS1maq8Vq9m1xSKCSWck87+NiNV8+fH15eH4iU+LrUJE6VETF
-                        SgxJqWlpnh/JJssxIpCS9RG1buGASmSyA0EwWoqcMFoAQV0ECprlVpTvecvF/eJb/PiwelGKol/9
-                        emfxZfbwaLe8x9nqJZ4/P9093Ku98XfKx4kYbamEN3ocp1Dl5RHTIcU4p0LOqirPIMVcbbLtHhOE
-                        hkYYBpSU4LkgS5B7zuZlCoEKXvTA5AK/4cQj+PN9X38NFUmQLPL0zg0ZkfJVL29xCZyXvMXy/Bnt
-                        u9HLxXL5vMT/bq1SN8R3GcvEDtLA3eyon++FxPS5FGRTcoK7VYWgICqJ6ks3GH2CmSAZ25SYU0HW
-                        gJDiQNOoJTKFDYlj1C3jOBCQb2qV6if2FfAgjE7n/goVWSV+aN34ZCAzMyl8xOwGNYoiDLjEJNQU
-                        /e4khsYiT3tkEarWcJCcJlL75QKOaCzPV0oAZvU/Y+6dgAyNsFhJsGvN70TKMqvfRB4rcHgmmB7e
-                        e6qltI9dQUp5VFGpSouWhNDhoC5+leUQNBrCfhbjZA+Psb7NpOS4pQ/51CfokKkIWlu6piK3lYCn
-                        dzTHenRRB1I8lQy8y2ALvVM+hKRcLnJQ97nOiTJkSNBTLpw8ZBvCSnlmTkNgiRQQpuiCg1lfI8NX
-                        Rz5eGyO7zal+bgQ0yV+G5W/vjBQVYewFYFXfBWfZHDaiwnM1vRE/rVvkkKOiDq1ypeukf66lLy2d
-                        tF9J8QvfQ5OkZEfVNQUu6hTV97qdnndTcyFiGrN9Mi+6EtGqApYGlqWxFHfPwdRB0UWAvOvAmSH/
-                        wlY9bNT2Bp1cDnuyFIZttF27mxeS176fGkN9Tr/QdQ4d5HCaCehtXk2MtyAdKaLbWtw6VzdVbXm5
-                        adf4qPFzwlXpnJAW/l053MjpDa7n1UbZTR2o4EJlHxI1M8Smr0ydUaPTwBamM/1fbUnruNxOrrQS
-                        c+Q44Rx1w2idMQMgIsMZB+s6YGNmO/S0r+Vf6pKOcLzZsj0RBB3RNa4lPzZYqXn1J3B8MpJBY7AX
-                        ja4IIYzkGiQdtVEXrqEBDDrAAhyubY9p2dXTMs8ApngNGHVIhkRv6MCYnZYTzVSHAxscHPvVuB0o
-                        6i7am7k10uOlIVBjU+BUENfUUDU3gXM/zppdF9pF8HIRM/b4g8GA/PhJ8ONHqBJx3Sjtlihlkr0n
-                        /Qb0FHWjx557fTb4YSuxTjyeP+P7SA1z2qZYV7Y4VimN47qinTBvH1DRjG/3qjN8NfhPQSQ80zmZ
-                        Ok+gWmeNTF1Ya77AH+X+kPijkXJtpHOM/xcgKT5Rpr5618T6QYO76iZO8WIOVcmk+LCbNo8ffIlB
-                        Xk19UzJU9EwhUWPwqWoIEljOHz/DUxIaKWF4xVAwhmo0nluq31vvmqqprtnaqmnXDdayLG7URcHE
-                        uJdf2S7sXIjP2ggOmQyaOxp6/wD4I5HR3A8AAA==
+                        H4sIAAAAAAAAA+1ZW2/bNhR+16/glBdpcOSkfTNgYJ7rtEHbJEjcokMRCIxE21pkSSCpJkbR/75z
+                        SEoi5UuztAP6MAOBKPLcLx9F5ui3YS348C4rhqz4QqqNXJXFS887IhXPChnnmZBRtSEfT6OT6MQ7
+                        goVpWW14tlxJEiQheXHy4oRcMDktC/KhkIwXbLVmhbhjnMq6WJLX67s3A7KSshKj4fDh4SEqmEzK
+                        4hj+RJ3LrFhGSbkGwZMalPMReU95Ql5ljN8LVpBgHaVm/MdOztDzsnVVckkoX1aUC9a8s6JeN2Ox
+                        Ec2QM2/ByzV5XOeRoI/ETK/pPYsVPwd7aZHmOLiZfJo9JqySWVl43qvZzfT6/Gp+fnlBxsRXMSJf
+                        KM/KWpDpDcFwiQEpFTnN8w1ZZDkEhaXkbgOKl+wR9MhkxQSBgCE5KeiaEVBHMsnWvuddz17PPsXv
+                        zm/mqCL63Tcz5/PZ+2bGw+X4/OLsEma+egR+Pk1TzoTwRyQgF2XBBsSf6Kl3oGZO73Lmu3PWq0/C
+                        gRYDwS1YgvbbkubvbmZFelWCv9Myzw2Bu4Cvb0oQ28oC5xm6Z0s6M3OOUfak/d6JqnluS/nAc0eA
+                        eTfDji1nj1lCNasv2aOimMOzpvkEMrQRmeg55C7i1NWKU6Ft+Qahn0Dop5cXZ+evMR1DSP8wEcdL
+                        KtkD3QxTVuXlBlpAimFOhZxUVZ6xFPpjkS1raArQE0HpQRITWBfkmsmaF9MyZQEWbHReyBk8w5H2
+                        wPfVU1ORBMgiT82ckGNS3qvhKQwZ5yV3WC7fgn0naji7vr68hrfTRqld1mdZkYkVSwN7sqd+WgsJ
+                        LWNTkEXJCcxWFTQiwcbBJ11AuRMofZIVixL6SJA7Bm3MGU0jR2TKFiSOQbeM40CwfGFU4k/UFeNB
+                        GLXr/g0oapT4YePGG92mf0J6AtOyEURaQvTNUs8PpCSat1yQRHuVaI6m6ZVjDTjgGCqC0wTxRjc4
+                        UfAB7Z6opP7bHv9OGAZE0mUssbL1ECXoEXIPtAozq8c4b0WvEY2/kdxUrJM4gozxHYsobd8aSt+1
+                        1tmxf3Wb1zYO3Y1a26A+2/E2iYrjuDV2mwBVGQIcugQVlbg3NVI4w52jApQJOi/C3SxG7haLCrrL
+                        glLUvFGDj6BHg6XQmIFgtkdCs7q/JUKvrZ8lk4h+ot9GdqwNgCjNUPpKh6rmqNMx4pi6EXECbAvh
+                        Wsi2s72G/EjzmgVWd+6Gk12NpzsMlrGhsgLzCTssiBP/941TKrDfN5VyRnNxqFSeF5iuvoSkXM5y
+                        hruaiTWW8YBAi3BhRTBbkKKUrn3dakOBYDge91ob0dHXez5kXQl2OfFnN48i+axZbr0tUlAELSsY
+                        fEyugi0MGHSiwm01bYxtfe3YIWc5KOrRZkJFAftXubXl8HZYWo02APTgY1/257xmXa6SFcXNinFh
+                        MmWazM3S4QztCZyulm15ux2IaFWxIg0a+s5EmN0upl4V7a2Rw5a7JnzPRHW6MWYGvSwO+vkIQ7fI
+                        DqP5rkTpNnUqZ8tPjTaOGE4z+GjZ9cXWQ90JdER2V8ufiLy0Efk09G3J/yswbhXsA91fFa0d481n
+                        Svv+q0D384D5iaD8I4D8RDBuSQ+g6LMBu0MfN5e7g2KU63hscz05NjrNvd7Y7WuDZL0K+HG03Rmo
+                        Xxd6fwqwms9qpSBQlmC/72u4AcGjfqzPg2PrhqCHvjN9kiTmruYnHSeVaI1HraUdHO2Hsf0QZoR1
+                        PllL/TNC45tOFx76x6S9nvrcGmQqHlLTEn4+ucWKcqvJhCZudqaxe6bomE9vB5aoF87by9v90KhL
+                        RDxFZbeh2jbbip5rhNKtLxtBnXX1aJBKvwAiSPc6I+jZaiRJvuncMbzqEVg5NK6rWt9Z9bYIIbRk
+                        c+LrqY3aE2eoW2VNsyKgfNnsKI5B/WNx21fIEOm+UkNFqMJkJpBJTzjGd3dQVMCcZTdeyAZI3T+y
+                        drdskboM0wT42RNYuNNaGiKsi5JLlgaO+S5w7oE7bYZ/dHREvn4j8PAj0ARd3OnqQxpa0qDCDtU7
+                        wF8rMTw9acYAP3SSaMXg8q3nZfgJpwyKESn9OMYsxrE/cquzuVaPJnxZ4z5ypSs1ZSLhmcrD2LoY
+                        d4pbff5Swxf4mGt/QNZM0i+Uj/35X1czeE9WZZYwMW5hI7pnG6itAVmxvBr7qm4UJAVfv4VtMPFu
+                        Nvq7hMrrM8JvvxHHOTIeH6PUY1VctklKlLpxh1nUOQbkG+BOSutcjrvb+cY4DdGYPw3czTWhQmlB
+                        gobTtryTctDQTBuKBbBtKP4/4LuGItEhQ9X2esBE5G9KFTsSysGGFzRWNDdRYiMi9pjJoAOD0PsH
+                        +T7vaGEaAAA=
                         '
-                        useradd -m -d "$ADDRESSLIST_DIR" "$ADDRESSLIST_USER"
-                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$ADDRESSLIST_SCRIPT"
-                        chmod 700 "$ADDRESSLIST_SCRIPT"
-                        mkdir "$ADDRESSLIST_DIR/.ssh"
-                        chmod 700 "$ADDRESSLIST_DIR/.ssh"
-                        touch "$ADDRESSLIST_DIR/.ssh/authorized_keys"
-                        chmod 600 "$ADDRESSLIST_DIR/.ssh/authorized_keys"
-                        chown -R "$ADDRESSLIST_USER:$ADDRESSLIST_USER" "$ADDRESSLIST_DIR"
+                        useradd -m -d "$LISTSERVER_DIR" "$LISTSERVER_USER"
+                        printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$LISTSERVER_SCRIPT"
+                        chmod 700 "$LISTSERVER_SCRIPT"
+                        mkdir "$LISTSERVER_DIR/.ssh"
+                        chmod 700 "$LISTSERVER_DIR/.ssh"
+                        touch "$LISTSERVER_DIR/.ssh/authorized_keys"
+                        chmod 600 "$LISTSERVER_DIR/.ssh/authorized_keys"
+                        chown -R "$LISTSERVER_USER:$LISTSERVER_USER" "$LISTSERVER_DIR"
                     fi;;
                 "$DIALOG_CLIENT")
-                    addresslist_client;;
+                    listserver_client;;
             esac
         else
             break
@@ -5463,7 +5471,7 @@ dialog_other() {
     DIALOG_ANOMALY='Sender anomaly detection'
     DIALOG_LOG='DNS query logging'
     DIALOG_SNMP='SNMP support'
-    DIALOG_ADDRESSLIST='Addresslist server'
+    DIALOG_ADDRESSLIST='List server'
     ARRAY_OTHER=()
     ARRAY_OTHER+=("$DIALOG_AUTO_UPDATE" '')
     ARRAY_OTHER+=("$DIALOG_CONFIG_FW" '')
@@ -5504,7 +5512,7 @@ dialog_other() {
                 "$DIALOG_SNMP")
                     toggle_snmp;;
                 "$DIALOG_ADDRESSLIST")
-                    dialog_addresslist;;
+                    dialog_listserver;;
             esac
         else
             break
