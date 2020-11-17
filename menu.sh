@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.121.0 for Clearswift SEG >= 4.8
+# menu.sh V1.122.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - implemented list server for address, lexical expression, filename, URL and connection lists
+# - bugfix
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -3594,7 +3594,7 @@ add_client() {
     RET_CODE="$?"
     exec 3>&-
     if [ "$RET_CODE" = 0 ] && ! [ -z "$DIALOG_RET" ]; then
-        echo "command=\"/home/listserver/print_list.py \$(echo \\\"\$SSH_ORIGINAL_COMMAND\\\" | sed -E 's/( |^)\\+i /\\1-i /' | sed -E 's/( |^)\\+l /\\1-l /')\" $DIALOG_RET" >> '/home/listserver/.ssh/authorized_keys'
+        echo "command=\"/home/listserver/print_list.py \$SSH_ORIGINAL_COMMAND\" $DIALOG_RET" >> '/home/listserver/.ssh/authorized_keys'
         return 0
     else
         return 1
