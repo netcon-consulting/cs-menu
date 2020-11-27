@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.122.0 for Clearswift SEG >= 4.8
+# menu.sh V1.123.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -5777,7 +5777,7 @@ init_cs() {
     if [ "$VERSION_CS" -gt 4 ] && grep -q '^include: /etc/unbound/conf\.d/\*\.conf$' "$CONFIG_UNBOUND"; then
         sed -i "s/^include: \/etc\/unbound\/conf\.d\/\*\.conf$/include: $(echo "$CONFIG_RESOLVER_FORWARD" | sed 's/\//\\\//g')/" "$CONFIG_UNBOUND"
         echo 'forward-zone:'$'\n\t''name: "."' > "$CONFIG_RESOLVER_FORWARD"
-        for IP_ADDRESS in "$(awk 'match($0, /^forward-addr: (\S+)/, a) {print a[1]}' /etc/unbound/conf.d/cs-local-dns-forwarding.conf)"; do
+        for IP_ADDRESS in $(awk 'match($0, /^forward-addr: (\S+)/, a) {print a[1]}' /etc/unbound/conf.d/cs-local-dns-forwarding.conf); do
             echo $'\t'"forward-addr: $IP_ADDRESS" >> "$CONFIG_RESOLVER_FORWARD"
         done
         echo >> "$CONFIG_RESOLVER_FORWARD"
