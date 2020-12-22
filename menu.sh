@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.123.0 for Clearswift SEG >= 4.8
+# menu.sh V1.124.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -5757,22 +5757,22 @@ init_cs() {
     mkdir -p /opt/cs-gateway/custom/postfix-{inbound,outbound}
     touch "$CONFIG_PF"
     chmod +x "$CONFIG_PF"
-    chown cs-admin:cs-adm "$CONFIG_PF"
+    [ "$VERSION_CS" -lt 5 ] && chown cs-admin:cs-adm "$CONFIG_PF"
     grep -q "$CONFIG_PF" "$PF_CUSTOMISE" || echo $'\n'"$CONFIG_PF" >> "$PF_CUSTOMISE"
     head -1 "$CONFIG_PF" | grep -q '^#!/bin/bash' || echo '#!/bin/bash' >> "$CONFIG_PF"
     grep -q '*filter' "$CONFIG_FW" || echo '*filter' >> "$CONFIG_FW"
     grep -q ':INPUT DROP \[0:0\]' "$CONFIG_FW" || echo ':INPUT DROP [0:0]' >> "$CONFIG_FW"
     grep -q ':FORWARD DROP \[0:0\]' "$CONFIG_FW" || echo ':FORWARD DROP [0:0]'  >> "$CONFIG_FW"
     grep -q ':OUTPUT DROP \[0:0\]' "$CONFIG_FW" || echo ':OUTPUT DROP [0:0]' >> "$CONFIG_FW"
-    chown -R cs-admin:cs-adm /opt/cs-gateway/custom
+    [ "$VERSION_CS" -lt 5 ] && chown -R cs-admin:cs-adm /opt/cs-gateway/custom
     # create alias shortcuts for menu and Mail Logs
     grep -q 'alias pflogs' /root/.bashrc || echo 'alias pflogs="tail -f /var/log/cs-gateway/mail.$(date +%Y-%m-%d).log"' >> /root/.bashrc
-    if [ -f /home/cs-admin/.bash_profile ]; then
+    if [ "$VERSION_CS" -lt 5 ] && [ -f /home/cs-admin/.bash_profile ]; then
         grep -q "Return to CS menu with 'exit'" /home/cs-admin/.bash_profile || echo "echo -e $'\n'\"\e[91m===============================\"$'\n'\" Return to CS menu with 'exit'\"$'\n'\"===============================\e[0m\"$'\n'" >> /home/cs-admin/.bash_profile
     fi
     # create custom commands directory
     mkdir -p "$DIR_COMMANDS"
-    chown cs-admin:cs-adm "$DIR_COMMANDS"
+    [ "$VERSION_CS" -lt 5 ] && chown cs-admin:cs-adm "$DIR_COMMANDS"
     # configure unbound
     if [ "$VERSION_CS" -gt 4 ] && grep -q '^include: /etc/unbound/conf\.d/\*\.conf$' "$CONFIG_UNBOUND"; then
         sed -i "s/^include: \/etc\/unbound\/conf\.d\/\*\.conf$/include: $(echo "$CONFIG_RESOLVER_FORWARD" | sed 's/\//\\\//g')/" "$CONFIG_UNBOUND"
