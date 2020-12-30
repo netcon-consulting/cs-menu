@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.124.0 for Clearswift SEG >= 4.8
+# menu.sh V1.125.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -137,9 +137,9 @@ EMAIL_DEFAULT='uwe@usommer.de'
 LINK_MENU='https://raw.githubusercontent.com/netcon-consulting/cs-menu/master'
 LINK_UPDATE="$LINK_MENU/menu.sh"
 LINK_CONFIG="$LINK_MENU/configs/sample_config.bk"
-LINK_LIB='https://raw.githubusercontent.com/netcon-consulting/netcon.py/master/netcon.py'
-REPO_COMMANDS='https://github.com/netcon-consulting/clearswift-external-commands/tree/master/'
-LINK_COMMANDS='https://raw.githubusercontent.com/netcon-consulting/clearswift-external-commands/master'
+LINK_LIB='https://raw.githubusercontent.com/netcon-consulting/netcon.py/old/netcon.py'
+REPO_COMMANDS='https://github.com/netcon-consulting/clearswift-external-commands/tree/old/'
+LINK_COMMANDS='https://raw.githubusercontent.com/netcon-consulting/clearswift-external-commands/old'
 CRON_STATS='/etc/cron.monthly/stats_report.sh'
 SCRIPT_STATS='/root/send_report.sh'
 CRON_DKIM='/etc/cron.monthly/dkim_report.sh'
@@ -1800,7 +1800,7 @@ dialog_feature_postfix() {
 # some custom settings
 ###################################################################################################
 install_command() {
-    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | awk 'match($0, /href="\/netcon-consulting\/clearswift-external-commands\/tree\/master\/([^"]+)"/, a) {print a[1]}')"
+    LIST_COMMAND="$(wget "$REPO_COMMANDS" -O - 2>/dev/null | awk 'match($0, /href="\/netcon-consulting\/clearswift-external-commands\/tree\/old\/([^"]+)"/, a) {print a[1]}')"
     while true; do
         ARRAY_COMMAND=()
         for NAME_COMMAND in $LIST_COMMAND; do
@@ -5733,9 +5733,7 @@ init_cs() {
     # enable CS RHEL repo
     [ -f /etc/yum.repos.d/cs-rhel-mirror.repo ] && sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/cs-rhel-mirror.repo
     # install epel
-    if [ "$VERSION_CS" -gt 4 ]; then
-        yum install -y epel-release &>/dev/null
-    elif ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
+    if [ "$VERSION_CS" -lt 5 ] && ! [ -f '/etc/yum.repos.d/epel.repo' ]; then
         wget http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm -O /tmp/epel-release-6-8.noarch.rpm &>/dev/null
         rpm -ivh /tmp/epel-release-6-8.noarch.rpm &>/dev/null
     fi
