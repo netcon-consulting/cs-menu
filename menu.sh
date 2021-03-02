@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.125.0 for Clearswift SEG >= 4.8
+# menu.sh V1.126.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - bugfix
+# - fixed yum-cron for CS5
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -77,6 +77,7 @@ CONFIG_FW='/opt/cs-gateway/custom/custom.rules'
 CONFIG_INTERN='/var/named/intern.db'
 CONFIG_BIND='/etc/named.conf'
 CONFIG_AUTO_UPDATE='/etc/yum/yum-cron.conf'
+CONFIG_AUTO_UPDATE_HOURLY='/etc/yum/yum-cron-hourly.conf'
 CONFIG_AUTO_UPDATE_ALT='/etc/sysconfig/yum-cron'
 CONFIG_LDAP='/var/cs-gateway/ldap/schedule.properties'
 CONFIG_OPTIONS='/etc/rspamd/local.d/options.inc'
@@ -546,10 +547,21 @@ install_letsencrypt() {
 # return values:
 # none
 install_auto_update() {
+    DIR_YUM_CRON='/etc/yum.repos.d/yum-cron'
     clear
     yum install -y yum-cron
-    chkconfig yum-cron on
-    service yum-cron start
+    if [ "$VERSION_CS" -gt 4 ]; then
+        mkdir -p "$DIR_YUM_CRON"
+        cp /etc/yum.repos.d/* "$DIR_YUM_CRON"
+        sed -i 's/^enabled=1$/enabled=0/' "$DIR_YUM_CRON/cs-gateway-v5.repo"
+        [ -f "$CONFIG_AUTO_UPDATE" ] && echo "reposdir = $DIR_YUM_CRON" >> "$CONFIG_AUTO_UPDATE"
+        [ -f "$CONFIG_AUTO_UPDATE_HOURLY" ] && echo "reposdir = $DIR_YUM_CRON" >> "$CONFIG_AUTO_UPDATE_HOURLY"
+        systemctl start yum-cron
+        systemctl enable yum-cron
+    else
+        chkconfig yum-cron on
+        service yum-cron start
+    fi
     get_keypress
 }
 # install VMware Tools
