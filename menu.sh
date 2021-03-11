@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# menu.sh V1.126.0 for Clearswift SEG >= 4.8
+# menu.sh V1.127.0 for Clearswift SEG >= 4.8
 #
-# Copyright (c) 2018-2020 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
+# Copyright (c) 2018-2021 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
 # Authors:
 # Uwe Sommer (u.sommer@netcon-consulting.com)
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - fixed yum-cron for CS5
+# - disabled listserver user password expiration
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -5452,6 +5452,7 @@ dialog_listserver() {
                         +T7vaGEaAAA=
                         '
                         useradd -m -d "$LISTSERVER_DIR" "$LISTSERVER_USER"
+                        chage -m 0 -M 99999 "$LISTSERVER_USER"
                         printf '%s' $PACKED_SCRIPT | base64 -d | gunzip > "$LISTSERVER_SCRIPT"
                         chmod 700 "$LISTSERVER_SCRIPT"
                         mkdir "$LISTSERVER_DIR/.ssh"
