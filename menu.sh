@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.127.0 for Clearswift SEG >= 4.8
+# menu.sh V1.128.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2021 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - disabled listserver user password expiration
+# - updated print_list script
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -5418,38 +5418,39 @@ dialog_listserver() {
                         userdel -rf "$LISTSERVER_USER"
                     else
                         PACKED_SCRIPT='
-                        H4sIAAAAAAAAA+1ZW2/bNhR+16/glBdpcOSkfTNgYJ7rtEHbJEjcokMRCIxE21pkSSCpJkbR/75z
-                        SEoi5UuztAP6MAOBKPLcLx9F5ui3YS348C4rhqz4QqqNXJXFS887IhXPChnnmZBRtSEfT6OT6MQ7
-                        goVpWW14tlxJEiQheXHy4oRcMDktC/KhkIwXbLVmhbhjnMq6WJLX67s3A7KSshKj4fDh4SEqmEzK
-                        4hj+RJ3LrFhGSbkGwZMalPMReU95Ql5ljN8LVpBgHaVm/MdOztDzsnVVckkoX1aUC9a8s6JeN2Ox
-                        Ec2QM2/ByzV5XOeRoI/ETK/pPYsVPwd7aZHmOLiZfJo9JqySWVl43qvZzfT6/Gp+fnlBxsRXMSJf
-                        KM/KWpDpDcFwiQEpFTnN8w1ZZDkEhaXkbgOKl+wR9MhkxQSBgCE5KeiaEVBHMsnWvuddz17PPsXv
-                        zm/mqCL63Tcz5/PZ+2bGw+X4/OLsEma+egR+Pk1TzoTwRyQgF2XBBsSf6Kl3oGZO73Lmu3PWq0/C
-                        gRYDwS1YgvbbkubvbmZFelWCv9Myzw2Bu4Cvb0oQ28oC5xm6Z0s6M3OOUfak/d6JqnluS/nAc0eA
-                        eTfDji1nj1lCNasv2aOimMOzpvkEMrQRmeg55C7i1NWKU6Ft+Qahn0Dop5cXZ+evMR1DSP8wEcdL
-                        KtkD3QxTVuXlBlpAimFOhZxUVZ6xFPpjkS1raArQE0HpQRITWBfkmsmaF9MyZQEWbHReyBk8w5H2
-                        wPfVU1ORBMgiT82ckGNS3qvhKQwZ5yV3WC7fgn0naji7vr68hrfTRqld1mdZkYkVSwN7sqd+WgsJ
-                        LWNTkEXJCcxWFTQiwcbBJ11AuRMofZIVixL6SJA7Bm3MGU0jR2TKFiSOQbeM40CwfGFU4k/UFeNB
-                        GLXr/g0oapT4YePGG92mf0J6AtOyEURaQvTNUs8PpCSat1yQRHuVaI6m6ZVjDTjgGCqC0wTxRjc4
-                        UfAB7Z6opP7bHv9OGAZE0mUssbL1ECXoEXIPtAozq8c4b0WvEY2/kdxUrJM4gozxHYsobd8aSt+1
-                        1tmxf3Wb1zYO3Y1a26A+2/E2iYrjuDV2mwBVGQIcugQVlbg3NVI4w52jApQJOi/C3SxG7haLCrrL
-                        glLUvFGDj6BHg6XQmIFgtkdCs7q/JUKvrZ8lk4h+ot9GdqwNgCjNUPpKh6rmqNMx4pi6EXECbAvh
-                        Wsi2s72G/EjzmgVWd+6Gk12NpzsMlrGhsgLzCTssiBP/941TKrDfN5VyRnNxqFSeF5iuvoSkXM5y
-                        hruaiTWW8YBAi3BhRTBbkKKUrn3dakOBYDge91ob0dHXez5kXQl2OfFnN48i+axZbr0tUlAELSsY
-                        fEyugi0MGHSiwm01bYxtfe3YIWc5KOrRZkJFAftXubXl8HZYWo02APTgY1/257xmXa6SFcXNinFh
-                        MmWazM3S4QztCZyulm15ux2IaFWxIg0a+s5EmN0upl4V7a2Rw5a7JnzPRHW6MWYGvSwO+vkIQ7fI
-                        DqP5rkTpNnUqZ8tPjTaOGE4z+GjZ9cXWQ90JdER2V8ufiLy0Efk09G3J/yswbhXsA91fFa0d481n
-                        Svv+q0D384D5iaD8I4D8RDBuSQ+g6LMBu0MfN5e7g2KU63hscz05NjrNvd7Y7WuDZL0K+HG03Rmo
-                        Xxd6fwqwms9qpSBQlmC/72u4AcGjfqzPg2PrhqCHvjN9kiTmruYnHSeVaI1HraUdHO2Hsf0QZoR1
-                        PllL/TNC45tOFx76x6S9nvrcGmQqHlLTEn4+ucWKcqvJhCZudqaxe6bomE9vB5aoF87by9v90KhL
-                        RDxFZbeh2jbbip5rhNKtLxtBnXX1aJBKvwAiSPc6I+jZaiRJvuncMbzqEVg5NK6rWt9Z9bYIIbRk
-                        c+LrqY3aE2eoW2VNsyKgfNnsKI5B/WNx21fIEOm+UkNFqMJkJpBJTzjGd3dQVMCcZTdeyAZI3T+y
-                        drdskboM0wT42RNYuNNaGiKsi5JLlgaO+S5w7oE7bYZ/dHREvn4j8PAj0ARd3OnqQxpa0qDCDtU7
-                        wF8rMTw9acYAP3SSaMXg8q3nZfgJpwyKESn9OMYsxrE/cquzuVaPJnxZ4z5ypSs1ZSLhmcrD2LoY
-                        d4pbff5Swxf4mGt/QNZM0i+Uj/35X1czeE9WZZYwMW5hI7pnG6itAVmxvBr7qm4UJAVfv4VtMPFu
-                        Nvq7hMrrM8JvvxHHOTIeH6PUY1VctklKlLpxh1nUOQbkG+BOSutcjrvb+cY4DdGYPw3czTWhQmlB
-                        gobTtryTctDQTBuKBbBtKP4/4LuGItEhQ9X2esBE5G9KFTsSysGGFzRWNDdRYiMi9pjJoAOD0PsH
-                        +T7vaGEaAAA=
+                        H4sIAAAAAAAAA+1ZbW/bNhD+rl/BKV/kzJbT7psBAfNcpzXaJkGSFh2KQWAk2tYiSwJJNTGK/vfd
+                        kdQLZSlNug7ogLpoTJN39xyPdw9F6uiXaSn49CbJpiz7RIq93ObZb45zRAqeZDJMEyH9Yk/eP/Ph
+                        n3MEA4u82PNks5XEi0bk+cnzkwn8eUbOmFzkGXmXScYztt2xTNwwTmWZbcjL3c2rMdlKWYjZdHp3
+                        d+dnTEZ5NoH/okxlkm38KN+B9XkJHvAZeUt5RF4kjN8KlhFv58em/Xuv5shxkl2Rc0ko3xSUC1b9
+                        Zlm5q9piL5w1z3ckytOURTIBG8SMZXTHYlkWaa3JmRa+36W+oPeV4I7eslBBcJgSzeIUG1fzD8v7
+                        iBVo03FeLK8Wl6uL69X5GQmIq2JJPlGe5KUgiyuCYRVjkitxmqZ7sk5SiBuLyc0egDfsHnBktGWC
+                        QExRXDlIAI4kku1cx7lcvlx+CN+srq4Rwj92Tc/qevm26nGucUKrbJ1DTzNDz6373TFxJd2EVEqe
+                        3JSSEfwl6U2qWwoaGwoVwoyA4ers9BwsfnYIfFwax5wJ4c5IbdazbAZnecbGjeXAnWuVN2D9Gnvc
+                        cY1mDZp+BK/73dFY40IKZHoVnwJ9/eZqmcUXOSzJok4DC78lYeG/ysGhChwWjGFEnwJ9anT6p90e
+                        tXCrgRq75OlTYN/xtB/RDFhg0FfjpOw+iehDWK5k95V+FV/oKWk6h7zei0QMxdiWsly42HIqYLbO
+                        F0i3OaTb4vzsdPUSk3oKRTSNxGRDJbuj+2nMijTfA9dIMU2pkPOiSBMWAxGtk00J7AO4PhQwlEIE
+                        44JcMlnybJHHzENm8FeZXML3aKZn7LrqW0sBTcTMd1TPCZmQ/FY1n0GTcZ5zS+X8Nfh3oprLy8vz
+                        S/j1rAJtk8NpkiViy2Kv3dmBX5RCAvG0Jcg65wR6iwIYjyD94DddA2kQIBCSYI1vqSA3DPiSMxr7
+                        lsmYrUkYArYMQ0+wdG0g8SPKgnFv5Nfj7hUAVSBY9HoarzTZ/QGL4xni8yHSEqJvhjrzQEmidfM1
+                        ifSsIq1RUaeaWEWx2IbE4DRCYtc0SRQJA2lGalGfypRfCUMrdZv0bJJxrCFMr25jfyt6lWn8zOS+
+                        aDHoDFaM9wyitaExtN431vgxPHqo23YOp+s37B40fh6KqDgGtbOHAghlBLBpCxRAEPAQUFnhDLfo
+                        AljMa2Yx6lcxdg9UVNBtFbSi+g0MfnkdGUyFyg3kxQEL1ehwSYycOn82TCJrim4ZtWNtCEQhQ+or
+                        DJXNfoMx47h0M2IFuG2EayOHk+0U5HualsxrVWc/nfQVnq4wGMaCSjJcT3hOAXPiZ908IZEel0Pf
+                        FrEm8YSkXC5ThtudWQR0a0xwPxat0CbrrtOJIFkulYOKGRVFBoFdz42B7sRa0WApWD9QVyBo2FUP
+                        KphKyinbZDuIavijFv/LscQAAOpfMDgCbL0DQhk3Zka2+d7FqttOv2ybAwyD1AGPthS3IsaFCbcp
+                        oZ5QKwutKA/F8tegMtLAsCw+XNV/v5xqZCCQOuNqt4YCWQfHp0UBbnqNxkA425XwyJQZntusmxa2
+                        U19zWh1ejeNeB2bcXf1RZ0YPV33/lDR5WWY4TeAZqO8BsEPi8+qZ+vsRef2Y/jgyr8X/K26vAYY4
+                        /Eclf/uAHNiT+UEI/39Jyb2iPYxcjauy+2Yu7FnL/qAYcB2PQ61Hx0Yv85MItpMBj9gafhLrAbGq
+                        yKlLN++Y8o0Yk+Pj2ztsdQj1Ql3MyRwqLYYjvU2TlgG87gnEXvhasmVRw8GhQM3HUxNHehmq7zHB
+                        i4pQn2aD1v1Gx7elPgcTc7v2nQ7DyrSmv9rThv2GWXOYMY2xZk6toe4Jp5qbzg59LVlfKH6sHTIF
+                        BplQC3brVnTyuNoLA/tQZOsbLrY79frYfQ/zs85T8RB6s5sPzKCL+J1c04mrLqfBmdZVtSFR/QPI
+                        StoXN9V9jrEg+b6ZnNFRX15rnU0gVPn1FmLbhBDasjnTVtdH9VnalNGOJpnXKlTLke6Bv645VPB1
+                        zammElRhMR2opDssp5vbNSqgr0Ey5IHi3dN4c4Hoq3s+LYCPYF6LA2tXR7jFiJxLFnuW/zaJD1Cv
+                        dsM9Ojoin78Q+HJ9QIISb7C69IqeVJTRA92zEWkQo9OxZhxwR9bqtWJw/tpxEnycVA6FyNpuGOIy
+                        hqE7s9OxejXjz/mmxD3tQqdmzETEE7UQQevNiZXNPvgXUqPnubjY7pjsmKSfKA/c6z8vlvA72uZJ
+                        xERQc4p/y/aQXGOyZWkRuPptBvKV9/nLqA4mvgTx/84h9bqK8Bl2YpKi4mSCVicqu9ouKVPqlQxe
+                        bgNmALQ4xl2dlqkMmtc3lXOav3H9NKtXN6CKwgXxKs22542VBx1NtKOYAIeO4gujrzqKQg85qrb6
+                        B1xE/SpVsSQhHdq8gs6K6uiN2yy7T6TXsMHI+QckcSc+qhwAAA==
                         '
                         useradd -m -d "$LISTSERVER_DIR" "$LISTSERVER_USER"
                         chage -m 0 -M 99999 "$LISTSERVER_USER"
