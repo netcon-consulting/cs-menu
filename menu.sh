@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.129.0 for Clearswift SEG >= 4.8
+# menu.sh V1.130.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2021 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - updated listserver SSH command
+# - bugfix
 #
 ###################################################################################################
 LOG_MENU='menu.log'
@@ -556,6 +556,7 @@ install_auto_update() {
         sed -i 's/^enabled=1$/enabled=0/' "$DIR_YUM_CRON/cs-gateway-v5.repo"
         [ -f "$CONFIG_AUTO_UPDATE" ] && echo "reposdir = $DIR_YUM_CRON" >> "$CONFIG_AUTO_UPDATE"
         [ -f "$CONFIG_AUTO_UPDATE_HOURLY" ] && echo "reposdir = $DIR_YUM_CRON" >> "$CONFIG_AUTO_UPDATE_HOURLY"
+        sed -i 's/^apply_updates = no$/apply_updates = yes/' "$CONFIG_AUTO_UPDATE"
         systemctl start yum-cron
         systemctl enable yum-cron
     else
