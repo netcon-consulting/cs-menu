@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.130.0 for Clearswift SEG >= 4.8
+# menu.sh V1.131.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2021 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -553,7 +553,7 @@ install_auto_update() {
     if [ "$VERSION_CS" -gt 4 ]; then
         mkdir -p "$DIR_YUM_CRON"
         cp /etc/yum.repos.d/* "$DIR_YUM_CRON"
-        sed -i 's/^enabled=1$/enabled=0/' "$DIR_YUM_CRON/cs-gateway-v5.repo"
+        sed -i 's/^enabled=1$/enabled=0/' "$DIR_YUM_CRON/cs-gateway-v5.repo*"
         [ -f "$CONFIG_AUTO_UPDATE" ] && echo "reposdir = $DIR_YUM_CRON" >> "$CONFIG_AUTO_UPDATE"
         [ -f "$CONFIG_AUTO_UPDATE_HOURLY" ] && echo "reposdir = $DIR_YUM_CRON" >> "$CONFIG_AUTO_UPDATE_HOURLY"
         sed -i 's/^apply_updates = no$/apply_updates = yes/' "$CONFIG_AUTO_UPDATE"
