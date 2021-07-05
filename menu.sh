@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# menu.sh V1.135.0 for Clearswift SEG >= 4.8
+# menu.sh V1.136.0 for Clearswift SEG >= 4.8
 #
 # Copyright (c) 2018-2021 NetCon Unternehmensberatung GmbH, https://www.netcon-consulting.com
 #
@@ -64,7 +64,7 @@
 # - management of various white-/blacklists
 #
 # Changelog:
-# - DEPRECATED. This tools is no longer supported.
+# - DEPRECATED. This tool is no longer supported.
 #
 ###################################################################################################
 LOG_MENU='menu.log'

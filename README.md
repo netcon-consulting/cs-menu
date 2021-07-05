@@ -1,5 +1,7 @@
-NetCon Clearswift Configuration V1.135.0
+NetCon Clearswift Configuration V1.136.0
 ========================================
+
+**DEPRECATED. This tool is no longer supported.**
 
 Config tool for missing features on Clearswift Secure E-Mail Gateway. These settings will ease many advanced configuration tasks and highly improve spam detection. Everything is in this single dialog file, which should be run as root.
 
